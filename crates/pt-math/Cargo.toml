@@ -1,0 +1,12 @@
+[package]
+name = "pt-math"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Numerical stability primitives for Process Triage"
+
+[lib]
+name = "pt_math"
+path = "src/lib.rs"
+
+[dependencies]

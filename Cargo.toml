@@ -1,0 +1,5 @@
+[workspace]
+members = [
+    "crates/pt-math",
+]
+resolver = "2"
