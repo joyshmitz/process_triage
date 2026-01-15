@@ -16,7 +16,7 @@ use super::{ConfigResolution, ConfigSource, Policy, Priors};
 use crate::error::{Error, Result};
 
 /// Configuration file paths.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ConfigPaths {
     /// Directory containing config files
     pub config_dir: Option<PathBuf>,
@@ -24,16 +24,6 @@ pub struct ConfigPaths {
     pub priors_path: Option<PathBuf>,
     /// Explicit path to policy.json
     pub policy_path: Option<PathBuf>,
-}
-
-impl Default for ConfigPaths {
-    fn default() -> Self {
-        ConfigPaths {
-            config_dir: None,
-            priors_path: None,
-            policy_path: None,
-        }
-    }
 }
 
 /// Configuration resolver with deterministic resolution order.

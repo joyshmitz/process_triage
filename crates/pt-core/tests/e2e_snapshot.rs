@@ -95,9 +95,9 @@ mod snapshot_formats {
     }
 
     #[test]
-    fn snapshot_human_format() {
+    fn snapshot_prose_format() {
         pt_core()
-            .args(["--format", "human", "agent", "snapshot"])
+            .args(["--format", "prose", "agent", "snapshot"])
             .assert()
             .success()
             .stdout(predicate::str::contains("pt-core"));

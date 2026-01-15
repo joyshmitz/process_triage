@@ -421,7 +421,7 @@ mod tests {
         let post = DirichletParams::new(vec![0.1, 1.0, 10.0]).unwrap();
         let probs = predictive_probs(&post);
         for p in probs {
-            assert!(p >= 0.0 && p <= 1.0);
+            assert!((0.0..=1.0).contains(&p));
         }
     }
 

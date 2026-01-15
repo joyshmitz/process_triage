@@ -184,12 +184,6 @@ impl CwdCategory {
     }
 }
 
-impl Default for CwdCategory {
-    fn default() -> Self {
-        CwdCategory::Unknown
-    }
-}
-
 /// Output of command and CWD categorization.
 ///
 /// This struct provides the stable, versioned output of categorizing a process

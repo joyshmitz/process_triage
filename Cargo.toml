@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/pt-bundle",
     "crates/pt-common",
     "crates/pt-config",
     "crates/pt-core",

@@ -624,8 +624,10 @@ mod tests {
 
     #[test]
     fn test_galaxy_brain_data_serialization() {
-        let mut data = GalaxyBrainData::default();
-        data.process_id = Some(12345);
+        let mut data = GalaxyBrainData {
+            process_id: Some(12345),
+            ..Default::default()
+        };
         data.cards
             .push(MathCard::new(CardId::PosteriorCore).with_intuition("Test intuition"));
 

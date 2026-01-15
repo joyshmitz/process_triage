@@ -314,16 +314,16 @@ mod tests {
     #[test]
     fn test_export_profile_parsing() {
         assert_eq!(
-            ExportProfile::from_str("minimal"),
+            ExportProfile::parse_str("minimal"),
             Some(ExportProfile::Minimal)
         );
-        assert_eq!(ExportProfile::from_str("safe"), Some(ExportProfile::Safe));
+        assert_eq!(ExportProfile::parse_str("safe"), Some(ExportProfile::Safe));
         assert_eq!(
-            ExportProfile::from_str("forensic"),
+            ExportProfile::parse_str("forensic"),
             Some(ExportProfile::Forensic)
         );
-        assert_eq!(ExportProfile::from_str("SAFE"), Some(ExportProfile::Safe));
-        assert_eq!(ExportProfile::from_str("invalid"), None);
+        assert_eq!(ExportProfile::parse_str("SAFE"), Some(ExportProfile::Safe));
+        assert_eq!(ExportProfile::parse_str("invalid"), None);
     }
 
     #[test]

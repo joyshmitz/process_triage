@@ -730,14 +730,16 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip() {
-        let mut caps = Capabilities::default();
-        caps.os = OsInfo {
-            family: OsFamily::Linux,
-            name: Some("Ubuntu".to_string()),
-            release: Some("24.04".to_string()),
-            version: None,
-            kernel: Some("6.8.0-40-generic".to_string()),
-            arch: Some(CpuArch::X86_64),
+        let mut caps = Capabilities {
+            os: OsInfo {
+                family: OsFamily::Linux,
+                name: Some("Ubuntu".to_string()),
+                release: Some("24.04".to_string()),
+                version: None,
+                kernel: Some("6.8.0-40-generic".to_string()),
+                arch: Some(CpuArch::X86_64),
+            },
+            ..Default::default()
         };
         caps.tools.insert(
             "ps".to_string(),
@@ -770,10 +772,12 @@ mod tests {
 
     #[test]
     fn test_is_stale() {
-        let mut caps = Capabilities::default();
+        let mut caps = Capabilities {
+            discovered_at: chrono::Utc::now().to_rfc3339(),
+            ..Default::default()
+        };
 
         // Fresh cache
-        caps.discovered_at = chrono::Utc::now().to_rfc3339();
         assert!(!caps.is_stale(3600));
 
         // Stale cache (2 hours ago)

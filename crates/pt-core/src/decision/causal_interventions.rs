@@ -57,11 +57,7 @@ pub fn expected_recovery(beta: &BetaParams) -> f64 {
 pub fn update_beta(params: &BetaParams, successes: f64, trials: f64, eta: f64) -> BetaParams {
     let n = trials.max(0.0);
     let s = successes.max(0.0).min(n);
-    let eta = if eta.is_finite() && eta > 0.0 {
-        eta.min(1.0)
-    } else {
-        1.0
-    };
+    let eta = if eta.is_finite() && eta > 0.0 { eta } else { 1.0 };
     BetaParams {
         alpha: params.alpha + eta * s,
         beta: params.beta + eta * (n - s),
@@ -220,24 +216,28 @@ fn expected_recovery_stats_for_action(
         Action::Keep => None,
     }?;
 
-    let useful_var = priors.useful.as_ref().and_then(beta_variance)?;
-    let useful_bad_var = priors.useful_bad.as_ref().and_then(beta_variance)?;
-    let abandoned_var = priors.abandoned.as_ref().and_then(beta_variance)?;
-    let zombie_var = priors.zombie.as_ref().and_then(beta_variance)?;
+    let useful_var = priors.useful.as_ref().and_then(beta_variance);
+    let useful_bad_var = priors.useful_bad.as_ref().and_then(beta_variance);
+    let abandoned_var = priors.abandoned.as_ref().and_then(beta_variance);
+    let zombie_var = priors.zombie.as_ref().and_then(beta_variance);
 
-    let second_moment = posterior.useful * (useful_var + useful * useful)
-        + posterior.useful_bad * (useful_bad_var + useful_bad * useful_bad)
-        + posterior.abandoned * (abandoned_var + abandoned * abandoned)
-        + posterior.zombie * (zombie_var + zombie * zombie);
-
-    let mut variance = second_moment - mean * mean;
-    if variance < 0.0 && variance > -1e-12 {
-        variance = 0.0;
-    }
-    let std_dev = if variance >= 0.0 {
-        Some(variance.sqrt())
-    } else {
-        None
+    let std_dev = match (useful_var, useful_bad_var, abandoned_var, zombie_var) {
+        (Some(u_var), Some(ub_var), Some(a_var), Some(z_var)) => {
+            let second_moment = posterior.useful * (u_var + useful * useful)
+                + posterior.useful_bad * (ub_var + useful_bad * useful_bad)
+                + posterior.abandoned * (a_var + abandoned * abandoned)
+                + posterior.zombie * (z_var + zombie * zombie);
+            let mut variance = second_moment - mean * mean;
+            if variance < 0.0 && variance > -1e-12 {
+                variance = 0.0;
+            }
+            if variance >= 0.0 {
+                Some(variance.sqrt())
+            } else {
+                None
+            }
+        }
+        _ => None,
     };
 
     Some((mean, std_dev))

@@ -27,7 +27,7 @@
 //! use std::path::Path;
 //!
 //! // Write a bundle
-//! let writer = BundleWriter::new(
+//! let mut writer = BundleWriter::new(
 //!     "session-123",
 //!     "host-abc",
 //!     ExportProfile::Safe,
@@ -36,9 +36,9 @@
 //! writer.write(Path::new("session.ptb")).unwrap();
 //!
 //! // Read and verify a bundle
-//! let reader = BundleReader::open(Path::new("session.ptb")).unwrap();
+//! let mut reader = BundleReader::open(Path::new("session.ptb")).unwrap();
 //! let manifest = reader.manifest();
-//! let summary = reader.read_summary().unwrap();
+//! let summary: serde_json::Value = reader.read_summary().unwrap();
 //! ```
 
 pub mod error;

@@ -99,7 +99,7 @@ impl SessionId {
             return None;
         }
         let bytes = s.as_bytes();
-        if bytes.get(0) != Some(&b'p')
+        if bytes.first() != Some(&b'p')
             || bytes.get(1) != Some(&b't')
             || bytes.get(2) != Some(&b'-')
             || bytes.get(11) != Some(&b'-')
@@ -250,6 +250,20 @@ impl ProcessIdentity {
     }
 }
 
+fn generate_base32_suffix() -> String {
+    let uuid = uuid::Uuid::new_v4();
+    let bytes = uuid.as_bytes();
+    let mut value = ((bytes[0] as u32) << 16) | ((bytes[1] as u32) << 8) | (bytes[2] as u32);
+    value &= 0x000F_FFFF;
+    let alphabet = b"abcdefghijklmnopqrstuvwxyz234567";
+    let mut out = String::with_capacity(4);
+    for shift in [15_u32, 10, 5, 0] {
+        let idx = ((value >> shift) & 0x1F) as usize;
+        out.push(alphabet[idx] as char);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,18 +378,4 @@ mod tests {
             ProcessIdentity::full(100, start_id, 1000, None, None, IdentityQuality::PidOnly);
         assert!(!pid_only.can_safely_revalidate());
     }
-}
-
-fn generate_base32_suffix() -> String {
-    let uuid = uuid::Uuid::new_v4();
-    let bytes = uuid.as_bytes();
-    let mut value = ((bytes[0] as u32) << 16) | ((bytes[1] as u32) << 8) | (bytes[2] as u32);
-    value &= 0x000F_FFFF;
-    let alphabet = b"abcdefghijklmnopqrstuvwxyz234567";
-    let mut out = String::with_capacity(4);
-    for shift in [15_u32, 10, 5, 0] {
-        let idx = ((value >> shift) & 0x1F) as usize;
-        out.push(alphabet[idx] as char);
-    }
-    out
 }
