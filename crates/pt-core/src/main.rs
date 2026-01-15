@@ -9,7 +9,9 @@
 
 use clap::{Args, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
+use pt_core::config::{load_config, ConfigOptions, ConfigError};
 use pt_core::exit_codes::ExitCode;
+use std::path::PathBuf;
 
 /// Process Triage Core - Intelligent process classification and cleanup
 #[derive(Parser)]
@@ -256,8 +258,8 @@ struct CheckArgs {
     policy: bool,
 
     /// Check system capabilities
-    #[arg(long)]
-    capabilities: bool,
+    #[arg(long = "caps")]
+    check_capabilities: bool,
 
     /// Check all configuration
     #[arg(long)]
@@ -527,9 +529,130 @@ fn run_report(global: &GlobalOpts, _args: &ReportArgs) -> ExitCode {
     ExitCode::Clean
 }
 
-fn run_check(global: &GlobalOpts, _args: &CheckArgs) -> ExitCode {
-    output_stub(global, "check", "Configuration check not yet implemented");
-    ExitCode::Clean
+fn run_check(global: &GlobalOpts, args: &CheckArgs) -> ExitCode {
+    let session_id = SessionId::new();
+    let check_all = args.all || (!args.priors && !args.policy && !args.check_capabilities);
+
+    let mut results: Vec<serde_json::Value> = Vec::new();
+    let mut all_ok = true;
+
+    // Build config options from global opts
+    let options = ConfigOptions {
+        config_dir: global.config.as_ref().map(PathBuf::from),
+        priors_path: None,
+        policy_path: None,
+    };
+
+    // Check priors
+    if check_all || args.priors {
+        match load_config(&options) {
+            Ok(config) => {
+                let snapshot = config.snapshot();
+                results.push(serde_json::json!({
+                    "check": "priors",
+                    "status": "ok",
+                    "source": snapshot.priors_path.as_ref().map(|p| p.display().to_string()),
+                    "using_defaults": snapshot.priors_path.is_none(),
+                    "schema_version": snapshot.priors_schema_version,
+                }));
+            }
+            Err(e) => {
+                all_ok = false;
+                results.push(serde_json::json!({
+                    "check": "priors",
+                    "status": "error",
+                    "error": e.to_string(),
+                }));
+            }
+        }
+    }
+
+    // Check policy (using same config load - already validated)
+    if (check_all || args.policy) && all_ok {
+        // Already loaded above if priors was checked
+        match load_config(&options) {
+            Ok(config) => {
+                let snapshot = config.snapshot();
+                results.push(serde_json::json!({
+                    "check": "policy",
+                    "status": "ok",
+                    "source": snapshot.policy_path.as_ref().map(|p| p.display().to_string()),
+                    "using_defaults": snapshot.policy_path.is_none(),
+                    "schema_version": snapshot.policy_schema_version,
+                }));
+            }
+            Err(e) => {
+                all_ok = false;
+                results.push(serde_json::json!({
+                    "check": "policy",
+                    "status": "error",
+                    "error": e.to_string(),
+                }));
+            }
+        }
+    }
+
+    // Check capabilities
+    if check_all || args.check_capabilities {
+        // Check if we have a capabilities manifest
+        let has_capabilities = global.capabilities.is_some();
+        results.push(serde_json::json!({
+            "check": "capabilities",
+            "status": if has_capabilities { "ok" } else { "info" },
+            "manifest": global.capabilities.as_ref(),
+            "note": if has_capabilities {
+                "Capabilities manifest loaded"
+            } else {
+                "No capabilities manifest provided (will use auto-detection)"
+            },
+        }));
+    }
+
+    let response = serde_json::json!({
+        "schema_version": SCHEMA_VERSION,
+        "session_id": session_id.0,
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "status": if all_ok { "ok" } else { "error" },
+        "checks": results,
+    });
+
+    match global.format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+        }
+        OutputFormat::Summary => {
+            let status = if all_ok { "OK" } else { "FAILED" };
+            println!("[{}] check: {}", session_id, status);
+        }
+        _ => {
+            println!("# pt-core check");
+            println!();
+            for result in &results {
+                let check = result.get("check").and_then(|v| v.as_str()).unwrap_or("?");
+                let status = result.get("status").and_then(|v| v.as_str()).unwrap_or("?");
+                let symbol = match status {
+                    "ok" => "✓",
+                    "info" => "ℹ",
+                    _ => "✗",
+                };
+                println!("{} {}: {}", symbol, check, status);
+                if let Some(note) = result.get("note").and_then(|v| v.as_str()) {
+                    println!("  {}", note);
+                }
+                if let Some(error) = result.get("error").and_then(|v| v.as_str()) {
+                    println!("  Error: {}", error);
+                }
+            }
+            println!();
+            println!("Session: {}", session_id);
+        }
+    }
+
+    if all_ok {
+        ExitCode::Clean
+    } else {
+        ExitCode::ArgsError
+    }
 }
 
 fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
@@ -561,17 +684,272 @@ fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
 
 fn run_config(global: &GlobalOpts, args: &ConfigArgs) -> ExitCode {
     match &args.command {
-        ConfigCommands::Show { .. } => {
-            output_stub(global, "config show", "Config show not yet implemented");
+        ConfigCommands::Show { file } => {
+            run_config_show(global, file.as_deref())
         }
         ConfigCommands::Schema { file } => {
             output_stub(global, "config schema", &format!("Schema for {} not yet implemented", file));
+            ExitCode::Clean
         }
-        ConfigCommands::Validate { .. } => {
-            output_stub(global, "config validate", "Config validation not yet implemented");
+        ConfigCommands::Validate { path } => {
+            run_config_validate(global, path.as_ref())
         }
     }
+}
+
+/// Display the current configuration (including defaults if no files present).
+fn run_config_show(global: &GlobalOpts, file_filter: Option<&str>) -> ExitCode {
+    let session_id = SessionId::new();
+
+    // Build config options from global opts
+    let options = ConfigOptions {
+        config_dir: global.config.as_ref().map(PathBuf::from),
+        priors_path: None,
+        policy_path: None,
+    };
+
+    // Load configuration (will fall back to defaults if no files found)
+    let config = match load_config(&options) {
+        Ok(c) => c,
+        Err(e) => {
+            return output_config_error(global, &e);
+        }
+    };
+
+    let snapshot = config.snapshot();
+
+    // Build response based on filter
+    let response = match file_filter {
+        Some("priors") => {
+            serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "session_id": session_id.0,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "source": {
+                    "path": snapshot.priors_path.as_ref().map(|p| p.display().to_string()),
+                    "hash": &snapshot.priors_hash,
+                    "using_defaults": snapshot.priors_path.is_none(),
+                    "schema_version": &snapshot.priors_schema_version,
+                },
+                "priors": &config.priors
+            })
+        }
+        Some("policy") => {
+            serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "session_id": session_id.0,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "source": {
+                    "path": snapshot.policy_path.as_ref().map(|p| p.display().to_string()),
+                    "hash": &snapshot.policy_hash,
+                    "using_defaults": snapshot.policy_path.is_none(),
+                    "schema_version": &snapshot.policy_schema_version,
+                },
+                "policy": &config.policy
+            })
+        }
+        _ => {
+            // Show both
+            serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "session_id": session_id.0,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "config_dir": snapshot.config_dir.display().to_string(),
+                "priors": {
+                    "source": {
+                        "path": snapshot.priors_path.as_ref().map(|p| p.display().to_string()),
+                        "hash": snapshot.priors_hash,
+                        "using_defaults": snapshot.priors_path.is_none(),
+                        "schema_version": snapshot.priors_schema_version,
+                    },
+                    "values": &config.priors
+                },
+                "policy": {
+                    "source": {
+                        "path": snapshot.policy_path.as_ref().map(|p| p.display().to_string()),
+                        "hash": snapshot.policy_hash,
+                        "using_defaults": snapshot.policy_path.is_none(),
+                        "schema_version": snapshot.policy_schema_version,
+                    },
+                    "values": &config.policy
+                }
+            })
+        }
+    };
+
+    match global.format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+        }
+        OutputFormat::Summary => {
+            let priors_src = snapshot.priors_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "built-in defaults".to_string());
+            let policy_src = snapshot.policy_path
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| "built-in defaults".to_string());
+            println!("[{}] config: priors={} policy={}", session_id, priors_src, policy_src);
+        }
+        _ => {
+            println!("# pt-core config show");
+            println!();
+            println!("Config directory: {}", snapshot.config_dir.display());
+            println!();
+            println!("## Priors");
+            if let Some(ref path) = snapshot.priors_path {
+                println!("Source: {}", path.display());
+                println!("Hash: {}", snapshot.priors_hash.as_deref().unwrap_or("n/a"));
+            } else {
+                println!("Source: **built-in defaults** (no priors.json found)");
+            }
+            println!("Schema version: {}", snapshot.priors_schema_version);
+            println!();
+            println!("## Policy");
+            if let Some(ref path) = snapshot.policy_path {
+                println!("Source: {}", path.display());
+                println!("Hash: {}", snapshot.policy_hash.as_deref().unwrap_or("n/a"));
+            } else {
+                println!("Source: **built-in defaults** (no policy.json found)");
+            }
+            println!("Schema version: {}", snapshot.policy_schema_version);
+            println!();
+            println!("Session: {}", session_id);
+        }
+    }
+
     ExitCode::Clean
+}
+
+/// Validate configuration files.
+fn run_config_validate(global: &GlobalOpts, path: Option<&String>) -> ExitCode {
+    let session_id = SessionId::new();
+
+    // Build config options
+    let options = if let Some(p) = path {
+        // Validate specific file
+        let path_buf = PathBuf::from(p);
+        if p.contains("priors") {
+            ConfigOptions {
+                config_dir: None,
+                priors_path: Some(path_buf),
+                policy_path: None,
+            }
+        } else if p.contains("policy") {
+            ConfigOptions {
+                config_dir: None,
+                priors_path: None,
+                policy_path: Some(path_buf),
+            }
+        } else {
+            // Assume it's a config directory
+            ConfigOptions {
+                config_dir: Some(path_buf),
+                priors_path: None,
+                policy_path: None,
+            }
+        }
+    } else {
+        ConfigOptions {
+            config_dir: global.config.as_ref().map(PathBuf::from),
+            priors_path: None,
+            policy_path: None,
+        }
+    };
+
+    // Try to load and validate
+    match load_config(&options) {
+        Ok(config) => {
+            let snapshot = config.snapshot();
+            let response = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "session_id": session_id.0,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "status": "valid",
+                "priors": {
+                    "path": snapshot.priors_path.as_ref().map(|p| p.display().to_string()),
+                    "using_defaults": snapshot.priors_path.is_none(),
+                    "schema_version": snapshot.priors_schema_version,
+                },
+                "policy": {
+                    "path": snapshot.policy_path.as_ref().map(|p| p.display().to_string()),
+                    "using_defaults": snapshot.policy_path.is_none(),
+                    "schema_version": snapshot.policy_schema_version,
+                }
+            });
+
+            match global.format {
+                OutputFormat::Json => {
+                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                }
+                OutputFormat::Summary => {
+                    println!("[{}] config validate: OK", session_id);
+                }
+                _ => {
+                    println!("# Configuration Validation");
+                    println!();
+                    println!("Status: ✓ Valid");
+                    if snapshot.priors_path.is_some() {
+                        println!("Priors: {}", snapshot.priors_path.unwrap().display());
+                    } else {
+                        println!("Priors: using built-in defaults");
+                    }
+                    if snapshot.policy_path.is_some() {
+                        println!("Policy: {}", snapshot.policy_path.unwrap().display());
+                    } else {
+                        println!("Policy: using built-in defaults");
+                    }
+                }
+            }
+
+            ExitCode::Clean
+        }
+        Err(e) => {
+            output_config_error(global, &e)
+        }
+    }
+}
+
+/// Output a config error in the appropriate format.
+fn output_config_error(global: &GlobalOpts, error: &ConfigError) -> ExitCode {
+    let session_id = SessionId::new();
+
+    let (error_code, exit_code) = match error {
+        ConfigError::NotFound { .. } => (10, ExitCode::ArgsError),
+        ConfigError::ParseError { .. } => (11, ExitCode::ArgsError),
+        ConfigError::SchemaError { .. } => (11, ExitCode::ArgsError),
+        ConfigError::ValidationError(_) => (11, ExitCode::ArgsError),
+        ConfigError::IoError { .. } => (21, ExitCode::IoError),
+        ConfigError::VersionMismatch { .. } => (13, ExitCode::VersionError),
+    };
+
+    let response = serde_json::json!({
+        "schema_version": SCHEMA_VERSION,
+        "session_id": session_id.0,
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "status": "error",
+        "error": {
+            "code": error_code,
+            "message": error.to_string(),
+        }
+    });
+
+    match global.format {
+        OutputFormat::Json => {
+            eprintln!("{}", serde_json::to_string_pretty(&response).unwrap());
+        }
+        OutputFormat::Summary => {
+            eprintln!("[{}] config error: {}", session_id, error);
+        }
+        _ => {
+            eprintln!("# Configuration Error");
+            eprintln!();
+            eprintln!("Error: {}", error);
+        }
+    }
+
+    exit_code
 }
 
 #[cfg(feature = "daemon")]
