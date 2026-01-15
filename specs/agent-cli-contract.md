@@ -43,7 +43,7 @@ Example: pt-20260115-143022-a7b3
 | `pt-` | Fixed prefix for identification |
 | `YYYYMMDD` | Date in UTC |
 | `HHMMSS` | Time in UTC |
-| `XXXX` | 4-character random suffix (hex) |
+| `XXXX` | 4-character random suffix (base32, lowercase a-z2-7) |
 
 ### 2.2 Session Lifecycle
 
