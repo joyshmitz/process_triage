@@ -481,7 +481,7 @@ Command surface (agent-optimized “session pipeline”; wrapper `pt` forwards t
 - `pt agent tail --session <id> [--format jsonl]`
 5) Export / report (shareable artifacts)
 - `pt agent export --session <id> --out bundle.ptb [--profile minimal|safe|forensic]`
-- `pt agent report --session <id> --out report.html [--bundle bundle.ptb] [--profile minimal|safe|forensic] [--galaxy-brain]`
+- `pt agent report --session <id> --out report.html [--bundle bundle.ptb] [--profile minimal|safe|forensic] [--galaxy-brain] [--embed-assets]`
 6) Inbox (daemon-driven “plans ready for review”)
 - `pt agent inbox [--limit N] [--format json|md]`
   - Lists pending sessions/plans created by dormant mode escalation.
@@ -1188,6 +1188,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - Automation tests: `--robot`/`--shadow`/`--dry-run` behavior (no prompts; correct gating; no actions in shadow/dry-run)
 - Agent CLI contract tests: schema invariants + exit codes + token-efficiency flags (`--compact`, `--fields`, `--only`) + JSONL progress stream.
 - Bundle/report tests: `.ptb` manifest/checksums, profile redaction guarantees, and report generator outputs (single HTML file with pinned CDN assets + SRI).
+- Offline report tests: `--embed-assets` produces a self-contained HTML file with no network fetch requirements.
 - Galaxy-brain mode tests: math ledger includes equations + concrete numbers and matches the underlying inference outputs.
 - Dormant daemon tests: low overhead, trigger correctness, cooldown/backoff behavior, escalation produces a session + inbox entry.
 - Shadow mode metrics: false kill rate, missed abandonment rate
@@ -1214,7 +1215,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - `priors.json`, `policy.json`, and a versioned redaction/hashing policy used by telemetry
 - Parquet-first telemetry lake (raw + derived + outcomes) with DuckDB views/macros for standard reports (calibration, PAC-Bayes bounds, FDR, “why” breakdown)
 - Agent/robot CLI contract (plan/explain/apply/sessions/tail/inbox/export/report) with stable schemas and automation-friendly exit codes.
-- Shareable `.ptb` session bundles (profiles + optional encryption) and premium single-file HTML report generation (CDN-loaded, pinned + SRI, includes galaxy-brain view).
+- Shareable `.ptb` session bundles (profiles + optional encryption) and premium single-file HTML report generation (CDN-loaded, pinned + SRI, includes galaxy-brain view, optional `--embed-assets` offline fallback).
 - Dormant-mode daemon (`ptd`) + systemd/launchd units and an inbox UX for pending triage plans.
 - Enhanced README with math, safety guarantees, telemetry governance, and reproducible analysis workflow
 - Expanded tests: Rust unit/integration + wrapper smoke tests (BATS or equivalent)
