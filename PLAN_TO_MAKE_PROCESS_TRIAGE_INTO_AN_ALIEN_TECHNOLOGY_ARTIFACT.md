@@ -41,17 +41,17 @@ A) Basic closed-form Bayesian model (non-ML)
 - Likelihoods (keep the runtime “decision core” conjugate and log-domain numerically stable):
   - CPU occupancy from tick deltas: k_ticks|C ~ Binomial(n_ticks, p_{u,C}), p_{u,C} ~ Beta(alpha_C, beta_C)
     - k_ticks = Δticks over window Δt (from /proc/PID/stat)
-    - n_ticks = round(HZ * Δt * min(N_eff_cores, threads))  (where N_eff_cores accounts for affinity/cpuset/quota when available)
-    - u = k_ticks / n_ticks (derived occupancy estimate in [0,1]); posterior for p_{u,C} is Beta(alpha_C+k_ticks, beta_C+n_ticks-k_ticks)
+    - n_ticks = round(CLK_TCK * Δt * min(N_eff_cores, threads))  (where CLK_TCK = sysconf(_SC_CLK_TCK), and N_eff_cores accounts for affinity/cpuset/quota when available)
+    - u = k_ticks / n_ticks (derived occupancy estimate; clamp to [0,1] if rounding/noise yields slight overflow); posterior for p_{u,C} is Beta(alpha_C+k_ticks, beta_C+n_ticks-k_ticks)
   - t|C ~ Gamma(k_C, theta_C)
   - orphan o|C ~ Bernoulli(p_{o,C}), p_{o,C} ~ Beta(a_{o,C}, b_{o,C})
-  - state flags s|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha_C)
-  - command/CWD categories g|C ~ Categorical(rho_C), rho_C ~ Dirichlet(alpha_C)
+  - state flags s|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha^{state}_C)
+  - command/CWD categories g|C ~ Categorical(rho_C), rho_C ~ Dirichlet(alpha^{cmd}_C)
 - Posterior (Naive Bayes):
   P(C|x) proportional to P(C) * product_j P(x_j|C)
 - Log-posterior formula:
   log P(C|x) = log P(C) + log BetaBinomial(k_ticks; n_ticks, alpha_C, beta_C) + log GammaPDF(t; k_C, theta_C)
-                + log BetaBernoulliPred(o; a_{o,C}, b_{o,C}) + log rho_{C,g} + ...
+                + log BetaBernoulliPred(o; a_{o,C}, b_{o,C}) + log DirichletCatPred(g; alpha^{cmd}_C) + ...
   (categorical terms use Dirichlet-Multinomial posterior-predictives; decision core uses log-domain Beta/Gamma/Dirichlet special functions, not heuristic approximations)
 
 B) Decision rule via expected loss (Bayesian risk)
@@ -227,7 +227,7 @@ AP) Martingale concentration / sequential bounds
 - Azuma/Freedman bounds for sustained anomaly detection
 
 AQ) Graph signal processing / Laplacian regularization
-- Smooth posteriors on PPID tree; MAP via MRF with closed-form quadratic form
+- Smooth log-odds/natural parameters on the PPID tree via a Laplacian regularizer (a pragmatic denoising layer; if you relax to a Gaussian field it becomes a quadratic form)
 
 AR) Renewal reward / semi-regenerative processes
 - Model event rewards (CPU/IO) between renewals with conjugate updates
@@ -415,12 +415,12 @@ All of these are integrated in the system design below.
 
 ### 3.2 Feature Layer
 - Feature computation is deterministic and provenance-aware: each derived quantity records its input sources and time window so it can be recomputed and debugged from telemetry.
-- Δt: scan window duration (seconds), HZ: scheduler ticks per second
+- Δt: scan window duration (seconds), CLK_TCK: process CPU-time ticks per second (sysconf(_SC_CLK_TCK))
 - N_eff_cores: effective core capacity available to the process (honor affinity/cpuset/quota when available; else total logical CPUs)
 - k_ticks: CPU tick delta over Δt (utime+stime delta)
-- n_ticks: integer tick budget over Δt: n_ticks = round(HZ * Δt * min(N_eff_cores, threads))
-- u: CPU usage normalized to effective available capacity in [0,1]: u = k_ticks / n_ticks
-- u_cores: estimated cores used (can exceed 1): u_cores = k_ticks / (HZ * Δt)
+- n_ticks: integer tick budget over Δt: n_ticks = round(CLK_TCK * Δt * min(N_eff_cores, threads))
+- u: CPU occupancy fraction (clamp to [0,1] if rounding/noise yields slight overflow): u = k_ticks / n_ticks
+- u_cores: estimated cores used (can exceed 1): u_cores = k_ticks / (CLK_TCK * Δt)
 - n_samp: number of quick-scan samples in the window (used for trend/change-point features)
 - t: elapsed time (seconds)
 - o: orphan indicator (PPID=1)
@@ -612,10 +612,11 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 4.2 Priors and Likelihoods (Conjugate)
 - CPU occupancy from tick deltas: p_{u,C} ~ Beta(alpha_C, beta_C), k_ticks|p_{u,C},C ~ Binomial(n_ticks, p_{u,C}). (Use the Beta-Binomial posterior-predictive for k_ticks; u = k_ticks/n_ticks is a derived occupancy estimate. Posterior: p_{u,C}|data ~ Beta(alpha_C+k_ticks, beta_C+n_ticks-k_ticks).)
+  - Modeling note: Binomial independence is an approximation (ticks are temporally correlated). To avoid overconfidence, optionally use an effective tick count n_eff (derived from autocorrelation/dispersion) in place of n_ticks; validate via shadow-mode calibration.
 - Runtime t|C ~ Gamma(k_C, theta_C)
 - Orphan o|C ~ Bernoulli(p_{o,C}), p_{o,C} ~ Beta(a_{o,C}, b_{o,C})
-- State flags s|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha_C)
-- Command/CWD g|C ~ Categorical(rho_C), rho_C ~ Dirichlet(alpha_C)
+- State flags s|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha^{state}_C)
+- Command/CWD g|C ~ Categorical(rho_C), rho_C ~ Dirichlet(alpha^{cmd}_C)
 - TTY activity y|C ~ Bernoulli(q_C), q_C ~ Beta(a_{tty,C}, b_{tty,C})
 - Net activity nu|C ~ Bernoulli(r_C), r_C ~ Beta(a_{net,C}, b_{net,C})
 
@@ -626,8 +627,8 @@ C in {useful, useful-but-bad, abandoned, zombie}
                + log BetaBinomial(k_ticks; n_ticks, alpha_C, beta_C)
                + log GammaPDF(t; k_C, theta_C)
                + log BetaBernoulliPred(o; a_{o,C}, b_{o,C})
-               + log rho_{C,g} + ...
-  where BetaBernoulliPred(o; a,b) = a/(a+b) if o=1 else b/(a+b), and categorical terms use Dirichlet-Multinomial posterior-predictives
+               + log DirichletCatPred(g; alpha^{cmd}_C) + ...
+  where BetaBernoulliPred(o; a,b) = a/(a+b) if o=1 else b/(a+b), DirichletCatPred(g; α_vec) = α_vec[g]/sum(α_vec), and categorical terms use Dirichlet-Multinomial posterior-predictives
 - Marginalize nuisance parameters with conjugate priors:
   - Beta-Binomial for CPU occupancy
   - Beta-Bernoulli for orphan, TTY, and net activity
@@ -640,8 +641,8 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 4.5 Semi-Markov and Competing Hazards
 - hidden semi-Markov states S_t
 - duration D_S ~ Gamma(k_S, theta_S)
-- competing hazards: lambda_finish, lambda_abandon, lambda_bad
-- survival term (constant hazards): P(still running | t, C) = exp(-(lambda_finish+lambda_abandon+lambda_bad) * t)
+- competing hazards (per class/state): lambda_finish,C, lambda_abandon,C, lambda_bad,C
+- survival term (constant hazards): P(still running | t, C) = exp(-(lambda_finish,C+lambda_abandon,C+lambda_bad,C) * t)
 - Gamma priors on hazard rates yield closed-form posterior
 - With Gamma(α,β) prior on λ (rate parameterization), the marginal survival is Lomax/Pareto-II: P(T>t) = (β/(β+t))^α
 
@@ -682,6 +683,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - For each action a in {pause, throttle, kill}, define outcome O in {recover, no_recover}
 - O|a,C ~ Bernoulli(theta_{a,C}), theta_{a,C} ~ Beta(alpha_{a,C}, beta_{a,C})
 - Compare P(O=recover | do(a)) using conjugate Beta-Bernoulli marginals
+- Causal identification note: treat do(a) estimates as decision-analytic “what happens if we apply a” models; strict causal claims require assumptions (or explicit randomized experiments in shadow mode)
 
 ### 4.11 Wonham Filtering and Gittins Indices
 - Wonham filtering for continuous-time partial observability of S_t
@@ -774,7 +776,8 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 4.32 FDR Control (Many-Process Safety)
 - Treat “kill-recommended” as multiple hypothesis tests across many PIDs
 - Use local false discovery rate: lfdr_i = P(useful_i | x_i)
-- Select a kill set K that controls expected false-kill proportion (BH-style on lfdr or p-values from Bayes factors)
+- Bayesian FDR rule of thumb: sort by lfdr_i (ascending) and take the largest prefix K such that (1/|K|) * Σ_{i∈K} lfdr_i ≤ α
+- If additionally emitting p-values/e-values from Bayes factors/likelihood ratios, apply the corresponding BH/BY (p-values) or e-FDR (e-values) procedure consistently
 - Dependence matters: process hypotheses are not independent (shared PPID tree, shared cgroups/units, shared IO bottlenecks). The default should be conservative under dependence (e.g., Benjamini–Yekutieli) or hierarchical/group FDR (family = process group / systemd unit / container).
 - Modern “anytime” framing (fits pt well): use e-values/e-processes derived from likelihood ratios/Bayes factors so optional stopping and sequential scanning remain valid, then apply an e-FDR control procedure (and connect it directly to online alpha-investing in section 4.40).
 
@@ -868,7 +871,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 5.8 FDR-Gated Kill Set Selection
 - Rank candidate kills by lfdr_i = P(useful_i | x_i) (lower is “safer to kill”)
-- Choose the largest set K such that estimated FDR(K) <= alpha (shadow-mode calibrated)
+- Choose the largest set K such that estimated FDR(K) <= alpha (e.g., estimated FDR(K) = (1/|K|) * Σ_{i∈K} lfdr_i; shadow-mode calibration can tighten/validate this)
 - This prevents “scan many processes and inevitably kill one useful one”
 - Under dependence (shared PPID/cgroups), default to conservative or structured FDR control (BY, group/hierarchical FDR by unit/container/process-group) rather than assuming independence.
 
@@ -1155,10 +1158,10 @@ Install workflow:
 Capability matrix (signal -> tool -> OS support -> fallback):
 - syscalls/IO events: bpftrace/bcc (Linux), dtruss (macOS if permitted) -> fallback: strace
 - CPU cycles/cache/branch: perf (Linux), powermetrics (macOS) -> fallback: sample
-- per-PID IO bandwidth: iotop (Linux), fs_usage (macOS) -> fallback: /proc/PID/io
-- per-PID network: nethogs/iftop (Linux), nettop (macOS) -> fallback: ss + lsof
+- per-PID IO bandwidth: iotop (Linux), fs_usage (macOS) -> fallback: Linux: /proc/PID/io; macOS: none (fs_usage is the primary)
+- per-PID network: nethogs/iftop (Linux), nettop (macOS) -> fallback: Linux: ss + lsof; macOS: lsof -i + netstat (coarse)
 - run-queue + CPU load: mpstat/vmstat/sar (Linux), powermetrics (macOS) -> fallback: uptime/loadavg
-- FD churn + sockets: lsof (Linux/macOS) -> fallback: /proc/PID/fd
+- FD churn + sockets: lsof (Linux/macOS) -> fallback: Linux: /proc/PID/fd; macOS: lsof -p
 - scheduler latency: bpftrace/bcc (Linux) -> fallback: perf sched (Linux) or none
 - PSI stall pressure: /proc/pressure/* (Linux) -> fallback: none
 - cgroup pressure: systemd-cgtop/cgget (Linux) -> fallback: /sys/fs/cgroup
