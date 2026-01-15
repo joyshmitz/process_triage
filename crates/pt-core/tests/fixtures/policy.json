@@ -35,6 +35,7 @@
   "guardrails": {
     "protected_patterns": [],
     "protected_users": ["root"],
+    "never_kill_ppid": [],
     "max_kills_per_run": 5,
     "min_process_age_seconds": 300,
     "require_confirmation": true
@@ -42,11 +43,18 @@
   "robot_mode": {
     "enabled": false,
     "min_posterior": 0.95,
-    "max_kills": 3
+    "max_blast_radius_mb": 1000.0,
+    "max_kills": 3,
+    "require_known_signature": false
   },
   "fdr_control": {
     "enabled": true,
     "method": "bh",
     "alpha": 0.05
+  },
+  "data_loss_gates": {
+    "block_if_open_write_fds": true,
+    "block_if_locked_files": true,
+    "block_if_active_tty": true
   }
 }
