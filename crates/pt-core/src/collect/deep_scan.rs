@@ -293,8 +293,8 @@ fn scan_process(pid: u32, include_environ: bool) -> Result<DeepScanRecord, DeepS
     let status_content = fs::read_to_string(format!("{}/status", proc_path)).ok();
     let (uid, user) = status_content
         .as_ref()
-        .map(|c| parse_uid_from_status(c))
-        .unwrap_or((0, "unknown".to_string()));
+        .and_then(|c| parse_uid_from_status(c))
+        .unwrap_or((u32::MAX, "unknown".to_string()));
 
     // Read cmdline
     let cmdline = fs::read_to_string(format!("{}/cmdline", proc_path))
@@ -422,24 +422,23 @@ fn parse_stat(content: &str, pid: u32) -> Result<StatInfo, DeepScanError> {
 }
 
 /// Parse UID and username from /proc/[pid]/status.
-fn parse_uid_from_status(content: &str) -> (u32, String) {
-    let mut uid = 0u32;
+fn parse_uid_from_status(content: &str) -> Option<(u32, String)> {
+    let mut uid = None;
 
     for line in content.lines() {
         if line.starts_with("Uid:") {
             // Format: "Uid:\t1000\t1000\t1000\t1000"
             // First value is real UID
             if let Some(uid_str) = line.split_whitespace().nth(1) {
-                uid = uid_str.parse().unwrap_or(0);
+                if let Ok(val) = uid_str.parse::<u32>() {
+                    uid = Some(val);
+                }
             }
             break;
         }
     }
 
-    // Try to resolve username from UID
-    let user = resolve_username(uid);
-
-    (uid, user)
+    uid.map(|u| (u, resolve_username(u)))
 }
 
 /// Resolve username from UID.
@@ -533,7 +532,9 @@ Uid:	1000	1000	1000	1000
 Gid:	1000	1000	1000	1000
 "#;
 
-        let (uid, _user) = parse_uid_from_status(content);
+        let result = parse_uid_from_status(content);
+        assert!(result.is_some());
+        let (uid, _user) = result.unwrap();
         assert_eq!(uid, 1000);
     }
 

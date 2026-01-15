@@ -297,7 +297,7 @@ mod check_command {
             .success()
             .stdout(predicate::str::contains("--priors"))
             .stdout(predicate::str::contains("--policy"))
-            .stdout(predicate::str::contains("--capabilities"));
+            .stdout(predicate::str::contains("--check-capabilities"));
     }
 }
 

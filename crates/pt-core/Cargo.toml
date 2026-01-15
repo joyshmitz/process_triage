@@ -25,6 +25,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "1"
 dirs = "5"
 libc = "0.2"
+regex = "1"
 
 # Structured logging
 tracing = "0.1"

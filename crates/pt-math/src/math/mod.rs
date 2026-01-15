@@ -7,3 +7,4 @@ pub mod binomial;
 pub mod dirichlet;
 pub mod gamma;
 pub mod posterior;
+pub mod bayes_factor;

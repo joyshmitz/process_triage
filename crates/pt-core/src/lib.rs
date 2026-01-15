@@ -15,6 +15,7 @@ pub mod decision;
 pub mod exit_codes;
 pub mod inference;
 pub mod logging;
+pub mod plan;
 
 // Re-export test utilities for integration tests
 #[cfg(test)]
