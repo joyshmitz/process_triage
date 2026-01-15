@@ -32,6 +32,8 @@ pub mod systemd;
 pub mod tick_delta;
 pub mod tool_runner;
 mod types;
+#[cfg(target_os = "linux")]
+pub mod user_intent;
 
 #[cfg(test)]
 mod real_tests;
@@ -101,4 +103,12 @@ pub use tick_delta::{
     clk_tck, collect_tick_snapshot, compute_tick_delta, parse_tick_snapshot, sample_tick_delta,
     BudgetConstraint, NEffPolicy, TickDeltaConfig, TickDeltaFeatures, TickDeltaProvenance,
     TickSnapshot,
+};
+
+// Re-export user-intent feature types
+#[cfg(target_os = "linux")]
+pub use user_intent::{
+    collect_user_intent, collect_user_intent_batch, IntentEvidence, IntentMetadata,
+    IntentSignalType, PrivacyMode, ScoringMethod, UserIntentConfig, UserIntentFeatures,
+    UserIntentProvenance, USER_INTENT_SCHEMA_VERSION,
 };
