@@ -1,5 +1,7 @@
 //! Action execution system.
 
+#[cfg(target_os = "linux")]
+pub mod cgroup_throttle;
 pub mod executor;
 pub mod prechecks;
 pub mod recovery;
@@ -15,6 +17,11 @@ pub use executor::{
 };
 pub use recovery::{plan_recovery, ActionFailure, FailureKind, RecoveryDecision, RetryPolicy};
 pub use renice::{ReniceActionRunner, ReniceConfig, DEFAULT_NICE_VALUE, MAX_NICE_VALUE};
+#[cfg(target_os = "linux")]
+pub use cgroup_throttle::{
+    can_throttle_process, CpuThrottleActionRunner, CpuThrottleConfig, ThrottleResult,
+    ThrottleReversalMetadata, DEFAULT_PERIOD_US, DEFAULT_THROTTLE_FRACTION, MIN_QUOTA_US,
+};
 #[cfg(target_os = "linux")]
 pub use signal::LiveIdentityProvider;
 #[cfg(unix)]
