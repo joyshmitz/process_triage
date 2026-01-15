@@ -19,6 +19,7 @@ use super::proc_parsers::{
     parse_cgroup, parse_environ, parse_fd, parse_io, parse_sched, parse_schedstat, parse_statm,
     parse_wchan, CgroupInfo, FdInfo, IoStats, MemStats, SchedInfo, SchedStats,
 };
+use super::network::{NetworkInfo, NetworkSnapshot};
 use crate::events::{event_names, Phase, ProgressEmitter, ProgressEvent};
 use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use serde::{Deserialize, Serialize};
@@ -142,6 +143,10 @@ pub struct DeepScanRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wchan: Option<String>,
 
+    /// Network connection info.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network: Option<NetworkInfo>,
+
     /// Environment variables (if requested and accessible).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub environ: Option<std::collections::HashMap<String, String>>,
@@ -236,6 +241,9 @@ pub fn deep_scan(options: &DeepScanOptions) -> Result<DeepScanResult, DeepScanEr
     // Initialize user cache to avoid reading /etc/passwd for every process
     let user_cache = UserCache::new();
 
+    // Initialize network snapshot once for O(1) lookups per process
+    let network_snapshot = NetworkSnapshot::collect();
+
     // Read boot_id once
     let boot_id = fs::read_to_string("/proc/sys/kernel/random/boot_id")
         .ok()
@@ -262,7 +270,13 @@ pub fn deep_scan(options: &DeepScanOptions) -> Result<DeepScanResult, DeepScanEr
     const PROGRESS_STEP: usize = 50;
 
     for pid in &pids {
-        match scan_process(*pid, options.include_environ, &user_cache, &boot_id) {
+        match scan_process(
+            *pid,
+            options.include_environ,
+            &user_cache,
+            &boot_id,
+            &network_snapshot,
+        ) {
             Ok(record) => processes.push(record),
             Err(e) => {
                 if options.skip_inaccessible {
@@ -367,6 +381,7 @@ fn scan_process(
     include_environ: bool,
     user_cache: &UserCache,
     boot_id: &Option<String>,
+    network_snapshot: &NetworkSnapshot,
 ) -> Result<DeepScanRecord, DeepScanError> {
     let proc_path = format!("/proc/{}", pid);
 
@@ -422,6 +437,7 @@ fn scan_process(
     let fd = parse_fd(pid);
     let cgroup = parse_cgroup(pid);
     let wchan = parse_wchan(pid);
+    let network = network_snapshot.get_process_info(pid);
 
     // Collect environment variables if requested (may contain sensitive data)
     let environ = if include_environ {
@@ -449,6 +465,7 @@ fn scan_process(
         fd,
         cgroup,
         wchan,
+        network,
         environ,
         starttime: stat_info.starttime,
         source: "deep_scan".to_string(),
@@ -677,7 +694,8 @@ Gid:	1000	1000	1000	1000
         let pid = std::process::id();
         let user_cache = UserCache::new();
         let boot_id = None;
-        let record = scan_process(pid, false, &user_cache, &boot_id).unwrap();
+        let network_snapshot = NetworkSnapshot::collect();
+        let record = scan_process(pid, false, &user_cache, &boot_id, &network_snapshot).unwrap();
 
         assert_eq!(record.pid.0, pid);
         assert!(record.ppid.0 > 0);
@@ -764,8 +782,15 @@ Gid:	1000	1000	1000	1000
         let boot_id = fs::read_to_string("/proc/sys/kernel/random/boot_id")
             .ok()
             .map(|s| s.trim().to_string());
+        let network_snapshot = NetworkSnapshot::collect();
 
-        let record = scan_process(proc.pid(), true, &user_cache, &boot_id);
+        let record = scan_process(
+            proc.pid(),
+            true,
+            &user_cache,
+            &boot_id,
+            &network_snapshot,
+        );
         crate::test_log!(
             INFO,
             "scan_process result",

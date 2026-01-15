@@ -350,6 +350,14 @@ fn test_expected_loss_no_feasible_actions() {
                 reason: "test".to_string(),
             },
             DisabledAction {
+                action: Action::Renice,
+                reason: "test".to_string(),
+            },
+            DisabledAction {
+                action: Action::Freeze,
+                reason: "test".to_string(),
+            },
+            DisabledAction {
                 action: Action::Throttle,
                 reason: "test".to_string(),
             },

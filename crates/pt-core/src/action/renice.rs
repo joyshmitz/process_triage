@@ -270,10 +270,6 @@ mod tests {
                 let nice = runner.get_nice_value(pid);
                 assert_eq!(nice, Some(15), "expected nice value 15");
             }
-
-            // Kill and cleanup
-            let _ = child.kill();
-            let _ = child.wait();
         }
 
         #[test]
