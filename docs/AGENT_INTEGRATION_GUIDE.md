@@ -1,10 +1,24 @@
 # Agent Integration Guide
 
-> **Bead**: `process_triage-835.2`
-> **Status**: Active
 > **Version**: 1.0.0
 
 This guide helps AI agents integrate with the `pt agent` CLI interface. It covers the mental model, common workflows, output parsing, safety guarantees, and best practices.
+
+## ⚠️ Implementation Status
+
+This documentation describes both **currently available features** and **planned features** from the agent CLI contract specification. The following table summarizes what's implemented:
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| `pt robot plan` | ✅ Implemented | `--deep`, `--min-age`, `--format`, `--only`, `--limit` |
+| `pt robot apply` | ✅ Implemented | `--recommended`, `--pids`, `--yes`, `--format` |
+| `pt robot explain` | ✅ Implemented | `--pid`, `--deep`, `--format` |
+| Session management (`--session`) | 🚧 Planned | Session-based workflow not yet available |
+| Safety gates (`--min-posterior`, `--max-kills`) | 🚧 Planned | Currently uses default policy |
+| Pattern filtering (`--patterns`) | 🚧 Planned | Filter by process name patterns |
+| `pt export`, `pt report` | 🚧 Planned | Export and HTML report generation |
+
+**For immediate use**: Focus on the "Currently Implemented" workflows in the [Quickstart](#quickstart-workflows) section. Sections marked with 🚧 describe planned features.
 
 ---
 
@@ -78,23 +92,51 @@ Example: `pt-20260115-143022-a7xq`
 
 ## Quickstart Workflows
 
-### Minimal One-Shot Cleanup
+### Currently Implemented
+
+These workflows work with the current implementation:
+
+#### Conservative Scan (Information Only)
 
 ```bash
-# Generate plan and apply recommendations in one flow
+# Scan and report in JSON, no actions taken
+pt robot plan --format json --limit 10
+
+# With deep inspection (more evidence, slower)
+pt robot plan --deep --format json
+```
+
+#### One-Shot Cleanup
+
+```bash
+# Apply all KILL recommendations (requires explicit --yes)
+pt robot apply --recommended --yes --format json
+
+# Kill specific PIDs
+pt robot apply --pids 1234,5678 --yes --format json
+```
+
+#### Explain a Process
+
+```bash
+# Get detailed analysis of a single process
+pt robot explain --pid 1234 --format json
+```
+
+### 🚧 Planned: Session-Based Workflows
+
+The following session-based workflows are part of the target contract but not yet implemented:
+
+#### Session-Based Cleanup (Planned)
+
+```bash
+# Generate plan and capture session ID
 SESSION=$(pt agent plan --format json | jq -r .session_id)
 pt agent apply --session "$SESSION" --recommended --yes
 pt agent verify --session "$SESSION"
 ```
 
-### Conservative Scan (Information Only)
-
-```bash
-# Just scan and report, no actions
-pt agent plan --format json --limit 10
-```
-
-### High-Confidence Autonomous Cleanup
+#### High-Confidence Autonomous Cleanup (Planned)
 
 ```bash
 # Only act on very confident classifications
@@ -106,7 +148,7 @@ pt agent apply --session "$SESSION" \
   --max-blast-radius 2GB
 ```
 
-### Resuming an Interrupted Session
+#### Resuming an Interrupted Session (Planned)
 
 ```bash
 # Check status of existing session
@@ -429,15 +471,25 @@ Process Triage uses **False Discovery Rate** control:
 
 ## Best Practices
 
-### 1. Always Use Sessions
+### 1. Plan Before Apply
 
 ```bash
-# Good: Explicit session management
+# Good: Review plan before applying
+pt robot plan --format json | jq '.candidates[] | {pid, cmd_short, recommendation}'
+# Then apply based on what you saw
+pt robot apply --recommended --yes --format json
+```
+
+### 🚧 1b. Use Sessions (Planned)
+
+When sessions are implemented, always use explicit session management:
+
+```bash
+# Good: Explicit session management (planned)
 SESSION=$(pt agent plan --format json | jq -r .session_id)
 pt agent apply --session "$SESSION" --recommended --yes
 
-# Bad: Re-scanning each time (inconsistent state)
-pt agent apply --recommended --yes
+# Why: Ensures plan and apply operate on the same snapshot
 ```
 
 ### 2. Validate Schema Version
@@ -454,7 +506,7 @@ def parse_plan(output):
 ### 3. Handle All Exit Codes
 
 ```bash
-pt agent apply --session "$SESSION" --recommended --yes
+pt robot apply --recommended --yes --format json
 case $? in
     0) echo "Clean system, nothing to do" ;;
     1) echo "Plan ready, no actions taken" ;;
@@ -466,17 +518,20 @@ case $? in
 esac
 ```
 
-### 4. Set Confidence Thresholds
+### 🚧 4. Set Confidence Thresholds (Planned)
 
-For autonomous operation, require high confidence:
+When safety gates are implemented, autonomous operation should require high confidence:
 
 ```bash
+# Planned: Fine-grained safety controls
 pt agent apply --session "$SESSION" \
   --recommended --yes \
   --min-posterior 0.99 \
   --max-kills 3 \
   --max-blast-radius 1GB
 ```
+
+Currently, the default policy provides safety through protected process lists and posterior thresholds built into the recommendation logic.
 
 ### 5. Use Field Projection for Large Systems
 
@@ -508,12 +563,12 @@ for candidate in plan["candidates"]:
         # e.g., "systemctl --user stop my-app.service"
 ```
 
-### 8. Respect Resumability
+### 🚧 8. Respect Resumability (Planned)
 
-If interrupted, don't start fresh:
+When sessions are implemented, interrupted workflows can be resumed:
 
 ```bash
-# Check if resumable
+# Planned: Check if resumable
 STATUS=$(pt agent status --session "$SESSION")
 if echo "$STATUS" | jq -e '.resumable' > /dev/null; then
     pt agent apply --session "$SESSION" --resume
@@ -525,7 +580,9 @@ fi
 
 ---
 
-## Real Workflow Examples
+## 🚧 Real Workflow Examples (Planned Features)
+
+These examples demonstrate the **target workflow patterns** using planned features like sessions, pattern filtering, and safety gates. They show the intended design but use features not yet implemented.
 
 ### Example 1: Development Machine Cleanup Agent
 

@@ -149,15 +149,17 @@ Posterior probabilities translate to confidence:
 
 ### Evidence Ledger (Galaxy-Brain Mode)
 
-For full transparency, enable the evidence ledger:
+For full transparency, use the deep scan with JSON output:
 
 ```bash
-pt deep --verbose
+pt deep
+# Or for agent/scripted use with detailed output:
+pt robot plan --deep --format json
 ```
 
-This shows the Bayesian math behind each decision:
+The JSON output includes the evidence behind each decision:
 - Prior probabilities for each class
-- Likelihood contributions from each evidence source
+- Evidence source contributions
 - Final posterior computation
 - Decision rationale
 
@@ -345,37 +347,41 @@ export PROCESS_TRIAGE_NO_PERSIST=1
 
 ## Sharing and Reproducibility
 
-### Session Bundles (`.ptb`)
+> **Note**: The export and report commands below are part of the planned feature set and not yet implemented. Currently, use `pt robot plan --format json > plan.json` to capture session data.
+
+### Session Bundles (`.ptb`) — Planned
 
 Export a complete session for sharing or archival:
 
 ```bash
+# Planned feature
 pt export --session pt-20260115-143022-a7xq --profile share
 ```
 
-Creates a `.ptb` bundle containing:
+Will create a `.ptb` bundle containing:
 - Session manifest and plan
 - Redacted process metadata
 - Evidence summaries (no raw data)
 - Decision rationale
 
-Bundles are optionally encrypted for sensitive environments.
+Bundles will be optionally encrypted for sensitive environments.
 
-### HTML Reports
+### HTML Reports — Planned
 
 Generate a human-readable report:
 
 ```bash
+# Planned feature
 pt report --session pt-20260115-143022-a7xq --output report.html
 ```
 
-Reports include:
+Reports will include:
 - Executive summary
 - Candidate details with evidence
 - Actions taken and outcomes
 - System resource impact
 
-Two modes:
+Two modes planned:
 - **CDN mode** (default): Smaller file, requires internet for styling
 - **Offline mode** (`--embed-assets`): Self-contained, works without network
 
@@ -409,10 +415,10 @@ This is often expected! If your system is clean, `pt` won't invent problems. Com
 - **No matching patterns**: Your processes don't match known suspicious patterns
 - **Clean system**: Congratulations!
 
-To lower thresholds for testing:
+To lower thresholds for testing, use the robot/agent interface:
 
 ```bash
-pt scan --min-age 60  # 1 minute instead of 1 hour
+pt robot plan --min-age 60  # 1 minute instead of 1 hour
 ```
 
 ### Permission errors
