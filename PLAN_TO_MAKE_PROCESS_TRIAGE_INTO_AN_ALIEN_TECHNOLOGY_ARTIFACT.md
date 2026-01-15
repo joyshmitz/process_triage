@@ -2331,6 +2331,115 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - Compute PAC-Bayes bounds, FDR metrics, calibration curves, and posterior predictive check summaries as first-class artifacts
 - Update priors with conjugate updates and (when enabled) empirical Bayes hyperparameter refits from shadow-mode logs
 
+### Phase 10: Supervisor Detection and Supervisor-Aware Actions
+- Implement supervisor detection heuristics (section 6.1):
+  - systemd: `systemctl status <pid>` + cgroup inspection
+  - launchd: `launchctl list` + plist matching + `XPC_SERVICE_NAME` env var
+  - supervisord: parent process + config file matching
+  - pm2: `pm2 jlist` + env var patterns
+  - Docker/containerd: cgroup path inspection (`/docker/`, `/kubepods/`, `/containerd/`)
+  - nodemon/forever: parent command matching + env vars
+  - tmux/screen: session attachment via `/proc/<pid>/fd`
+- Implement supervisor-aware action generation:
+  - Map detected supervisor to appropriate stop/restart/reload commands
+  - Include supervisor information in `pt agent plan` output
+  - Add `supervisor_action_command` field with ready-to-execute command
+- Implement respawn tracking:
+  - Track `(command_pattern, cgroup, supervisor_unit)` tuples across sessions
+  - Detect kill-respawn loops and recommend supervisor actions
+  - Persist respawn events to telemetry for pattern learning
+
+### Phase 11: Pattern/Signature Library
+- Implement signature schema and storage (section 3.9):
+  - Define pattern matching DSL (command regex, cgroup pattern, behavior vector)
+  - Create curated library of known signatures (test runners, dev servers, AI tools, etc.)
+  - Implement signature matching engine with confidence scores
+- Implement signature-informed inference fast path:
+  - Skip full Bayesian inference when high-confidence signature match
+  - Use signature-provided priors when partial match
+  - Track signature match rates in telemetry for library refinement
+- Implement user signature customization:
+  - Allow users to define custom signatures in `~/.config/process_triage/signatures.json`
+  - Provide `pt signature add/remove/list` commands
+  - Support signature sharing via `.ptb` bundles
+
+### Phase 12: Trajectory Prediction and Time-to-Threshold
+- Implement trajectory models (section 4.44):
+  - Memory growth rate estimation with confidence intervals
+  - CPU trend analysis (increasing, stable, decreasing)
+  - Resource exhaustion time-to-threshold prediction
+- Implement time-based alerts:
+  - Predict when process will exceed configurable thresholds
+  - Generate warnings with lead time estimates
+  - Support `pt agent plan --include-predictions` output
+- Implement per-machine baseline computation (section 4.45):
+  - Fit baseline distributions from historical data per machine/host
+  - Compute z-scores and anomaly detection relative to baseline
+  - Handle cold-start with conservative default priors
+
+### Phase 13: Goal-Oriented Optimization
+- Implement goal parsing and constraint specification (section 5.14):
+  - Parse `--goal "free 4GB RAM"` style constraints
+  - Support resource targets (memory, CPU, ports, file descriptors)
+  - Support composite goals (e.g., "free 2GB AND release port 3000")
+- Implement goal-directed candidate selection:
+  - Score candidates by expected contribution to goal
+  - Optimize kill set for maximum goal progress with minimum risk
+  - Handle infeasible goals gracefully (report shortfall)
+- Implement progress tracking:
+  - Show expected vs actual goal progress in plan output
+  - Track goal achievement in session outcomes
+
+### Phase 14: Fleet Mode and Multi-Host Coordination
+- Implement fleet session management (section 3.8):
+  - Fleet session schema with per-host sub-sessions
+  - Parallel scanning across hosts via SSH
+  - Result aggregation and cross-host comparison
+- Implement fleet-specific CLI commands:
+  - `pt agent fleet-plan --hosts <file>`
+  - `pt agent fleet-apply --session <id>`
+  - `pt agent fleet-status`
+- Implement fleet-wide decision coordination (section 5.16):
+  - Shared FDR budget across fleet
+  - Cross-host pattern correlation
+  - Coordinated action timing to avoid cascading failures
+- Implement fleet learning transfer (section 3.8.4):
+  - Export/import learned priors between machines
+  - Fleet-wide signature sharing
+  - Per-machine baseline normalization
+
+### Phase 15: Enhanced UX for Agents
+- Implement genealogy narrative generation (section 7.9):
+  - Build process ancestry chain with role annotations
+  - Generate human-readable story from genealogy
+  - Include genealogy in `pt agent explain --genealogy` output
+- Implement blast radius visualization (section 7.10):
+  - Analyze children, port dependents, file dependents, shared memory
+  - Compute cumulative risk score
+  - Include blast radius in plan output and TUI
+- Implement "what would change your mind" (section 7.11):
+  - Identify flip conditions for each recommendation
+  - Compute delta_p for each potential evidence change
+  - Support `pt agent explain --what-if` output
+- Implement human-friendly summary modes (section 7.12):
+  - `--brief` mode for concise output
+  - `--narrative` mode for prose explanations
+  - Structured summary in default `pt agent plan` output
+
+### Phase 16: Differential and Resumable Sessions
+- Implement differential mode:
+  - Track baseline snapshots per session
+  - Compute deltas between scans (`--since` flag)
+  - Identify new/changed/resolved candidates
+- Implement session resumability:
+  - Persist session state to artifact directory
+  - Support `pt agent resume --session <id>`
+  - Maintain full context across session boundaries
+- Implement session comparison:
+  - Compare two sessions to identify trends
+  - Track action outcomes across sessions
+  - Generate session-over-session reports
+
 ---
 
 ## 11) Tests and Validation
@@ -2363,18 +2472,104 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - DRO gating tests (conservative under drift)
 - Submodular probe selection tests (monotonicity/approx sanity)
 
+### Agent and Fleet-Specific Tests
+- Supervisor detection tests:
+  - Mock systemd/launchd/pm2/Docker environments
+  - Verify correct supervisor type identification
+  - Test supervisor action command generation
+  - Test respawn loop detection across sessions
+- Pattern/signature library tests:
+  - Signature matching accuracy on known process types
+  - Fast-path inference bypass verification
+  - Custom signature loading and merging
+  - Signature confidence score calibration
+- Trajectory prediction tests:
+  - Memory growth rate estimation accuracy
+  - Time-to-threshold prediction calibration
+  - Trend analysis (increasing/stable/decreasing) correctness
+  - Confidence interval coverage
+- Goal-oriented optimization tests:
+  - Goal parsing (memory, CPU, ports, composite)
+  - Candidate scoring for goal contribution
+  - Kill set optimization for maximum goal progress
+  - Infeasible goal handling and shortfall reporting
+- Fleet mode tests:
+  - Multi-host session creation and management
+  - Parallel scan aggregation correctness
+  - Cross-host pattern correlation
+  - Fleet-wide FDR budget enforcement
+  - Learning transfer export/import
+- Per-machine baseline tests:
+  - Baseline distribution fitting from historical data
+  - Z-score computation relative to baseline
+  - Cold-start handling with default priors
+  - Baseline drift detection
+- Genealogy narrative tests:
+  - Ancestry chain construction correctness
+  - Role annotation accuracy (worker, test_runner, user_shell, etc.)
+  - Narrative generation quality (human-readable, accurate)
+  - `--genealogy` output schema compliance
+- Blast radius tests:
+  - Children enumeration completeness
+  - Port dependent detection via lsof/ss
+  - File dependent detection via /proc/<pid>/fd
+  - Cumulative risk score computation
+  - `--blast-radius` output schema compliance
+- What-if explanation tests:
+  - Flip condition identification correctness
+  - Delta_p estimation accuracy
+  - Most likely flip scenario ranking
+  - `--what-if` output schema compliance
+- Summary mode tests:
+  - `--brief` output format and content
+  - `--narrative` output readability and accuracy
+  - Structured summary field completeness
+- Differential session tests:
+  - Delta computation between scans
+  - New/changed/resolved candidate detection
+  - `--since` flag behavior
+- Session resumability tests:
+  - Session state persistence
+  - Resume from artifact directory
+  - Context preservation across resume
+
 ---
 
 ## 12) Deliverables
 
+### Core Deliverables
 - `pt` bash wrapper (maximal installer + launcher) and `pt-core` Rust monolith (scan/infer/decide/ui)
 - `priors.json`, `policy.json`, and a versioned redaction/hashing policy used by telemetry
-- Parquet-first telemetry lake (raw + derived + outcomes) with DuckDB views/macros for standard reports (calibration, PAC-Bayes bounds, FDR, “why” breakdown)
+- Parquet-first telemetry lake (raw + derived + outcomes) with DuckDB views/macros for standard reports (calibration, PAC-Bayes bounds, FDR, "why" breakdown)
 - Agent/robot CLI contract (plan/explain/apply/sessions/tail/inbox/export/report) with stable schemas and automation-friendly exit codes.
 - Shareable `.ptb` session bundles (profiles + optional encryption) and premium single-file HTML report generation (CDN-loaded, pinned + SRI, includes galaxy-brain view, optional `--embed-assets` offline fallback).
 - Dormant-mode daemon (`ptd`) + systemd/launchd units and an inbox UX for pending triage plans.
 - Enhanced README with math, safety guarantees, telemetry governance, and reproducible analysis workflow
 - Expanded tests: Rust unit/integration + wrapper smoke tests (BATS or equivalent)
+
+### Agent-Specific Deliverables
+- **Supervisor detection module**: Detection heuristics for systemd, launchd, pm2, Docker, supervisord, nodemon, tmux/screen with supervisor-aware action generation and respawn tracking.
+- **Pattern/signature library**: Curated signatures for common process types (test runners, dev servers, AI tools, build systems) with pattern matching DSL, fast-path inference, and user customization support.
+- **Trajectory prediction engine**: Memory/CPU trend analysis, time-to-threshold prediction with confidence intervals, and per-machine baseline computation.
+- **Goal-oriented optimizer**: Goal parsing (`--goal "free 4GB RAM"`), candidate scoring by goal contribution, kill set optimization, and progress tracking.
+- **Genealogy narrative generator**: Process ancestry chain construction, role annotation, human-readable story generation, and structured JSON output for agents.
+- **Blast radius analyzer**: Children enumeration, port/file/memory dependent detection, cumulative risk scoring, and visualization (TUI and JSON).
+- **What-if explainer**: Flip condition identification, delta_p estimation, and detailed "what would change my mind" output.
+- **Human-friendly summary modes**: Brief, narrative, and structured summary output formats for different consumption contexts.
+- **Differential session support**: Baseline tracking, delta computation, `--since` flag, and session-over-session comparison.
+- **Session resumability**: State persistence, `pt agent resume --session <id>`, and context preservation.
+
+### Fleet-Specific Deliverables
+- **Fleet session manager**: Multi-host session schema, parallel scanning, result aggregation, and cross-host comparison.
+- **Fleet CLI commands**: `pt agent fleet-plan`, `pt agent fleet-apply`, `pt agent fleet-status` with host file support.
+- **Fleet decision coordinator**: Shared FDR budget, cross-host pattern correlation, and coordinated action timing.
+- **Learning transfer system**: Prior export/import, fleet-wide signature sharing, and per-machine baseline normalization.
+- **Fleet reporting**: Aggregated fleet-wide HTML reports, per-host comparison views, and cross-host anomaly detection.
+
+### Documentation Deliverables
+- **Agent integration guide**: Complete documentation for AI agents consuming `pt agent` commands, including schema reference, exit codes, error handling, and best practices.
+- **Fleet operations guide**: Documentation for multi-host deployment, SSH configuration, parallel execution, and coordinated remediation.
+- **Signature authoring guide**: How to create custom signatures, pattern DSL reference, and contribution guidelines for the curated library.
 
 ---
 
