@@ -6,13 +6,21 @@
 //! - Common error types
 //! - Output format specifications
 //! - Configuration loading and validation
+//! - Capabilities detection and caching
 
+pub mod capabilities;
 pub mod config;
 pub mod error;
 pub mod id;
 pub mod output;
 pub mod schema;
 
+pub use capabilities::{
+    Capabilities, CapabilitiesError, CgroupInfo, CgroupVersion, ContainerInfo, CpuArch,
+    LaunchdInfo, OsFamily, OsInfo, PathsInfo, PrivilegesInfo, ProcField, ProcFsInfo, PsiInfo,
+    SudoInfo, SystemdInfo, SystemInfo, ToolInfo, ToolPermissions, UserInfo,
+    CAPABILITIES_SCHEMA_VERSION, DEFAULT_CACHE_TTL_SECS,
+};
 pub use config::{Config, ConfigPaths, ConfigResolver, ConfigSnapshot, Policy, Priors};
 pub use error::{Error, Result};
 pub use id::{ProcessId, SessionId, StartId};
