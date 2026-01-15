@@ -1059,8 +1059,8 @@ Core options:
         "title": "Conformal Interval (Runtime/CPU)",
         "equations": [
           "s_i = |y_i - ŷ_i|",
-          "q_{1-α} = quantile({s_i})",
-          "[ŷ_{n+1} - q_{1-α}, ŷ_{n+1} + q_{1-α}]"
+          "q = ⌈(n+1)(1-α)⌉-th order statistic of {s_i}",
+          "[ŷ_{n+1} - q, ŷ_{n+1} + q]"
         ],
         "values": {
           "alpha": 0.1,
@@ -1074,8 +1074,9 @@ Core options:
         "id": "conformal_class",
         "title": "Conformal Class Set",
         "equations": [
-          "p_c = (1 + #{i: s_i(c) ≥ s_{n+1}(c)}) / (n + 1)",
-          "Predict = {c : p_c > α}"
+          "s_i = 1 - P̂(C=y_i | x_i) (true label y_i)",
+          "s_{n+1}(c) = 1 - P̂(C=c | x_{n+1})",
+          "p_c = (1 + #{i: s_i ≥ s_{n+1}(c)}) / (n + 1); Predict = {c : p_c > α}"
         ],
         "values": {
           "alpha": 0.1,
@@ -1818,7 +1819,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 4.34 Bayesian Optimal Experimental Design (Active Sensing)
 - Choose next measurement m to maximize expected posterior entropy reduction per cost:
-  argmax_m E_x [ H(P(S|x)) - H(P(S|x, new=m)) ] / cost(m)
+  argmax_m E_{y ~ p(y | x, m)} [ H(P(S|x)) - H(P(S|x, y, m)) ] / cost(m)
 - For exponential-family likelihoods, use Fisher information approximations as a closed-form proxy
 
 ### 4.35 Extreme Value Theory (POT/GPD) Tail Modeling
@@ -2351,12 +2352,14 @@ Requirement: at any time, the user can toggle a “galaxy-brain” view (keybind
       - Survival: S(t) = exp(-∑_r λ_r * E_r), with per-regime E_r and inferred λ_r shown
       - “Hazard inflation” callout when regime switches (e.g., TTY lost, PPID=1, IO flatline)
     - **Conformal interval** (runtime/CPU):
-      - s_i = |y_i - ŷ_i|; q_{1-α} = quantile({s_i})
-      - Interval: [ŷ_{n+1} - q_{1-α}, ŷ_{n+1} + q_{1-α}]
+      - s_i = |y_i - ŷ_i|; q = ⌈(n+1)(1-α)⌉-th order statistic of {s_i}
+      - Interval: [ŷ_{n+1} - q, ŷ_{n+1} + q]
       - Display calibration window size, α target, and achieved coverage estimate
     - **Conformal class set** (state prediction):
-      - p_c = (1 + #{i: s_i(c) ≥ s_{n+1}(c)}) / (n + 1)
-      - Predicted set: {c : p_c > α}; show p_c per class
+      - Calibration scores: s_i = 1 - P̂(C=y_i | x_i) (or NLL) using true label y_i
+      - Candidate score: s_{n+1}(c) = 1 - P̂(C=c | x_{n+1})
+      - p_c = (1 + #{i: s_i ≥ s_{n+1}(c)}) / (n + 1); predicted set {c : p_c > α}
+      - Show p_c per class (and label-conditional/Mondrian variant if enabled)
     - **e-values / e-FDR** (anytime-valid selection):
       - e_i (from Bayes factor or likelihood-ratio martingale)
       - e-BH rule: choose largest k with (1/k) * Σ_{i=1..k} (1 / e_(i)) ≤ α
@@ -2440,7 +2443,7 @@ Use the model to interpret the observed snapshot:
 - Define `pt-core` CLI surface (scan/deep-scan/infer/decide/ui/agent/duck/bundle/report/daemon) and stable output formats (JSON/MD/JSONL + Parquet partitions).
 - Define the user-visible golden path and reduce “mode overload”: `pt` feels like one coherent run by default; expert verbs remain discoverable but not required (section 7.0).
 - Define the durable session model: `session_id` generation, artifact directory layout, and which artifacts exist even in scan-only runs.
-- Create priors.json schema for alpha/beta, gamma, dirichlet, hazard priors
+- Create `priors.json` schema for Beta/Gamma/Dirichlet hyperparameters and hazard priors (explicit parameterization: Gamma shape/rate)
 - Create policy.json for loss matrix and guardrails
 - Define command categories and CWD categories
 - Define telemetry schema + partitioning rules (section 3.3) and redaction/hashing policy (section 3.4); version these in `runs`.
