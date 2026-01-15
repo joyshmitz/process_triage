@@ -1,0 +1,149 @@
+name: Coverage
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ==========================================================================
+  # Code Coverage with Tarpaulin
+  # ==========================================================================
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates -> target"
+
+      - name: Install cargo-tarpaulin
+        run: |
+          cargo install cargo-tarpaulin --locked
+
+      - name: Run coverage
+        run: |
+          echo "::group::Running coverage analysis"
+          cargo tarpaulin \
+            --workspace \
+            --out xml \
+            --out html \
+            --output-dir coverage \
+            --timeout 300 \
+            --skip-clean \
+            --ignore-tests \
+            --exclude-files "*/tests/*" \
+            --exclude-files "*/benches/*" \
+            2>&1 | tee coverage-output.log
+          echo "::endgroup::"
+        continue-on-error: true
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/cobertura.xml
+          fail_ci_if_error: false
+          verbose: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            coverage/
+            coverage-output.log
+          retention-days: 14
+
+      - name: Generate coverage summary
+        if: always()
+        run: |
+          echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f coverage/cobertura.xml ]; then
+            # Extract line coverage percentage from cobertura.xml
+            line_rate=$(grep -o 'line-rate="[^"]*"' coverage/cobertura.xml | head -1 | sed 's/line-rate="\([^"]*\)"/\1/')
+            if [ -n "$line_rate" ]; then
+              percentage=$(echo "$line_rate * 100" | bc -l 2>/dev/null | cut -d. -f1 || echo "N/A")
+              echo "Line Coverage: ${percentage}%" >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "Coverage report not generated" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # ==========================================================================
+  # Coverage Badge Generation (optional, for README)
+  # ==========================================================================
+  coverage-badge:
+    name: Generate Coverage Badge
+    runs-on: ubuntu-latest
+    needs: coverage
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage
+
+      - name: Extract coverage percentage
+        id: coverage
+        run: |
+          if [ -f coverage/cobertura.xml ]; then
+            line_rate=$(grep -o 'line-rate="[^"]*"' coverage/cobertura.xml | head -1 | sed 's/line-rate="\([^"]*\)"/\1/')
+            if [ -n "$line_rate" ]; then
+              percentage=$(echo "$line_rate * 100" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
+              echo "percentage=$percentage" >> $GITHUB_OUTPUT
+            else
+              echo "percentage=0" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "percentage=0" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create coverage badge JSON
+        run: |
+          percentage="${{ steps.coverage.outputs.percentage }}"
+
+          # Determine color based on coverage
+          if [ "$percentage" -ge 80 ]; then
+            color="brightgreen"
+          elif [ "$percentage" -ge 60 ]; then
+            color="green"
+          elif [ "$percentage" -ge 40 ]; then
+            color="yellow"
+          elif [ "$percentage" -ge 20 ]; then
+            color="orange"
+          else
+            color="red"
+          fi
+
+          echo "{\"schemaVersion\":1,\"label\":\"coverage\",\"message\":\"${percentage}%\",\"color\":\"${color}\"}" > coverage-badge.json
+          cat coverage-badge.json
+
+      - name: Upload badge JSON
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-badge
+          path: coverage-badge.json
+          retention-days: 90

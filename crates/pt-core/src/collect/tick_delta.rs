@@ -362,19 +362,27 @@ pub fn compute_tick_delta(
     // Compute u_cores
     let u_cores = k_ticks as f64 / ((tck as f64) * delta_t_secs);
 
+    let mut warnings = Vec::new();
     // Compute n_eff based on policy
     let n_eff = match config.n_eff_policy {
         NEffPolicy::Identity => n_ticks,
-        NEffPolicy::FixedReduction => ((n_ticks as f64) / config.reduction_factor)
-            .round()
-            .max(1.0) as u64,
+        NEffPolicy::FixedReduction => {
+            let factor = config.reduction_factor;
+            if !factor.is_finite() || factor <= 0.0 {
+                warnings.push(format!(
+                    "invalid reduction_factor {:.3}; using identity n_eff",
+                    factor
+                ));
+                n_ticks
+            } else {
+                ((n_ticks as f64) / factor).round().max(1.0) as u64
+            }
+        }
         NEffPolicy::Autocorrelation => {
             // Placeholder for future autocorrelation-based correction
             n_ticks
         }
     };
-
-    let mut warnings = Vec::new();
     if after.identity.quality != IdentityQuality::Full {
         warnings.push(format!("identity quality is {}", after.identity.quality));
     }
@@ -627,6 +635,43 @@ mod tests {
         let features_reduced = compute_tick_delta(&before, &after, &config_reduced).unwrap();
         let expected_n_eff = ((features_reduced.n_ticks as f64) / 2.0).round() as u64;
         assert_eq!(features_reduced.n_eff, expected_n_eff);
+    }
+
+    #[test]
+    fn test_fixed_reduction_invalid_factor_falls_back() {
+        let before = TickSnapshot {
+            pid: 1234,
+            identity: test_identity(1234, 12345),
+            utime: 10,
+            stime: 10,
+            total_ticks: 20,
+            num_threads: 1,
+            timestamp: std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1000),
+            starttime: 12345,
+        };
+
+        let after = TickSnapshot {
+            pid: 1234,
+            identity: test_identity(1234, 12345),
+            utime: 20,
+            stime: 20,
+            total_ticks: 40,
+            num_threads: 1,
+            timestamp: std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1001),
+            starttime: 12345,
+        };
+
+        let config = TickDeltaConfig {
+            n_eff_policy: NEffPolicy::FixedReduction,
+            reduction_factor: 0.0,
+        };
+        let features = compute_tick_delta(&before, &after, &config).unwrap();
+        assert_eq!(features.n_eff, features.n_ticks);
+        assert!(features
+            .provenance
+            .warnings
+            .iter()
+            .any(|w| w.contains("invalid reduction_factor")));
     }
 
     #[test]

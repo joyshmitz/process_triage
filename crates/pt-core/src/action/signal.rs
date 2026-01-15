@@ -9,7 +9,6 @@
 use super::executor::{ActionError, ActionRunner};
 use crate::decision::Action;
 use crate::plan::PlanAction;
-use std::path::PathBuf;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -90,8 +89,8 @@ impl SignalActionRunner {
     /// Get process state from /proc/[pid]/stat.
     #[cfg(target_os = "linux")]
     fn get_process_state(&self, pid: u32) -> Option<char> {
-        let stat_path = PathBuf::from(format!("/proc/{pid}/stat"));
-        let content = std::fs::read_to_string(&stat_path).ok()?;
+        let stat_path = format!("/proc/{pid}/stat");
+        let content = std::fs::read_to_string(stat_path).ok()?;
         // Format: pid (comm) state ...
         let comm_end = content.rfind(')')?;
         let after_comm = content.get(comm_end + 2..)?;
