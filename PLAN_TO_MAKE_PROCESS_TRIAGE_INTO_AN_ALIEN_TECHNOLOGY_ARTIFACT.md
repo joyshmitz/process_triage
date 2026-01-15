@@ -140,7 +140,7 @@ With conjugate prior families (Beta-Binomial, Gamma-Poisson, Dirichlet-Multinomi
 
 **4. Formal guarantees are tractable.**
 
-With closed-form posteriors, we can compute exact credible intervals and exact Bayes factors. We can also apply formal error-control tools (PAC-Bayes bounds, FDR control, alpha-investing), but we must be explicit about their assumptions (e.g., approximate independence/exchangeability of trials); in always-on/optional-stopping settings we prefer anytime-valid e-values/e-process controls. ML models require empirical validation on held-out data; Bayesian models have built-in uncertainty quantification.
+With closed-form posteriors, we can compute exact credible intervals and exact Bayes factors. We can also apply formal error-control and calibration tools (PAC-Bayes bounds, conformal prediction for distribution-free coverage, FDR control, alpha-investing), but we must be explicit about their assumptions (e.g., approximate independence/exchangeability of trials); in always-on/optional-stopping settings we prefer anytime-valid e-values/e-process controls. ML models require empirical validation on held-out data; Bayesian models have built-in uncertainty quantification.
 
 **5. Numerical stability is achievable.**
 
@@ -156,7 +156,7 @@ Every parameter (prior shape, likelihood model, loss matrix) is explicit and int
 - **Likelihoods**: All likelihood models use these conjugate families.
 - **Posteriors**: All posteriors are analytically tractable (no MCMC, no variational inference).
 - **Decisions**: Expected loss is computed exactly from the posterior.
-- **Advanced layers**: More sophisticated models (Hawkes processes, change-point detection, etc.) are used as **feature extractors** that feed deterministic summaries into the closed-form core—they do not replace the core inference.
+- **Advanced layers**: More sophisticated models (Hawkes/marked point processes, BOCPD change-point detection, survival with time-varying covariates, conformal prediction for calibrated intervals, EVT tail modeling, copula dependence, robust M-estimation) are used as **feature extractors** that feed deterministic summaries into the closed-form core—they do not replace the core inference.
 
 ### The Four-State Classification Model
 
@@ -188,11 +188,11 @@ The default UX shows a simple "recommended action" with a one-line explanation. 
 
 **3. Evidence over thresholds.**
 
-Rather than "kill if score > 50," the system maintains a full posterior distribution and decides based on expected loss. This naturally handles uncertainty: e.g., P(abandoned)=0.6 with tight concentration (many consistent samples) is treated differently from P(abandoned)=0.6 from sparse/noisy evidence; and even a high posterior can be down-weighted when robustness checks (PPC/drift/DRO gates) indicate model mismatch.
+Rather than "kill if score > 50," the system maintains a full posterior distribution and decides based on expected loss. This naturally handles uncertainty: e.g., P(abandoned)=0.6 with tight concentration (many consistent samples) is treated differently from P(abandoned)=0.6 from sparse/noisy evidence; and even a high posterior can be down-weighted when robustness checks (PPC/drift/DRO gates) indicate model mismatch. Where decisions are sequential, add anytime-valid e-values/e-process gates and conformal prediction intervals so the displayed uncertainty and action thresholds remain valid under optional stopping.
 
 **4. Maximal instrumentation, budgeted execution.**
 
-The system attempts to install and use every available diagnostic tool (perf, eBPF, strace, etc.) but carefully budgets their execution to avoid becoming a resource hog itself. More data is always better; the system gracefully degrades when tools are unavailable.
+The system attempts to install and use every available diagnostic tool (perf, eBPF, strace, etc.) but carefully budgets their execution to avoid becoming a resource hog itself. More data is always better; the system gracefully degrades when tools are unavailable. Probe selection is driven by VOI/active-sensing and bandit-style scheduling (e.g., Whittle/Thompson) so deeper instrumentation is spent where it reduces uncertainty most.
 
 **5. Everything is logged, everything is auditable.**
 
@@ -240,6 +240,8 @@ The operating system exposes rich information about processes, though the detail
 - Process state (running, sleeping, zombie, etc.)
 - CPU time (user + system)
 - Memory usage (RSS, virtual)
+- Context switches (voluntary/involuntary) and scheduler wait (when exposed)
+- Page faults, swap activity, and per-process I/O counters (read/write bytes)
 - Start time / elapsed time
 - Controlling TTY (or none)
 - Current working directory
@@ -249,17 +251,23 @@ The operating system exposes rich information about processes, though the detail
 
 **Linux-specific:**
 - `/proc/PID/*` filesystem with detailed per-process info
+- `/proc/PID/schedstat` and `/proc/PID/sched` for run-queue latency and scheduler behavior
+- `/proc/PID/io` and `/proc/PID/fd` for per-process I/O deltas and FD churn
 - cgroups (CPU/memory limits and accounting)
 - PSI (Pressure Stall Information) for system-wide pressure
 - perf (hardware performance counters)
 - eBPF (programmable kernel instrumentation)
 - systemd unit attribution
+- process accounting (`acct`/`psacct`) and historical telemetry (`sysstat`/`sar`, `pcp`)
 
 **macOS-specific:**
 - `proc_pidinfo` API for detailed process info
 - `powermetrics` for energy/performance data
 - `sample`/`spindump` for stack sampling
 - `fs_usage` for file system activity
+- `nettop` for per-process network activity
+- `vm_stat` for memory pressure and paging signals
+- `dtruss`/DTrace for syscall-level traces (when SIP permits)
 - launchd service attribution
 
 The specification aims to use all available signals, with graceful degradation when specific tools are unavailable.
@@ -389,6 +397,7 @@ C) Survival analysis and hazards
 - P(still running | t, C) = exp(-lambda_C * t)  (for competing hazards, lambda_total = sum of cause-specific hazards)
 - Gamma prior on lambda_C yields closed-form posterior; marginal survival (Gamma-mixed exponential) is Lomax/Pareto-II:
   P(T>t) = (β/(β+t))^α (rate-parameterization)
+- Time-varying covariates handled via piecewise-constant hazards (or stratified hazards) with conjugate Gamma updates per segment; yields closed-form posterior survival curves while capturing events like TTY loss, PPID reparenting, or IO flatlines.
 
 D) Change-point detection (closed-form)
 - Let k_t be the count of “busy” samples (or threshold exceedances) in a window of n_t samples.
