@@ -1,3 +1,5 @@
+#![cfg(feature = "test-utils")]
+
 use pt_core::collect;
 use pt_core::test_utils::ProcessHarness;
 

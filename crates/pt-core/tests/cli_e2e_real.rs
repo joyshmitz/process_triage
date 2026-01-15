@@ -1,3 +1,5 @@
+#![cfg(feature = "test-utils")]
+
 use assert_cmd::Command;
 use predicates::prelude::*;
 use pt_core::test_utils::ProcessHarness;
@@ -38,4 +40,3 @@ fn test_cli_run_dry_run_real() {
         // Stub message for now
         .stdout(predicate::str::contains("Interactive triage mode not yet implemented"));
 }
-

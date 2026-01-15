@@ -58,6 +58,18 @@ mod plan_basic {
         assert!(json.get("session_id").is_some(), "Missing session_id");
         assert!(json.get("generated_at").is_some(), "Missing generated_at");
     }
+
+    #[test]
+    fn plan_emits_progress_events() {
+        pt_core()
+            .args(["--format", "json", "agent", "plan"])
+            .assert()
+            .success()
+            .stderr(
+                predicate::str::contains("\"event\":")
+                    .and(predicate::str::contains("plan_ready")),
+            );
+    }
 }
 
 // ============================================================================

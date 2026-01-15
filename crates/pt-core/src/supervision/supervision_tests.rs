@@ -383,7 +383,6 @@ mod ancestry_tests {
 #[cfg(test)]
 mod environ_tests {
     use super::super::environ::*;
-    use super::super::types::SupervisorCategory;
     use std::collections::HashMap;
 
     #[test]
@@ -488,7 +487,6 @@ mod environ_tests {
 #[cfg(test)]
 mod ipc_tests {
     use super::super::ipc::*;
-    use super::super::types::SupervisorCategory;
 
     #[test]
     fn test_ipc_database_vscode_sockets() {
@@ -632,7 +630,6 @@ mod logging_tests {
     //! These tests verify that detection operations produce appropriate
     //! structured log output for debugging and auditing.
 
-    use super::super::ancestry::*;
     use super::super::types::*;
 
     #[test]

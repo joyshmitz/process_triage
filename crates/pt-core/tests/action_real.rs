@@ -1,6 +1,8 @@
+#![cfg(feature = "test-utils")]
+
 use pt_core::action::{SignalActionRunner};
 use pt_core::action::executor::{ActionRunner};
-use pt_core::plan::{PlanAction, ActionRationale, ActionTimeouts};
+use pt_core::plan::{PlanAction, ActionRationale, ActionTimeouts, ActionRouting, ActionConfidence};
 use pt_core::decision::Action as PlanActionType;
 use pt_core::test_utils::ProcessHarness;
 use pt_common::{ProcessId, StartId, IdentityQuality, ProcessIdentity};
@@ -47,6 +49,10 @@ fn test_signal_kill_real() {
         on_success: vec![],
         on_failure: vec![],
         blocked: false,
+        routing: ActionRouting::Direct,
+        confidence: ActionConfidence::Normal,
+        original_zombie_target: None,
+        d_state_diagnostics: None,
     };
 
     // Execute kill
@@ -92,6 +98,10 @@ fn test_signal_pause_resume_real() {
         on_success: vec![],
         on_failure: vec![],
         blocked: false,
+        routing: ActionRouting::Direct,
+        confidence: ActionConfidence::Normal,
+        original_zombie_target: None,
+        d_state_diagnostics: None,
     };
 
     // Pause
@@ -120,6 +130,112 @@ fn test_signal_pause_resume_real() {
 }
 
 #[test]
+#[cfg(target_os = "linux")]
+fn test_process_group_pause_resume_real() {
+    use pt_core::action::SignalConfig;
+    use pt_core::test_utils::is_process_stopped;
+
+    if !ProcessHarness::is_available() { return; }
+    let harness = ProcessHarness::default();
+
+    // Spawn a process group (parent + child)
+    let proc = harness.spawn_process_group().expect("spawn group");
+    let pid = proc.pid();
+
+    // Wait for child to spawn
+    std::thread::sleep(Duration::from_millis(200));
+
+    // Get PGID and all PIDs in the group
+    let pgid = proc.pgid().expect("should have pgid");
+    let group_pids = proc.group_pids();
+    assert!(group_pids.len() >= 2, "expected at least 2 processes in group, got {:?}", group_pids);
+
+    // Create runner with process group targeting enabled
+    let runner = SignalActionRunner::new(SignalConfig {
+        use_process_groups: true,
+        ..Default::default()
+    });
+
+    // Create a pause action targeting the process group
+    let pause_action = PlanAction {
+        action_id: "test-group-pause".to_string(),
+        action: PlanActionType::Pause,
+        target: ProcessIdentity {
+            pid: ProcessId(pid),
+            start_id: StartId("mock".to_string()),
+            uid: 1000,
+            pgid: Some(pgid),
+            sid: None,
+            quality: IdentityQuality::Full,
+        },
+        order: 0,
+        stage: 0,
+        timeouts: ActionTimeouts::default(),
+        pre_checks: vec![],
+        rationale: empty_rationale(),
+        on_success: vec![],
+        on_failure: vec![],
+        blocked: false,
+        routing: ActionRouting::Direct,
+        confidence: ActionConfidence::Normal,
+        original_zombie_target: None,
+        d_state_diagnostics: None,
+    };
+
+    // Pause the entire group
+    let result = runner.execute(&pause_action);
+    assert!(result.is_ok(), "group pause failed: {:?}", result);
+
+    // Verify all processes in the group are stopped
+    std::thread::sleep(Duration::from_millis(100));
+    for gpid in &group_pids {
+        assert!(
+            is_process_stopped(*gpid),
+            "process {} in group should be stopped", gpid
+        );
+    }
+
+    // Create a resume action
+    let resume_action = PlanAction {
+        action_id: "test-group-resume".to_string(),
+        action: PlanActionType::Resume,
+        target: ProcessIdentity {
+            pid: ProcessId(pid),
+            start_id: StartId("mock".to_string()),
+            uid: 1000,
+            pgid: Some(pgid),
+            sid: None,
+            quality: IdentityQuality::Full,
+        },
+        order: 1,
+        stage: 1,
+        timeouts: ActionTimeouts::default(),
+        pre_checks: vec![],
+        rationale: empty_rationale(),
+        on_success: vec![],
+        on_failure: vec![],
+        blocked: false,
+        routing: ActionRouting::Direct,
+        confidence: ActionConfidence::Normal,
+        original_zombie_target: None,
+        d_state_diagnostics: None,
+    };
+
+    // Resume the entire group
+    let result = runner.execute(&resume_action);
+    assert!(result.is_ok(), "group resume failed: {:?}", result);
+
+    // Verify all processes in the group are running again
+    std::thread::sleep(Duration::from_millis(100));
+    for gpid in &group_pids {
+        assert!(
+            !is_process_stopped(*gpid),
+            "process {} in group should be running", gpid
+        );
+    }
+}
+
+#[test]
 fn test_zombie_verification_real() {
     if !ProcessHarness::is_available() { return; }
     let harness = ProcessHarness::default();
@@ -143,7 +259,7 @@ fn test_zombie_verification_real() {
     let runner = SignalActionRunner::with_defaults();
     let action = PlanAction {
         action_id: "test-kill-zombie".to_string(),
-        action: PlanActionType::Kill, 
+        action: PlanActionType::Kill,
         target: ProcessIdentity {
             pid: ProcessId(pid),
             start_id: StartId("mock".to_string()),
@@ -160,6 +276,10 @@ fn test_zombie_verification_real() {
         on_success: vec![],
         on_failure: vec![],
         blocked: false,
+        routing: ActionRouting::Direct,
+        confidence: ActionConfidence::Normal,
+        original_zombie_target: None,
+        d_state_diagnostics: None,
     };
 
     // Execute kill on zombie should succeed (no-op or ignored signal)
