@@ -288,8 +288,8 @@ pub fn generate_plan(bundle: &DecisionBundle) -> Plan {
             };
 
             let mut pre_checks = pre_checks_for(action);
-            // Add state verification for D-state processes
-            if is_d_state {
+            // Add state verification only for actions likely to fail in D-state
+            if is_d_state && matches!(action, Action::Kill | Action::Restart) {
                 pre_checks.push(PreCheck::VerifyProcessState);
             }
 
@@ -493,10 +493,10 @@ fn pre_checks_for(action: Action) -> Vec<PreCheck> {
             checks.push(PreCheck::CheckDataLossGate);
             checks.push(PreCheck::CheckSupervisor);
         }
-        Action::Pause | Action::Throttle | Action::Renice => {
+        Action::Pause | Action::Throttle | Action::Renice | Action::Freeze | Action::Unfreeze => {
             checks.push(PreCheck::CheckSupervisor);
         }
-        // Resume only needs identity verification (already stopped, just un-stop it)
+        // Resume only need identity verification
         Action::Resume => {}
         Action::Keep => {}
     }
@@ -558,6 +558,8 @@ fn action_str(action: Action) -> &'static str {
         Action::Throttle => "throttle",
         Action::Restart => "restart",
         Action::Kill => "kill",
+        Action::Freeze => "freeze",
+        Action::Unfreeze => "unfreeze",
     }
 }
 
@@ -603,6 +605,8 @@ fn action_tier(action: Action) -> u8 {
         Action::Pause => 1,
         Action::Resume => 1, // Same tier as Pause (reversible)
         Action::Throttle => 1,
+        Action::Freeze => 1,      // Reversible via Unfreeze
+        Action::Unfreeze => 1,    // Same tier as Freeze (reversible)
         Action::Restart => 2,
         Action::Kill => 3,
     }
@@ -901,6 +905,24 @@ mod tests {
         assert_eq!(action.action, Action::Pause);
         assert_eq!(action.confidence, ActionConfidence::Normal); // Not low for pause
         assert_eq!(action.routing, ActionRouting::DStateLowConfidence);
+    }
+
+    #[test]
+    fn d_state_pause_does_not_require_state_precheck() {
+        let bundle = DecisionBundle {
+            session_id: SessionId("pt-20260115-120000-abcd".to_string()),
+            policy: Policy::default(),
+            generated_at: Some("2026-01-15T12:00:00Z".to_string()),
+            candidates: vec![{
+                let mut c = candidate(42, Action::Pause, 10.0, 1.0);
+                c.process_state = Some(ProcessState::DiskSleep);
+                c
+            }],
+        };
+        let plan = generate_plan(&bundle);
+
+        let action = &plan.actions[0];
+        assert!(!action.pre_checks.contains(&PreCheck::VerifyProcessState));
     }
 
     #[test]
