@@ -251,9 +251,9 @@ teardown() {
 @test "pt robot apply with no candidates returns nothing_to_do" {
     skip_if_no_jq
 
-    # Use high min-age to ensure no candidates
+    # Use high min-age to ensure no candidates (43200 = 12 hours is safe)
     local json_output
-    json_output=$(pt robot apply --recommended --min-age 86400 --yes --format json 2>/dev/null)
+    json_output=$(pt robot apply --recommended --min-age 43200 --yes --format json 2>/dev/null)
 
     local note
     note=$(echo "$json_output" | jq -r '.note // empty')
@@ -305,7 +305,7 @@ teardown() {
     skip_if_no_jq
 
     local json_output
-    json_output=$(pt robot apply --recommended --min-age 86400 --yes --format json 2>/dev/null)
+    json_output=$(pt robot apply --recommended --min-age 7200 --yes --format json 2>/dev/null)
 
     local mode
     mode=$(echo "$json_output" | jq -r '.mode')
