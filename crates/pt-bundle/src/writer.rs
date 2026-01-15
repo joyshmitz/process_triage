@@ -399,12 +399,23 @@ mod tests {
         writer2.add_file("m.txt", b"m".to_vec(), None);
         writer2.add_file("z.txt", b"z".to_vec(), None);
 
-        let (bytes1, _) = writer1.write_to_vec().unwrap();
-        let (bytes2, _) = writer2.write_to_vec().unwrap();
+        let (bytes1, manifest1) = writer1.write_to_vec().unwrap();
+        let (bytes2, manifest2) = writer2.write_to_vec().unwrap();
 
-        // ZIP contents should be identical due to deterministic ordering
-        // (timestamps may differ, but file order is deterministic)
-        assert_eq!(bytes1.len(), bytes2.len());
+        // Verify both bundles are valid ZIPs
+        assert_eq!(&bytes1[0..2], b"PK");
+        assert_eq!(&bytes2[0..2], b"PK");
+
+        // File order in manifest should be identical (sorted)
+        let paths1: Vec<_> = manifest1.files.iter().map(|f| &f.path).collect();
+        let paths2: Vec<_> = manifest2.files.iter().map(|f| &f.path).collect();
+        assert_eq!(paths1, paths2);
+        assert_eq!(paths1, vec!["a.txt", "m.txt", "z.txt"]);
+
+        // Checksums should match (same content)
+        for (f1, f2) in manifest1.files.iter().zip(manifest2.files.iter()) {
+            assert_eq!(f1.sha256, f2.sha256);
+        }
     }
 
     #[test]
