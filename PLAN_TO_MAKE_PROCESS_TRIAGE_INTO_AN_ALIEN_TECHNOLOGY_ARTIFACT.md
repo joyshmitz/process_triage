@@ -2,6 +2,7 @@
 
 ## 0) Non-Negotiable Requirement From User
 This plan MUST incorporate every idea and math formula from the conversation. The sections below explicitly enumerate and embed all of them. This is a closed-form Bayesian and decision-theoretic system with no ML.
+Operational requirement: `pt` must be able to run end-to-end in a full-auto mode (collect -> infer -> recommend -> (optionally) act) with no user interaction except (by default) a final TUI approval step for destructive actions. A `--robot` flag must exist to skip the approval UI and execute automatically.
 
 ---
 
@@ -16,15 +17,16 @@ Operational stance (critical): make every run operationally improvable by record
 Success criteria:
 - Decision quality: <1% false-kill rate in shadow mode, high capture of abandoned/zombie processes.
 - Explainability: every decision has a full evidence ledger, posterior, and top Bayes factors.
-- Safety: never auto-kill; multi-stage mitigations; guardrails enforced by policy.
+- Safety: no auto-kill by default; multi-stage mitigations; guardrails enforced by policy; `--robot` explicitly opts into automated execution.
 - Performance: quick scan <1s, deep scan <8s for typical process counts.
-- Fully closed-form updates: conjugate priors only; no ML.
+- Closed-form Bayesian core: posterior/odds/expected-loss updates use conjugate priors; no ML.
 - Formal guarantees: PAC-Bayes bound on false-kill rate with explicit confidence.
 - Real-world impact weighting: kill-cost incorporates dependency and user-intent signals.
 - Operational learning loop: every decision is explainable and auditable from stored telemetry (raw + derived + outcomes).
 - Telemetry performance: logging is low-overhead (batched Parquet writes; no per-row inserts).
 - Telemetry safety: secrets/PII are redacted or hashed by policy before persistence.
 - Concurrency safety: Parquet-first storage supports concurrent runs without DB write-lock contention.
+- Full-auto UX: default mode runs to a pre-toggled approval UI; `--robot` runs to completion without prompts.
 
 ---
 
@@ -303,12 +305,22 @@ All of these are integrated in the system design below.
 - `pt` (bash) remains for: OS detection, maximal tool installation, capability detection, and launching `pt-core`.
 - `pt-core` (Rust monolith) is the artifact: structured concurrency for collection, robust parsing, all inference/decision math, telemetry writing, and the explainable UI.
 - Subcommands (conceptual): `pt-core scan`, `pt-core deep-scan`, `pt-core infer`, `pt-core decide`, `pt-core ui`, `pt-core duck` (run standard analytics queries/reports).
+- Modes:
+  - Default: full-auto scan -> infer -> decide -> TUI approval with recommended actions pre-toggled.
+  - `--robot`: skip TUI and execute the policy-approved action plan automatically (still subject to safety gates).
+  - `--shadow`: run full-auto but never execute actions; log everything for calibration.
+  - `--dry-run`: compute and print the action plan without executing (even if `--robot` is set).
+- Outputs:
+  - Human: TUI + explainability ledger.
+  - Machine: `--output json` for integrations and unattended runs.
 - Design rule: all cross-process boundaries are for external system tools only (perf/eBPF/etc.); internal boundaries stay in-process for performance and coherence.
 
 ### 3.1 Data Collection Layer
 - Collection is orchestrated in `pt-core` as a staged pipeline: quick scan -> candidate ranking -> deep scan/instrumentation (when warranted).
+- Quick scans are multi-sample (short window) to compute deltas/trends (CPU ticks, IO deltas, scheduler latency proxies) rather than relying on a single snapshot.
 - Every collector emits structured events with provenance (tool name/version, args, exit code, timing). Raw outputs are captured (subject to redaction) alongside parsed fields for auditability.
 - Installation is maximal, execution is budgeted: even if all tools are installed, expensive probes are scheduled via VOI/Whittle/submodular policies to control overhead.
+- Self-protection: `pt-core` runs with an overhead budget (caps concurrency, sampling rates, and optional nice/ionice) so the triage system does not become a new source of load.
 - Quick scan inputs (fast): ps pid, ppid, etimes, rss, %cpu, tty, args, state
 - Deep scan inputs (slow):
   - /proc/PID/io (read/write deltas)
@@ -390,7 +402,11 @@ DuckDB is the query engine because it is analytics-native: fast columnar scans, 
 Storage approach:
 - Write append-only Parquet partitions as the primary sink (low overhead, compressible, concurrency-safe).
 - Query the Parquet lake with DuckDB (views over partitions). Optionally maintain a small `.duckdb` file for convenience views and macros, but do not rely on it for multi-writer ingestion.
+- If a `.duckdb` file is used, treat it as read-mostly (or per-run) so concurrent runs never contend on a single writable DB file.
 - Avoid per-row inserts; batch writes per scan cycle and emit new Parquet files atomically.
+- Default telemetry root: a single per-user directory (e.g., `~/.local/share/pt/telemetry/`), overridable via config/env, so full-auto runs always have somewhere to write.
+- Raw tool outputs are recorded with strict size caps and redaction; structured parsed fields are the primary analytic surface.
+- Retention: enforce a disk budget and TTL for raw outputs and high-volume tables; keep aggregated summaries longer than raw streams.
 
 What gets logged (raw + derived + outcomes):
 - `runs`: run_id, host fingerprint, git commit, priors/policy snapshot hash, tool availability/capabilities, pt-core version.
@@ -412,6 +428,7 @@ Partitioning rule (example):
 ---
 
 ## 4) Inference Engine (Closed-Form Bayesian Core)
+Design constraint: all posterior/odds/expected-loss updates used for decisions must remain closed-form (conjugate, log-domain, numerically stable). Richer layers (Hawkes/EVT/copulas/wavelets/profilers) are allowed to produce deterministic summary statistics or analytic filter states, but they must feed the decision core as fixed features or via conjugate likelihood surrogates so the end-to-end decision remains auditable and non-ML.
 
 ### 4.1 State Space
 C in {useful, useful-but-bad, abandoned, zombie}
@@ -692,7 +709,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - restart (for known services)
 - kill (SIGTERM -> SIGKILL)
 
-Decision engine selects action with minimum expected loss; kill requires explicit confirmation.
+Decision engine selects action with minimum expected loss. Destructive actions (especially kill) require explicit confirmation by default via the TUI, but can be executed automatically under an explicit `--robot` flag and only when all safety gates pass (robust Bayes/DRO/FDR/alpha-investing/policy allowlists).
 
 ---
 
@@ -709,6 +726,12 @@ Decision engine selects action with minimum expected loss; kill requires explici
 ### 7.3 Human Trust Features
 - Show "Why" summary: top evidence items and their weights
 - Show "What would change your mind" (VOI hint)
+
+### 7.4 Full-Auto Approval Flow (TUI + Robot Mode)
+- Default UX: `pt` runs the entire exploration/analysis pipeline automatically, then presents a single “Apply Plan” TUI screen.
+- The process list is pre-toggled according to the system’s recommended action plan (including FDR/alpha-investing gates), so the user usually just reviews and confirms.
+- The TUI allows: drill-down evidence, bulk toggles, and an “apply selected” step that executes actions in a safe order (pause/throttle before kill when appropriate).
+- `--robot` bypasses the approval UI and executes the pre-toggled plan non-interactively (still honoring `--shadow` and `--dry-run`).
 
 ---
 
@@ -789,6 +812,7 @@ Use the model to interpret the observed snapshot:
 ### Phase 3a: Tooling Install Strategy (Maximal Instrumentation by Default)
 Policy: always try to install everything and collect as much data as possible.
 Implementation note: `pt` (bash) performs installation and capability discovery; it then launches `pt-core` with a cached capabilities manifest so inference/decisioning can gracefully degrade when tools are missing.
+Non-invasiveness rule: install tools aggressively, but avoid enabling persistent daemons or making irreversible system configuration changes by default; prefer on-demand sampling/tracing and record what could not be accessed due to permissions.
 
 Linux package managers:
 - Debian/Ubuntu (apt):
@@ -844,9 +868,10 @@ macOS (Homebrew):
 Install workflow:
 - Detect OS + package manager.
 - Attempt full install; if any package fails, continue installing the rest.
+- Prefer non-interactive installs (no prompts); if privileges are insufficient (no sudo / no admin), continue with whatever signals are available and record the missing capabilities.
 - Record capabilities in a local cache (what is available vs missing).
 - Prefer richer signals when available (eBPF/perf), but never fail if missing.
-- If a tool is not available via package manager, download pinned upstream binaries (with checksums) into a tools cache and re-run capability detection.
+- If a tool is not available via package manager, download pinned upstream binaries (with checksums/signatures where available) into a tools cache and re-run capability detection.
 
 Capability matrix (signal -> tool -> OS support -> fallback):
 - syscalls/IO events: bpftrace/bcc (Linux), dtruss (macOS if permitted) -> fallback: strace
@@ -919,16 +944,20 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - Add DRO/worst-case loss gating when model criticism flags drift or misspecification
 
 ### Phase 6: Action Tray
-- Keep/pause/throttle/kill suggestions
-- Confirm before kill
+- Generate an explicit action plan (per PID) with ordering, timeouts, and rollback hints.
+- Default: present the plan in a TUI with recommended actions pre-toggled; require confirmation before executing destructive actions.
+- Implement `--robot` to execute the pre-toggled plan without UI (subject to safety gates and `--dry-run`/`--shadow`).
+- Add an execution protocol: pre-flight checks, staged application (pause/throttle -> observe -> kill if still warranted), and post-action verification + logging.
 
 ### Phase 7: UX Refinement
 - Evidence glyphs and ledger
 - Explainability line per process
+- Add a single “Apply Plan” screen with drill-down and bulk toggle operations.
 
 ### Phase 8: Safety and Policy
 - Guardrails for system services
 - Rate limiting, quarantine policies
+- Define robot-mode safety gates: minimum posterior odds, FDR/alpha-investing budgets, allowlists/denylists, and maximum blast radius per run.
 
 ### Phase 9: Shadow Mode and Calibration
 - Advisory-only logging
@@ -944,6 +973,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - Integration tests: deterministic output for fixed inputs
 - Telemetry tests: Parquet schema stability, batched writes, and DuckDB view/query correctness
 - Redaction tests: confirm sensitive strings never appear in persisted telemetry
+- Automation tests: `--robot`/`--shadow`/`--dry-run` behavior (no prompts; correct gating; no actions in shadow/dry-run)
 - Shadow mode metrics: false kill rate, missed abandonment rate
 - PAC-Bayes bound reporting on false-kill rate
 - Calibration tests for empirical Bayes hyperparameters
@@ -973,4 +1003,4 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 ---
 
 ## 13) Final Safety Statement
-This system never auto-kills by default. It only recommends, with full evidence and loss-based reasoning, and requires explicit confirmation for any destructive action.
+This system never auto-kills by default. By default it runs full-auto analysis and then requires an explicit TUI confirmation before executing destructive actions. A `--robot` flag allows non-interactive execution of the pre-toggled recommended plan, but still enforces safety gates (policy allowlists/denylists, robust Bayes/DRO checks, FDR/alpha-investing budgets, and blast-radius limits).
