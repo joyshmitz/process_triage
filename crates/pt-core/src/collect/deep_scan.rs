@@ -16,8 +16,8 @@
 //! - Graceful degradation for permission-denied paths
 
 use super::proc_parsers::{
-    parse_cgroup, parse_fd, parse_io, parse_schedstat, parse_statm, parse_wchan,
-    CgroupInfo, FdInfo, IoStats, MemStats, SchedStats,
+    parse_cgroup, parse_environ, parse_fd, parse_io, parse_sched, parse_schedstat, parse_statm,
+    parse_wchan, CgroupInfo, FdInfo, IoStats, MemStats, SchedInfo, SchedStats,
 };
 use pt_common::{ProcessId, StartId};
 use serde::{Deserialize, Serialize};
@@ -106,6 +106,10 @@ pub struct DeepScanRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schedstat: Option<SchedStats>,
 
+    /// Scheduler info (context switches, priority, nice).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sched: Option<SchedInfo>,
+
     /// Memory statistics.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mem: Option<MemStats>,
@@ -121,6 +125,10 @@ pub struct DeepScanRecord {
     /// Wait channel (kernel function where sleeping).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wchan: Option<String>,
+
+    /// Environment variables (if requested and accessible).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environ: Option<std::collections::HashMap<String, String>>,
 
     // === Timing ===
     /// Process start time (clock ticks since boot).
@@ -190,7 +198,7 @@ pub fn deep_scan(options: &DeepScanOptions) -> Result<DeepScanResult, DeepScanEr
     };
 
     for pid in pids {
-        match scan_process(pid) {
+        match scan_process(pid, options.include_environ) {
             Ok(record) => processes.push(record),
             Err(e) => {
                 if options.skip_inaccessible {
@@ -236,7 +244,7 @@ fn list_all_pids() -> Result<Vec<u32>, DeepScanError> {
 }
 
 /// Scan a single process by PID.
-fn scan_process(pid: u32) -> Result<DeepScanRecord, DeepScanError> {
+fn scan_process(pid: u32, include_environ: bool) -> Result<DeepScanRecord, DeepScanError> {
     let proc_path = format!("/proc/{}", pid);
 
     // Check if process exists
@@ -281,10 +289,18 @@ fn scan_process(pid: u32) -> Result<DeepScanRecord, DeepScanError> {
     // Collect optional detailed stats (may fail due to permissions)
     let io = parse_io(pid);
     let schedstat = parse_schedstat(pid);
+    let sched = parse_sched(pid);
     let mem = parse_statm(pid);
     let fd = parse_fd(pid);
     let cgroup = parse_cgroup(pid);
     let wchan = parse_wchan(pid);
+
+    // Collect environment variables if requested (may contain sensitive data)
+    let environ = if include_environ {
+        parse_environ(pid)
+    } else {
+        None
+    };
 
     Ok(DeepScanRecord {
         pid: ProcessId(pid),
@@ -300,10 +316,12 @@ fn scan_process(pid: u32) -> Result<DeepScanRecord, DeepScanError> {
         state: stat_info.state,
         io,
         schedstat,
+        sched,
         mem,
         fd,
         cgroup,
         wchan,
+        environ,
         starttime: stat_info.starttime,
         source: "deep_scan".to_string(),
     })
@@ -512,7 +530,7 @@ Gid:	1000	1000	1000	1000
     fn test_scan_self() {
         // Scan our own process - should always work
         let pid = std::process::id();
-        let record = scan_process(pid).unwrap();
+        let record = scan_process(pid, false).unwrap();
 
         assert_eq!(record.pid.0, pid);
         assert!(record.ppid.0 > 0);

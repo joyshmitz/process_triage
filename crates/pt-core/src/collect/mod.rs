@@ -18,5 +18,9 @@ mod types;
 pub use deep_scan::{
     deep_scan, DeepScanError, DeepScanMetadata, DeepScanOptions, DeepScanRecord, DeepScanResult,
 };
+#[cfg(target_os = "linux")]
+pub use proc_parsers::{
+    CgroupInfo, FdInfo, IoStats, MemStats, SchedInfo, SchedStats,
+};
 pub use quick_scan::{quick_scan, QuickScanError, QuickScanOptions};
 pub use types::{ProcessRecord, ProcessState, ScanResult, ScanMetadata};
