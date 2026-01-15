@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0.0",
+  "theme": "auto",
+  "embed_assets": false,
+  "galaxy_brain": false,
+  "sections": {
+    "overview": true,
+    "candidates": true,
+    "evidence": true,
+    "actions": true,
+    "telemetry": true,
+    "galaxy_brain": false
+  },
+  "cdn_config": {
+    "base_url": "https://cdn.jsdelivr.net/npm",
+    "fallback_enabled": true,
+    "libraries": {
+      "tailwindcss": {
+        "version": "3.4.1",
+        "sri": "sha384-PLACEHOLDER_GENERATE_ON_BUILD",
+        "path": "dist/tailwind.min.css"
+      },
+      "tabulator": {
+        "version": "6.2.1",
+        "sri": "sha384-PLACEHOLDER_GENERATE_ON_BUILD",
+        "path": "dist/js/tabulator.min.js"
+      },
+      "echarts": {
+        "version": "5.5.0",
+        "sri": "sha384-PLACEHOLDER_GENERATE_ON_BUILD",
+        "path": "dist/echarts.min.js"
+      },
+      "mermaid": {
+        "version": "10.9.0",
+        "sri": "sha384-PLACEHOLDER_GENERATE_ON_BUILD",
+        "path": "dist/mermaid.min.js"
+      },
+      "katex": {
+        "version": "0.16.9",
+        "sri": "sha384-PLACEHOLDER_GENERATE_ON_BUILD",
+        "path": "dist/katex.min.js"
+      },
+      "jszip": {
+        "version": "3.10.1",
+        "sri": "sha384-PLACEHOLDER_GENERATE_ON_BUILD",
+        "path": "dist/jszip.min.js"
+      }
+    }
+  },
+  "limits": {
+    "max_candidates": 1000,
+    "max_timeline_points": 10000,
+    "embed_size_limit_mb": 10
+  },
+  "redaction_profile": "safe"
+}

@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0.0",
+  "bundle_id": "ptb-20260115-abc123def456",
+  "created_at": "2026-01-15T14:30:00Z",
+  "created_by": "pt-core/1.0.0",
+  "session_id": "sess-abc123-def456-789",
+  "host_id": "sha256:a1b2c3d4e5f6...",
+  "export_profile": "safe",
+  "container": {
+    "format": "zip",
+    "compression_level": 6
+  },
+  "policy_snapshot": {
+    "priors_hash": "sha256:1234567890abcdef...",
+    "policy_hash": "sha256:abcdef1234567890...",
+    "redaction_hash": "sha256:fedcba0987654321..."
+  },
+  "redaction_applied": true,
+  "redaction_policy_id": "default-safe-v1",
+  "encryption": {
+    "enabled": false
+  },
+  "contents": [
+    {
+      "path": "manifest.json",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 1024,
+      "content_type": "application/json",
+      "redaction_level": "none"
+    },
+    {
+      "path": "plan.json",
+      "sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+      "size_bytes": 15360,
+      "content_type": "application/json",
+      "redaction_level": "hashed"
+    },
+    {
+      "path": "summary.json",
+      "sha256": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+      "size_bytes": 2048,
+      "content_type": "application/json",
+      "redaction_level": "hashed"
+    },
+    {
+      "path": "report.html",
+      "sha256": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "size_bytes": 102400,
+      "content_type": "text/html",
+      "redaction_level": "hashed"
+    },
+    {
+      "path": "policies/priors.json",
+      "sha256": "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+      "size_bytes": 4096,
+      "content_type": "application/json",
+      "redaction_level": "none"
+    },
+    {
+      "path": "policies/policy.json",
+      "sha256": "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
+      "size_bytes": 2048,
+      "content_type": "application/json",
+      "redaction_level": "none"
+    },
+    {
+      "path": "policies/redaction.json",
+      "sha256": "f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1",
+      "size_bytes": 1536,
+      "content_type": "application/json",
+      "redaction_level": "none"
+    }
+  ]
+}
