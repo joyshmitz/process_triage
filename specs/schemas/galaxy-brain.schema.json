@@ -1,0 +1,305 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://process-triage.dev/schemas/galaxy-brain/1.0.0",
+  "title": "Process Triage Galaxy-Brain Mode Schema",
+  "description": "Schema for galaxy-brain mode math transparency cards. These cards expose the full mathematical reasoning of the inference engine for educational/debugging purposes.",
+  "type": "object",
+  "required": ["schema_version", "cards"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0.0",
+      "description": "Schema version for compatibility checking"
+    },
+    "process_id": {
+      "type": "integer",
+      "description": "PID this galaxy-brain data applies to"
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Session ID for correlation"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this galaxy-brain snapshot was generated"
+    },
+    "cards": {
+      "type": "array",
+      "description": "Array of math transparency cards, ordered for display",
+      "items": { "$ref": "#/$defs/math_card" },
+      "minItems": 1
+    },
+    "render_hints": {
+      "$ref": "#/$defs/render_hints",
+      "description": "Hints for TUI/CLI/report rendering"
+    }
+  },
+  "$defs": {
+    "math_card": {
+      "type": "object",
+      "description": "A single math transparency card showing one aspect of inference",
+      "required": ["id", "title", "equations", "values", "intuition"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "enum": [
+            "posterior_core",
+            "hazard_time_varying",
+            "conformal_interval",
+            "conformal_class_set",
+            "e_values_fdr",
+            "alpha_investing",
+            "voi"
+          ],
+          "description": "Stable card identifier for programmatic access"
+        },
+        "title": {
+          "type": "string",
+          "description": "Human-readable card title for display"
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Optional subtitle providing additional context"
+        },
+        "equations": {
+          "type": "array",
+          "description": "LaTeX/KaTeX equations showing the math",
+          "items": { "$ref": "#/$defs/equation" },
+          "minItems": 1
+        },
+        "values": {
+          "type": "object",
+          "description": "Concrete computed values for this card",
+          "additionalProperties": { "$ref": "#/$defs/computed_value" }
+        },
+        "intuition": {
+          "type": "string",
+          "description": "One-line plain-English explanation of what this shows"
+        },
+        "details": {
+          "type": "string",
+          "description": "Optional longer explanation with more context"
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Optional warnings about this computation (e.g., low sample size)"
+        },
+        "references": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/reference" },
+          "description": "Optional academic/documentation references"
+        },
+        "collapsed_by_default": {
+          "type": "boolean",
+          "default": false,
+          "description": "Whether this card should be collapsed in TUI by default"
+        }
+      }
+    },
+    "equation": {
+      "type": "object",
+      "description": "A mathematical equation with rendering information",
+      "required": ["latex"],
+      "additionalProperties": false,
+      "properties": {
+        "latex": {
+          "type": "string",
+          "description": "LaTeX/KaTeX source for the equation"
+        },
+        "display_mode": {
+          "type": "boolean",
+          "default": true,
+          "description": "True for block display, false for inline"
+        },
+        "label": {
+          "type": "string",
+          "description": "Optional label for the equation (e.g., 'Bayes rule')"
+        },
+        "ascii_fallback": {
+          "type": "string",
+          "description": "ASCII approximation for terminals without math rendering"
+        }
+      }
+    },
+    "computed_value": {
+      "type": "object",
+      "description": "A concrete computed numeric value",
+      "required": ["value"],
+      "additionalProperties": false,
+      "properties": {
+        "value": {
+          "description": "The computed value (number, array, or structured object)",
+          "oneOf": [
+            { "type": "number" },
+            { "type": "array", "items": { "type": "number" } },
+            { "type": "object" }
+          ]
+        },
+        "unit": {
+          "type": "string",
+          "description": "Unit of measurement if applicable (e.g., 'seconds', 'probability')"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["decimal", "percentage", "scientific", "log", "duration"],
+          "default": "decimal",
+          "description": "How to format this value for display"
+        },
+        "precision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15,
+          "default": 4,
+          "description": "Decimal precision for display"
+        },
+        "label": {
+          "type": "string",
+          "description": "Human-readable label for this value"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "LaTeX symbol used in equations (e.g., '\\alpha', 'P(C|x)')"
+        },
+        "interpretation": {
+          "type": "string",
+          "description": "Plain-English interpretation of this specific value"
+        }
+      }
+    },
+    "reference": {
+      "type": "object",
+      "description": "A reference to external documentation or paper",
+      "required": ["title"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Reference title"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to the reference"
+        },
+        "authors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Author names"
+        },
+        "year": {
+          "type": "integer",
+          "description": "Publication year"
+        },
+        "note": {
+          "type": "string",
+          "description": "Additional note about relevance"
+        }
+      }
+    },
+    "render_hints": {
+      "type": "object",
+      "description": "Hints for rendering across different outputs",
+      "additionalProperties": false,
+      "properties": {
+        "tui": {
+          "$ref": "#/$defs/tui_hints"
+        },
+        "cli": {
+          "$ref": "#/$defs/cli_hints"
+        },
+        "report": {
+          "$ref": "#/$defs/report_hints"
+        }
+      }
+    },
+    "tui_hints": {
+      "type": "object",
+      "description": "TUI-specific rendering hints",
+      "additionalProperties": false,
+      "properties": {
+        "color_scheme": {
+          "type": "string",
+          "enum": ["math", "code", "default"],
+          "default": "math",
+          "description": "Color scheme for syntax highlighting"
+        },
+        "use_unicode_math": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use Unicode math symbols (e.g., \u03b1, \u03b2, \u2211)"
+        },
+        "show_equations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show LaTeX equations (may use ASCII fallback)"
+        },
+        "compact_mode": {
+          "type": "boolean",
+          "default": false,
+          "description": "Compact display for smaller terminals"
+        },
+        "keybind_toggle": {
+          "type": "string",
+          "default": "g",
+          "description": "Keybinding to toggle galaxy-brain mode"
+        }
+      }
+    },
+    "cli_hints": {
+      "type": "object",
+      "description": "CLI-specific rendering hints",
+      "additionalProperties": false,
+      "properties": {
+        "output_format": {
+          "type": "string",
+          "enum": ["plain", "json", "markdown"],
+          "default": "plain",
+          "description": "CLI output format"
+        },
+        "use_color": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use ANSI colors in output"
+        },
+        "verbosity": {
+          "type": "string",
+          "enum": ["summary", "normal", "verbose"],
+          "default": "normal",
+          "description": "Amount of detail to show"
+        }
+      }
+    },
+    "report_hints": {
+      "type": "object",
+      "description": "HTML report-specific rendering hints",
+      "additionalProperties": false,
+      "properties": {
+        "math_renderer": {
+          "type": "string",
+          "enum": ["katex", "mathjax"],
+          "default": "katex",
+          "description": "Math rendering library to use"
+        },
+        "show_derivations": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show full derivations (expanded mode)"
+        },
+        "interactive_charts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable interactive chart visualizations"
+        },
+        "tab_id": {
+          "type": "string",
+          "default": "galaxy-brain",
+          "description": "HTML tab ID for the galaxy-brain section"
+        }
+      }
+    }
+  }
+}
