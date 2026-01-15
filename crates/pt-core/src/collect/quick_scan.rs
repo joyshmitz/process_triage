@@ -12,15 +12,17 @@
 //! - Single ps invocation with custom format string
 
 use super::types::{ProcessRecord, ProcessState, ScanMetadata, ScanResult};
+use crate::events::{event_names, Phase, ProgressEmitter, ProgressEvent};
 use pt_common::{ProcessId, StartId};
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{debug, span, Level};
 
 /// Options for quick scan operation.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct QuickScanOptions {
     /// Only scan specific PIDs (empty = all processes).
     pub pids: Vec<u32>,
@@ -30,6 +32,20 @@ pub struct QuickScanOptions {
 
     /// Timeout for ps command (default: 10 seconds).
     pub timeout: Option<Duration>,
+
+    /// Optional progress event emitter.
+    pub progress: Option<Arc<dyn ProgressEmitter>>,
+}
+
+impl std::fmt::Debug for QuickScanOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("QuickScanOptions")
+            .field("pids", &self.pids)
+            .field("include_kernel_threads", &self.include_kernel_threads)
+            .field("timeout", &self.timeout)
+            .field("progress", &self.progress.as_ref().map(|_| "..."))
+            .finish()
+    }
 }
 
 /// Errors that can occur during quick scan.
@@ -72,6 +88,14 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
     let platform = detect_platform();
     let boot_id = read_boot_id();
 
+    if let Some(emitter) = options.progress.as_ref() {
+        emitter.emit(
+            ProgressEvent::new(event_names::QUICK_SCAN_STARTED, Phase::QuickScan)
+                .with_detail("platform", &platform)
+                .with_detail("boot_id", &boot_id),
+        );
+    }
+
     // Build ps command
     let mut cmd = build_ps_command(&platform, options)?;
 
@@ -99,6 +123,9 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
         // Header skipped
     }
 
+    let mut processed = 0usize;
+    const PROGRESS_STEP: usize = 200;
+
     for (line_num, line_result) in lines.enumerate() {
         let line = line_result?;
         if line.trim().is_empty() {
@@ -109,6 +136,17 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
             Ok(record) => processes.push(record),
             Err(e) => {
                 warnings.push(format!("Line {}: {}", line_num + 2, e));
+            }
+        }
+
+        processed += 1;
+        if processed % PROGRESS_STEP == 0 {
+            if let Some(emitter) = options.progress.as_ref() {
+                emitter.emit(
+                    ProgressEvent::new(event_names::QUICK_SCAN_PROGRESS, Phase::QuickScan)
+                        .with_progress(processed as u64, None)
+                        .with_detail("pids_scanned", processed),
+                );
             }
         }
     }
@@ -124,6 +162,15 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
         duration_ms = duration.as_millis(),
         "Quick scan completed"
     );
+
+    if let Some(emitter) = options.progress.as_ref() {
+        emitter.emit(
+            ProgressEvent::new(event_names::QUICK_SCAN_COMPLETE, Phase::QuickScan)
+                .with_progress(process_count as u64, Some(process_count as u64))
+                .with_elapsed_ms(duration.as_millis() as u64)
+                .with_detail("warnings", warnings.len()),
+        );
+    }
 
     Ok(ScanResult {
         processes,

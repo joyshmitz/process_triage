@@ -19,15 +19,17 @@ use super::proc_parsers::{
     parse_cgroup, parse_environ, parse_fd, parse_io, parse_sched, parse_schedstat, parse_statm,
     parse_wchan, CgroupInfo, FdInfo, IoStats, MemStats, SchedInfo, SchedStats,
 };
+use crate::events::{event_names, Phase, ProgressEmitter, ProgressEvent};
 use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
 
 /// Options for deep scan operation.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct DeepScanOptions {
     /// Only scan specific PIDs (empty = all processes).
     pub pids: Vec<u32>,
@@ -37,6 +39,20 @@ pub struct DeepScanOptions {
 
     /// Include environment variables (may be sensitive).
     pub include_environ: bool,
+
+    /// Optional progress event emitter.
+    pub progress: Option<Arc<dyn ProgressEmitter>>,
+}
+
+impl std::fmt::Debug for DeepScanOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DeepScanOptions")
+            .field("pids", &self.pids)
+            .field("skip_inaccessible", &self.skip_inaccessible)
+            .field("include_environ", &self.include_environ)
+            .field("progress", &self.progress.as_ref().map(|_| "..."))
+            .finish()
+    }
 }
 
 /// Errors that can occur during deep scan.
@@ -231,9 +247,22 @@ pub fn deep_scan(options: &DeepScanOptions) -> Result<DeepScanResult, DeepScanEr
     } else {
         options.pids.clone()
     };
+    let total_pids = pids.len() as u64;
 
-    for pid in pids {
-        match scan_process(pid, options.include_environ, &user_cache, &boot_id) {
+    if let Some(emitter) = options.progress.as_ref() {
+        emitter.emit(
+            ProgressEvent::new(event_names::DEEP_SCAN_STARTED, Phase::DeepScan)
+                .with_progress(0, Some(total_pids))
+                .with_detail("include_environ", options.include_environ)
+                .with_detail("skip_inaccessible", options.skip_inaccessible),
+        );
+    }
+
+    let mut scanned = 0usize;
+    const PROGRESS_STEP: usize = 50;
+
+    for pid in &pids {
+        match scan_process(*pid, options.include_environ, &user_cache, &boot_id) {
             Ok(record) => processes.push(record),
             Err(e) => {
                 if options.skip_inaccessible {
@@ -243,10 +272,32 @@ pub fn deep_scan(options: &DeepScanOptions) -> Result<DeepScanResult, DeepScanEr
                 }
             }
         }
+
+        scanned += 1;
+        if scanned % PROGRESS_STEP == 0 {
+            if let Some(emitter) = options.progress.as_ref() {
+                emitter.emit(
+                    ProgressEvent::new(event_names::DEEP_SCAN_PROGRESS, Phase::DeepScan)
+                        .with_progress(scanned as u64, Some(total_pids))
+                        .with_detail("skipped", skipped_count),
+                );
+            }
+        }
     }
 
     let duration = start.elapsed();
     let process_count = processes.len();
+
+    if let Some(emitter) = options.progress.as_ref() {
+        emitter.emit(
+            ProgressEvent::new(event_names::DEEP_SCAN_COMPLETE, Phase::DeepScan)
+                .with_progress(scanned as u64, Some(total_pids))
+                .with_elapsed_ms(duration.as_millis() as u64)
+                .with_detail("process_count", process_count)
+                .with_detail("skipped", skipped_count)
+                .with_detail("warnings", warnings.len()),
+        );
+    }
 
     Ok(DeepScanResult {
         processes,
@@ -600,6 +651,7 @@ Gid:	1000	1000	1000	1000
             pids: vec![1], // Just scan init/systemd
             skip_inaccessible: true,
             include_environ: false,
+            progress: None,
         };
 
         let result = deep_scan(&options);
@@ -656,6 +708,7 @@ Gid:	1000	1000	1000	1000
             pids: vec![proc.pid()],
             skip_inaccessible: false,
             include_environ: false,
+            progress: None,
         };
 
         let result = deep_scan(&options);
@@ -781,6 +834,7 @@ Gid:	1000	1000	1000	1000
             pids: vec![proc.pid()],
             skip_inaccessible: false,
             include_environ: false,
+            progress: None,
         };
 
         let result = deep_scan(&options).expect("deep_scan should succeed");

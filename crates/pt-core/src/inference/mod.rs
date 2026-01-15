@@ -2,6 +2,7 @@
 
 pub mod belief_prop;
 pub mod bocpd;
+pub mod ctw;
 pub mod conformal;
 pub mod evt;
 pub mod hawkes;
@@ -22,6 +23,10 @@ pub use belief_prop::{
 pub use bocpd::{
     BatchResult, BocpdConfig, BocpdDetector, BocpdError, BocpdEvidence, BocpdUpdateResult,
     ChangePoint, EmissionModel,
+};
+pub use ctw::{
+    CtwBatchResult, CtwConfig, CtwError, CtwEvidence, CtwFeatures, CtwPredictor, CtwProvenance,
+    CtwUpdateResult, DiscretizationMode, Discretizer, DiscretizerConfig,
 };
 pub use conformal::{
     AdaptiveConformalRegressor, BlockedConformalRegressor, ConformalClassifier, ConformalConfig,
