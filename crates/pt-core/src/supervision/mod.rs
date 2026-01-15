@@ -43,6 +43,7 @@
 //! ```
 
 mod ancestry;
+mod app_supervision;
 mod container_supervision;
 mod environ;
 mod ipc;
@@ -91,6 +92,10 @@ pub use container_supervision::{
     detect_container_supervision, detect_container_supervision_with_actions,
     ContainerAction, ContainerActionType, ContainerSupervisionAnalyzer,
     ContainerSupervisionError, ContainerSupervisionResult,
+};
+pub use app_supervision::{
+    detect_app_supervision, AlternativeAction, AppActionType, AppSupervisionAnalyzer,
+    AppSupervisionError, AppSupervisionResult, AppSupervisorAction, AppSupervisorType,
 };
 
 use thiserror::Error;

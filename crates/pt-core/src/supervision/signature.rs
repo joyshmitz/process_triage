@@ -802,6 +802,29 @@ impl SignatureDatabase {
         );
 
         let _ = self.add(
+            SupervisorSignature::new("nodemon", SupervisorCategory::Orchestrator)
+                .with_confidence(0.85)
+                .with_notes("nodemon - Node.js file watcher and auto-restarter")
+                .with_process_patterns(vec![r"^nodemon$", r"^node.*nodemon"])
+                .with_env_patterns(HashMap::from([
+                    ("NODEMON_CONFIG".into(), ".*".into()),
+                ]))
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("forever", SupervisorCategory::Orchestrator)
+                .with_confidence(0.85)
+                .with_notes("forever - Node.js process manager")
+                .with_process_patterns(vec![r"^forever$", r"^node.*forever"])
+                .with_env_patterns(HashMap::from([
+                    ("FOREVER_ROOT".into(), ".*".into()),
+                ]))
+                .with_pid_files(vec!["~/.forever/pids/", "/var/run/forever/"])
+                .as_builtin(),
+        );
+
+        let _ = self.add(
             SupervisorSignature::new("docker", SupervisorCategory::Orchestrator)
                 .with_confidence(0.85)
                 .with_notes("Docker container engine")
