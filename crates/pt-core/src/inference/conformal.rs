@@ -587,9 +587,12 @@ impl AdaptiveConformalRegressor {
                 / self.recent_errors.len() as f64;
             let target_error_rate = 1.0 - self.target_coverage;
 
-            // If we're undercover, decrease α (widen intervals)
-            // If we're overcover, increase α (narrow intervals)
-            let adjustment = self.learning_rate * (empirical_error_rate - target_error_rate);
+            // If we're undercover (error_rate > target), decrease α (widen intervals)
+            // If we're overcover (error_rate < target), increase α (narrow intervals)
+            // adjustment = learning_rate * (target - empirical) so:
+            //   undercover → target < empirical → adjustment < 0 → α decreases
+            //   overcover → target > empirical → adjustment > 0 → α increases
+            let adjustment = self.learning_rate * (target_error_rate - empirical_error_rate);
             self.adaptive_alpha = (self.adaptive_alpha + adjustment).clamp(0.01, 0.5);
         }
 

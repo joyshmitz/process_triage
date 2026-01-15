@@ -459,11 +459,17 @@ impl GpdFitter {
     }
 
     /// Compute MLE gradient.
+    ///
+    /// GPD log-likelihood: ℓ(ξ,σ) = -n ln(σ) - (1 + 1/ξ) Σ ln(1 + ξz_i)
+    /// Gradients:
+    ///   ∂ℓ/∂ξ = (1/ξ²) Σ ln(1+ξz) - (1+1/ξ) Σ z/(1+ξz)
+    ///   ∂ℓ/∂σ = -n/σ + (1+1/ξ) Σ ξz/(σ(1+ξz))
     fn mle_gradient(&self, exceedances: &[f64], xi: f64, sigma: f64) -> (f64, f64) {
         let n = exceedances.len() as f64;
 
         if xi.abs() < 1e-6 {
-            // Exponential case
+            // Exponential case: ℓ = -n ln(σ) - Σ z_i
+            // ∂ℓ/∂σ = -n/σ + Σ y_i/σ²
             let sum_y: f64 = exceedances.iter().sum();
             let grad_sigma = -n / sigma + sum_y / (sigma * sigma);
             return (0.0, grad_sigma);
@@ -478,7 +484,9 @@ impl GpdFitter {
 
             if term > 0.0 {
                 let log_term = term.ln();
-                grad_xi += (1.0 / xi + 1.0) * z / term - log_term / (xi * xi);
+                // ∂ℓ/∂ξ = ln(1+ξz)/ξ² - (1+1/ξ) * z/(1+ξz)
+                grad_xi += log_term / (xi * xi) - (1.0 / xi + 1.0) * z / term;
+                // ∂ℓ/∂σ = (1+1/ξ) * ξz / (σ(1+ξz)) - 1/σ
                 grad_sigma += ((1.0 / xi + 1.0) * xi * z / term - 1.0) / sigma;
             }
         }

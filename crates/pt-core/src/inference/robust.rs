@@ -558,13 +558,10 @@ pub fn select_eta_prequential(
             // Predictive probability before seeing data
             let p_pred = alpha / (alpha + beta);
 
-            // Log-loss
+            // Cross-entropy log-loss: -k_rate * ln(p) - (1-k_rate) * ln(1-p)
             let k_rate = k as f64 / n.max(1) as f64;
-            let loss = if k_rate > 0.0 {
-                -k_rate * p_pred.max(1e-10).ln()
-            } else {
-                -(1.0 - k_rate) * (1.0 - p_pred).max(1e-10).ln()
-            };
+            let loss = -k_rate * p_pred.max(1e-10).ln()
+                - (1.0 - k_rate) * (1.0 - p_pred).max(1e-10).ln();
             cumulative_loss += loss;
 
             // Tempered update
