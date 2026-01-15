@@ -26,8 +26,9 @@ pub use capabilities::{
     CAPABILITIES_SCHEMA_VERSION, DEFAULT_CACHE_TTL_SECS,
 };
 pub use categories::{
-    CategoryMatcher, CategoryTaxonomy, CommandCategory, CommandCategoryDef, CommandPattern,
-    CwdCategory, CwdCategoryDef, CwdPattern, PriorHints, CATEGORIES_SCHEMA_VERSION,
+    CategorizationOutput, CategoryMatcher, CategoryTaxonomy, CommandCategory, CommandCategoryDef,
+    CommandPattern, CwdCategory, CwdCategoryDef, CwdPattern, PriorHints,
+    CATEGORIES_SCHEMA_VERSION,
 };
 pub use galaxy_brain::{
     CardId, CliHints, CliOutputFormat, CliVerbosity, ComputedValue, Equation, GalaxyBrainData,

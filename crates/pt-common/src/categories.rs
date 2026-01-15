@@ -6,9 +6,23 @@
 //!
 //! Categories feed into the Bayesian inference as Dirichlet-Categorical evidence.
 //! The categorization affects prior probabilities for each process class.
+//!
+//! # Categorization Output
+//!
+//! The [`CategorizationOutput`] struct provides:
+//! - `cmd_category`: The detected command category (g)
+//! - `cwd_category`: The detected CWD category
+//! - `cmd_signature`: A stable, hashed representation for grouping similar commands
+//! - `cmd_short`: Optional display-safe short form of the command
+//!
+//! # Versioning
+//!
+//! Category mappings are versioned (see [`CATEGORIES_SCHEMA_VERSION`]) to ensure
+//! deterministic, reproducible categorization across sessions.
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Schema version for category taxonomy.
 pub const CATEGORIES_SCHEMA_VERSION: &str = "1.0.0";
@@ -174,6 +188,55 @@ impl Default for CwdCategory {
     }
 }
 
+/// Output of command and CWD categorization.
+///
+/// This struct provides the stable, versioned output of categorizing a process
+/// by its command line and working directory. All fields are safe to persist
+/// in telemetry without leaking sensitive information.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CategorizationOutput {
+    /// The detected command category (g in the inference model).
+    pub cmd_category: CommandCategory,
+
+    /// The detected working directory category.
+    pub cwd_category: CwdCategory,
+
+    /// Stable hash signature for grouping similar commands.
+    ///
+    /// This is a SHA-256 hash of normalized command tokens, truncated to 16 hex chars.
+    /// Format: `cmd:<hash>` (e.g., `cmd:a1b2c3d4e5f6g7h8`)
+    ///
+    /// The normalization process:
+    /// 1. Extract the base command (first token or executable name)
+    /// 2. Extract significant flags/subcommands (sorted, deduplicated)
+    /// 3. Hash the normalized representation
+    pub cmd_signature: String,
+
+    /// Display-safe short form of the command.
+    ///
+    /// This is the base command plus category indicator, suitable for display
+    /// in TUI or agent outputs. Example: `jest (test)` or `next dev (devserver)`
+    ///
+    /// This field respects redaction by only showing the detected program name,
+    /// never arguments or paths.
+    pub cmd_short: String,
+
+    /// Categorization schema version for reproducibility tracking.
+    pub schema_version: String,
+}
+
+impl CategorizationOutput {
+    /// Get the command category index for Dirichlet parameters.
+    pub fn cmd_index(&self) -> usize {
+        self.cmd_category.index()
+    }
+
+    /// Get the CWD category index.
+    pub fn cwd_index(&self) -> usize {
+        self.cwd_category.index()
+    }
+}
+
 /// Pattern rule for matching commands to categories.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CommandPattern {
@@ -266,6 +329,144 @@ impl CategoryMatcher {
     /// Get CWD category index.
     pub fn cwd_index(&self, path: &str) -> usize {
         self.categorize_cwd(path).index()
+    }
+
+    /// Fully categorize a command and working directory.
+    ///
+    /// Returns a [`CategorizationOutput`] with:
+    /// - Command and CWD categories
+    /// - A stable hash signature for grouping
+    /// - A display-safe short form
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use pt_common::categories::CategoryMatcher;
+    ///
+    /// let matcher = CategoryMatcher::new();
+    /// let output = matcher.categorize("jest --watch", "/home/user/projects/app");
+    /// assert_eq!(output.cmd_category.name(), "test");
+    /// assert!(output.cmd_signature.starts_with("cmd:"));
+    /// ```
+    pub fn categorize(&self, command: &str, cwd: &str) -> CategorizationOutput {
+        let cmd_category = self.categorize_command(command);
+        let cwd_category = self.categorize_cwd(cwd);
+        let cmd_signature = self.compute_signature(command, &cmd_category);
+        let cmd_short = self.compute_short_form(command, &cmd_category);
+
+        CategorizationOutput {
+            cmd_category,
+            cwd_category,
+            cmd_signature,
+            cmd_short,
+            schema_version: CATEGORIES_SCHEMA_VERSION.to_string(),
+        }
+    }
+
+    /// Compute a stable hash signature for the command.
+    ///
+    /// The signature is computed from normalized command tokens:
+    /// 1. Extract base command (executable name without path)
+    /// 2. Include category for disambiguation
+    /// 3. Extract significant flags (prefixed with - or --)
+    /// 4. Sort and deduplicate tokens
+    /// 5. Hash with SHA-256, truncate to 16 hex chars
+    fn compute_signature(&self, command: &str, category: &CommandCategory) -> String {
+        let normalized = Self::normalize_command_tokens(command, category);
+        let mut hasher = Sha256::new();
+        hasher.update(normalized.as_bytes());
+        let hash = hasher.finalize();
+        // Truncate to 8 bytes (16 hex chars) for compact storage
+        let hex = hex::encode(&hash[..8]);
+        format!("cmd:{}", hex)
+    }
+
+    /// Normalize command tokens for hashing.
+    ///
+    /// This produces a stable, sorted representation of the command that:
+    /// - Extracts the base executable name
+    /// - Includes the category for disambiguation
+    /// - Preserves significant flags (sorted)
+    /// - Strips arguments/values that might contain sensitive data
+    fn normalize_command_tokens(command: &str, category: &CommandCategory) -> String {
+        let tokens: Vec<&str> = command.split_whitespace().collect();
+        if tokens.is_empty() {
+            return format!("{}:unknown", category.name());
+        }
+
+        // Extract base command (last component of path)
+        let base_cmd = tokens[0]
+            .rsplit('/')
+            .next()
+            .unwrap_or(tokens[0])
+            .rsplit('\\')
+            .next()
+            .unwrap_or(tokens[0]);
+
+        // Extract flags (tokens starting with - or --)
+        // Only keep the flag names, not their values
+        let mut flags: Vec<&str> = tokens
+            .iter()
+            .skip(1)
+            .filter(|t| t.starts_with('-'))
+            .map(|t| {
+                // Strip value from --flag=value patterns
+                if let Some(idx) = t.find('=') {
+                    &t[..idx]
+                } else {
+                    *t
+                }
+            })
+            .collect();
+        flags.sort();
+        flags.dedup();
+
+        // Build normalized representation: category:base_cmd:flags
+        let flags_str = flags.join(",");
+        format!("{}:{}:{}", category.name(), base_cmd, flags_str)
+    }
+
+    /// Compute a display-safe short form of the command.
+    ///
+    /// Format: `<base_command> (<category>)`
+    /// Example: `jest (test)` or `next dev (devserver)`
+    fn compute_short_form(&self, command: &str, category: &CommandCategory) -> String {
+        let tokens: Vec<&str> = command.split_whitespace().collect();
+        if tokens.is_empty() {
+            return format!("unknown ({})", category.name());
+        }
+
+        // Extract base command
+        let base_cmd = tokens[0]
+            .rsplit('/')
+            .next()
+            .unwrap_or(tokens[0])
+            .rsplit('\\')
+            .next()
+            .unwrap_or(tokens[0]);
+
+        // For certain categories, include the subcommand if present
+        let display = match category {
+            CommandCategory::DevServer | CommandCategory::Test | CommandCategory::Build => {
+                // Include second token if it looks like a subcommand (not a flag)
+                if tokens.len() > 1 && !tokens[1].starts_with('-') {
+                    format!("{} {}", base_cmd, tokens[1])
+                } else {
+                    base_cmd.to_string()
+                }
+            }
+            CommandCategory::Vcs | CommandCategory::Container | CommandCategory::PackageManager => {
+                // Always include subcommand for these (git status, docker run, etc.)
+                if tokens.len() > 1 && !tokens[1].starts_with('-') {
+                    format!("{} {}", base_cmd, tokens[1])
+                } else {
+                    base_cmd.to_string()
+                }
+            }
+            _ => base_cmd.to_string(),
+        };
+
+        format!("{} ({})", display, category.name())
     }
 
     /// Build default command patterns.
@@ -868,5 +1069,133 @@ mod tests {
         assert!(all_cwd.contains(&CwdCategory::Project));
         assert!(all_cwd.contains(&CwdCategory::Unknown));
         assert_eq!(all_cwd.len(), 8);
+    }
+
+    #[test]
+    fn test_categorize_full_output() {
+        let matcher = CategoryMatcher::with_home_dir(Some("/home/user".to_string()));
+        let output = matcher.categorize("jest --watch", "/home/user/projects/app");
+
+        assert_eq!(output.cmd_category, CommandCategory::Test);
+        assert_eq!(output.cwd_category, CwdCategory::Project);
+        assert!(output.cmd_signature.starts_with("cmd:"));
+        assert_eq!(output.cmd_signature.len(), 4 + 16); // "cmd:" + 16 hex chars
+        assert!(output.cmd_short.contains("test"));
+        assert_eq!(output.schema_version, CATEGORIES_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn test_signature_stability() {
+        let matcher = CategoryMatcher::new();
+
+        // Same command should produce same signature
+        let sig1 = matcher.categorize("jest --watch", "/tmp").cmd_signature;
+        let sig2 = matcher.categorize("jest --watch", "/tmp").cmd_signature;
+        assert_eq!(sig1, sig2);
+
+        // Different flag order should produce same signature (sorted)
+        let sig3 = matcher.categorize("jest --coverage --watch", "/tmp").cmd_signature;
+        let sig4 = matcher.categorize("jest --watch --coverage", "/tmp").cmd_signature;
+        assert_eq!(sig3, sig4);
+    }
+
+    #[test]
+    fn test_signature_differs_for_different_commands() {
+        let matcher = CategoryMatcher::new();
+
+        let sig1 = matcher.categorize("jest", "/tmp").cmd_signature;
+        let sig2 = matcher.categorize("pytest", "/tmp").cmd_signature;
+        assert_ne!(sig1, sig2);
+    }
+
+    #[test]
+    fn test_signature_strips_arguments() {
+        let matcher = CategoryMatcher::new();
+
+        // Commands with different argument values should have same signature
+        // (only flag names are preserved, not values)
+        let sig1 = matcher.categorize("npm test --timeout=1000", "/tmp").cmd_signature;
+        let sig2 = matcher.categorize("npm test --timeout=5000", "/tmp").cmd_signature;
+        assert_eq!(sig1, sig2);
+    }
+
+    #[test]
+    fn test_short_form_display() {
+        let matcher = CategoryMatcher::new();
+
+        // Test with subcommand
+        let output = matcher.categorize("next dev --port 3000", "/tmp");
+        assert_eq!(output.cmd_short, "next dev (devserver)");
+
+        // Test simple command
+        let output = matcher.categorize("vim", "/tmp");
+        assert_eq!(output.cmd_short, "vim (editor)");
+
+        // Test git with subcommand
+        let output = matcher.categorize("git status", "/tmp");
+        assert_eq!(output.cmd_short, "git status (vcs)");
+
+        // Test docker with subcommand
+        let output = matcher.categorize("docker run hello-world", "/tmp");
+        assert_eq!(output.cmd_short, "docker run (container)");
+    }
+
+    #[test]
+    fn test_short_form_strips_path() {
+        let matcher = CategoryMatcher::new();
+
+        let output = matcher.categorize("/usr/bin/jest --watch", "/tmp");
+        assert_eq!(output.cmd_short, "jest (test)");
+    }
+
+    #[test]
+    fn test_normalize_command_tokens() {
+        // Test basic normalization
+        let norm = CategoryMatcher::normalize_command_tokens("jest --watch", &CommandCategory::Test);
+        assert!(norm.starts_with("test:jest:"));
+        assert!(norm.contains("--watch"));
+
+        // Test with path
+        let norm = CategoryMatcher::normalize_command_tokens("/usr/bin/git status", &CommandCategory::Vcs);
+        assert!(norm.starts_with("vcs:git:"));
+
+        // Test flag value stripping
+        let norm = CategoryMatcher::normalize_command_tokens("npm --registry=https://example.com", &CommandCategory::PackageManager);
+        assert!(norm.contains("--registry"));
+        assert!(!norm.contains("https://"));
+    }
+
+    #[test]
+    fn test_categorization_output_indexes() {
+        let matcher = CategoryMatcher::new();
+        let output = matcher.categorize("jest", "/tmp");
+
+        assert_eq!(output.cmd_index(), CommandCategory::Test.index());
+        assert_eq!(output.cwd_index(), CwdCategory::Temp.index());
+    }
+
+    #[test]
+    fn test_categorize_empty_command() {
+        let matcher = CategoryMatcher::new();
+        let output = matcher.categorize("", "/tmp");
+
+        assert_eq!(output.cmd_category, CommandCategory::Unknown);
+        assert_eq!(output.cmd_short, "unknown (unknown)");
+        assert!(output.cmd_signature.starts_with("cmd:"));
+    }
+
+    #[test]
+    fn test_categorization_output_serialization() {
+        let matcher = CategoryMatcher::new();
+        let output = matcher.categorize("jest --watch", "/tmp");
+
+        let json = serde_json::to_string(&output).unwrap();
+        let parsed: CategorizationOutput = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(output.cmd_category, parsed.cmd_category);
+        assert_eq!(output.cwd_category, parsed.cwd_category);
+        assert_eq!(output.cmd_signature, parsed.cmd_signature);
+        assert_eq!(output.cmd_short, parsed.cmd_short);
+        assert_eq!(output.schema_version, parsed.schema_version);
     }
 }
