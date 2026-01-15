@@ -129,6 +129,41 @@ jobs:
       - name: Run clippy (all features)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+  cargo_test:
+    name: Cargo Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates -> target"
+
+      - name: Run tests (default features)
+        run: cargo test --workspace --verbose
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Run tests (with test-utils feature)
+        run: cargo test --workspace --verbose --features test-utils
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: Run doc tests
+        run: cargo test --workspace --doc --verbose
+        env:
+          RUST_BACKTRACE: 1
+
   tests:
     name: Tests (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
