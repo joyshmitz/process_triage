@@ -820,9 +820,9 @@ fn run_bundle_create(
                 "error": format!("Invalid profile '{}'. Valid options: minimal, safe, forensic", profile_str),
             });
             match global.format {
-                OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&error_output).unwrap()),
                 OutputFormat::Md => eprintln!("Error: Invalid profile '{}'. Valid options: minimal, safe, forensic", profile_str),
                 OutputFormat::Jsonl => println!("{}", serde_json::to_string(&error_output).unwrap()),
+                _ => println!("{}", serde_json::to_string_pretty(&error_output).unwrap()),
             }
             return ExitCode::ArgsError;
         }
