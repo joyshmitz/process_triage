@@ -9,7 +9,10 @@
 //! - `CheckSessionSafety`: Verify session safety (not session leader, etc.)
 
 use crate::collect::protected::ProtectedFilter;
+use crate::collect::systemd::{collect_systemd_unit, SystemdUnit, SystemdUnitType};
 use crate::config::policy::{DataLossGates, Guardrails};
+use crate::supervision::session::{SessionAnalyzer, SessionConfig, SessionProtectionType};
+use std::fmt;
 use crate::plan::PreCheck;
 use serde::Serialize;
 use std::collections::HashSet;
@@ -46,6 +49,128 @@ impl PreCheckResult {
     }
 }
 
+/// Recommended supervisor action for a managed process.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SupervisorAction {
+    /// Restart the unit (for services that should continue running).
+    RestartUnit { command: String },
+    /// Stop the unit (for services that should be terminated).
+    StopUnit { command: String },
+    /// Kill the process directly (not recommended for supervised processes).
+    KillProcess,
+}
+
+impl fmt::Display for SupervisorAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SupervisorAction::RestartUnit { command } => write!(f, "restart: `{command}`"),
+            SupervisorAction::StopUnit { command } => write!(f, "stop: `{command}`"),
+            SupervisorAction::KillProcess => write!(f, "kill process directly"),
+        }
+    }
+}
+
+/// Information about supervisor management of a process.
+#[derive(Debug, Clone, Serialize)]
+pub struct SupervisorInfo {
+    /// Name of the supervisor (e.g., "systemd", "supervisord").
+    pub supervisor: String,
+    /// Full unit name if known (e.g., "nginx.service").
+    pub unit_name: Option<String>,
+    /// Unit type for systemd units.
+    pub unit_type: Option<SystemdUnitType>,
+    /// Whether this process is the main process of the unit.
+    pub is_main_process: bool,
+    /// Recommended action to manage this process.
+    pub recommended_action: SupervisorAction,
+    /// Optional systemd unit info for detailed metadata.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub systemd_unit: Option<SystemdUnit>,
+}
+
+impl SupervisorInfo {
+    /// Create supervisor info for a systemd-managed process.
+    fn from_systemd_unit(unit: SystemdUnit, pid: u32) -> Self {
+        let is_main = unit.is_main_process || unit.main_pid == Some(pid);
+        let unit_name = unit.name.clone();
+        let unit_type = unit.unit_type;
+
+        let recommended_action = match unit_type {
+            SystemdUnitType::Service => {
+                SupervisorAction::RestartUnit {
+                    command: format!("systemctl restart {}", unit_name),
+                }
+            }
+            SystemdUnitType::Scope => {
+                // Scopes are usually user sessions - stop is appropriate
+                SupervisorAction::StopUnit {
+                    command: format!("systemctl stop {}", unit_name),
+                }
+            }
+            _ => SupervisorAction::KillProcess,
+        };
+
+        Self {
+            supervisor: "systemd".to_string(),
+            unit_name: Some(unit_name),
+            unit_type: Some(unit_type),
+            is_main_process: is_main,
+            recommended_action,
+            systemd_unit: Some(unit),
+        }
+    }
+
+    /// Create supervisor info for a non-systemd supervisor (e.g., supervisord).
+    fn from_parent_supervisor(supervisor_name: &str) -> Self {
+        Self {
+            supervisor: supervisor_name.to_string(),
+            unit_name: None,
+            unit_type: None,
+            is_main_process: false,
+            recommended_action: SupervisorAction::KillProcess,
+            systemd_unit: None,
+        }
+    }
+
+    /// Format reason string for blocking with actionable recommendations.
+    pub fn to_block_reason(&self) -> String {
+        match &self.recommended_action {
+            SupervisorAction::RestartUnit { command } => {
+                format!(
+                    "managed by {} ({}) - process may respawn. Use `{}` instead of killing",
+                    self.supervisor,
+                    self.unit_name.as_deref().unwrap_or("unknown"),
+                    command
+                )
+            }
+            SupervisorAction::StopUnit { command } => {
+                format!(
+                    "managed by {} ({}) - use `{}` to stop cleanly",
+                    self.supervisor,
+                    self.unit_name.as_deref().unwrap_or("unknown"),
+                    command
+                )
+            }
+            SupervisorAction::KillProcess => {
+                format!(
+                    "managed by {} - may respawn after kill",
+                    self.supervisor
+                )
+            }
+        }
+    }
+}
+
+impl fmt::Display for SupervisorInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.unit_name.as_deref() {
+            Some(unit) if !unit.is_empty() => write!(f, "{} ({})", self.supervisor, unit),
+            _ => write!(f, "{}", self.supervisor),
+        }
+    }
+}
+
 /// Trait for providing pre-check validations.
 ///
 /// All checks read current process state from /proc for TOCTOU safety.
@@ -64,6 +189,14 @@ pub trait PreCheckProvider {
 
     /// Check session safety (not killing session leader, etc.).
     fn check_session_safety(&self, pid: u32, sid: Option<u32>) -> PreCheckResult;
+
+    /// Get detailed supervisor info for a process.
+    ///
+    /// Returns `None` if the process is not supervised.
+    /// This is useful for callers that want to display recommended actions.
+    fn get_supervisor_info(&self, _pid: u32) -> Option<SupervisorInfo> {
+        None
+    }
 
     /// Run all applicable pre-checks for an action.
     fn run_checks(&self, checks: &[PreCheck], pid: u32, sid: Option<u32>) -> Vec<PreCheckResult> {
@@ -93,6 +226,16 @@ pub struct LivePreCheckConfig {
     pub block_if_deleted_cwd: bool,
     /// Block if recent I/O within this many seconds.
     pub block_if_recent_io_seconds: u64,
+    /// Use enhanced session chain detection (SSH, tmux/screen, parent shells).
+    pub enhanced_session_safety: bool,
+    /// Protect processes in the same session as pt.
+    pub protect_same_session: bool,
+    /// Protect SSH connection chains.
+    pub protect_ssh_chains: bool,
+    /// Protect tmux/screen chains.
+    pub protect_multiplexers: bool,
+    /// Protect parent shells of pt.
+    pub protect_parent_shells: bool,
 }
 
 impl Default for LivePreCheckConfig {
@@ -103,6 +246,11 @@ impl Default for LivePreCheckConfig {
             block_if_active_tty: true,
             block_if_deleted_cwd: true,
             block_if_recent_io_seconds: 60,
+            enhanced_session_safety: true,
+            protect_same_session: true,
+            protect_ssh_chains: true,
+            protect_multiplexers: true,
+            protect_parent_shells: true,
         }
     }
 }
@@ -115,6 +263,12 @@ impl From<&DataLossGates> for LivePreCheckConfig {
             block_if_active_tty: gates.block_if_active_tty,
             block_if_deleted_cwd: gates.block_if_deleted_cwd.unwrap_or(true),
             block_if_recent_io_seconds: gates.block_if_recent_io_seconds.unwrap_or(60),
+            // Default to enabled for session safety features
+            enhanced_session_safety: true,
+            protect_same_session: true,
+            protect_ssh_chains: true,
+            protect_multiplexers: true,
+            protect_parent_shells: true,
         }
     }
 }
@@ -190,7 +344,7 @@ impl LivePreCheckProvider {
                 for line in content.lines() {
                     if line.starts_with("flags:") {
                         if let Some(flags_str) = line.split_whitespace().nth(1) {
-                            if let Ok(flags) = u32::from_str_radix(flags_str.trim_start_matches("0"), 8) {
+                            if let Ok(flags) = u32::from_str_radix(flags_str, 8) {
                                 // O_WRONLY = 1, O_RDWR = 2
                                 let access_mode = flags & 0o3;
                                 if access_mode == 1 || access_mode == 2 {
@@ -326,24 +480,52 @@ impl LivePreCheckProvider {
     }
 
     /// Check if process is managed by a known supervisor.
-    fn is_supervisor_managed(&self, pid: u32) -> Option<String> {
+    ///
+    /// Returns detailed supervisor info including unit metadata and recommended actions.
+    fn is_supervisor_managed(&self, pid: u32) -> Option<SupervisorInfo> {
+        // First check for non-systemd supervisors via parent comm
         if let Some(ppid_comm) = self.get_ppid_comm(pid) {
-            if self.known_supervisors.contains(&ppid_comm) {
-                return Some(ppid_comm);
+            if self.known_supervisors.contains(&ppid_comm) && ppid_comm != "systemd" {
+                return Some(SupervisorInfo::from_parent_supervisor(&ppid_comm));
             }
         }
 
-        // Also check if systemd is tracking this as a service
+        // Try to get systemd unit info with full metadata
+        let cgroup_unit = self.extract_cgroup_unit(pid);
+        if let Some(unit) = collect_systemd_unit(pid, cgroup_unit.as_deref()) {
+            // Filter out slice-only units (e.g., user.slice) - these aren't real supervision
+            if unit.unit_type == SystemdUnitType::Slice {
+                trace!(pid, unit_name = %unit.name, "ignoring slice-only unit");
+                return None;
+            }
+
+            debug!(
+                pid,
+                unit_name = %unit.name,
+                unit_type = ?unit.unit_type,
+                is_main = unit.is_main_process,
+                "detected systemd unit"
+            );
+
+            return Some(SupervisorInfo::from_systemd_unit(unit, pid));
+        }
+
+        None
+    }
+
+    /// Extract the cgroup unit name from /proc/PID/cgroup.
+    fn extract_cgroup_unit(&self, pid: u32) -> Option<String> {
         let cgroup_path = format!("/proc/{pid}/cgroup");
-        if let Ok(content) = std::fs::read_to_string(&cgroup_path) {
-            for line in content.lines() {
-                if line.contains(".service") || line.contains(".scope") {
-                    // Extract service name
-                    if let Some(start) = line.rfind('/') {
-                        let unit = &line[start + 1..];
-                        if unit.ends_with(".service") || unit.ends_with(".scope") {
-                            return Some(format!("systemd:{unit}"));
-                        }
+        let content = std::fs::read_to_string(&cgroup_path).ok()?;
+
+        for line in content.lines() {
+            // Look for lines with .service, .scope, or .slice
+            if line.contains(".service") || line.contains(".scope") {
+                // Extract unit name from path like "0::/system.slice/nginx.service"
+                if let Some(start) = line.rfind('/') {
+                    let unit = &line[start + 1..];
+                    if !unit.is_empty() {
+                        return Some(unit.to_string());
                     }
                 }
             }
@@ -446,15 +628,26 @@ impl PreCheckProvider for LivePreCheckProvider {
     fn check_supervisor(&self, pid: u32) -> PreCheckResult {
         trace!(pid, "checking supervisor status");
 
-        if let Some(supervisor) = self.is_supervisor_managed(pid) {
-            debug!(pid, supervisor = %supervisor, "process is supervisor-managed");
+        if let Some(supervisor_info) = self.is_supervisor_managed(pid) {
+            let supervisor_name = supervisor_info.supervisor.as_str();
+            debug!(
+                pid,
+                supervisor = supervisor_name,
+                unit = ?supervisor_info.unit_name,
+                action = %supervisor_info.recommended_action,
+                "process is supervisor-managed"
+            );
             return PreCheckResult::Blocked {
                 check: PreCheck::CheckSupervisor,
-                reason: format!("managed by {supervisor} - may respawn"),
+                reason: supervisor_info.to_block_reason(),
             };
         }
 
         PreCheckResult::Passed
+    }
+
+    fn get_supervisor_info(&self, pid: u32) -> Option<SupervisorInfo> {
+        self.is_supervisor_managed(pid)
     }
 
     fn check_session_safety(&self, pid: u32, sid: Option<u32>) -> PreCheckResult {
@@ -471,13 +664,65 @@ impl PreCheckProvider for LivePreCheckProvider {
             }
         }
 
-        // Check if process has active TTY
+        // Check if process has active TTY (basic check, always enabled if configured)
         if self.config.block_if_active_tty && self.has_active_tty(pid) {
             debug!(pid, "process has active TTY");
             return PreCheckResult::Blocked {
                 check: PreCheck::CheckSessionSafety,
                 reason: "process has active TTY".to_string(),
             };
+        }
+
+        // Enhanced session safety checks using SessionAnalyzer
+        if self.config.enhanced_session_safety {
+            let session_config = SessionConfig {
+                max_ancestry_depth: 20,
+                protect_same_session: self.config.protect_same_session,
+                protect_parent_shells: self.config.protect_parent_shells,
+                protect_multiplexers: self.config.protect_multiplexers,
+                protect_ssh_chains: self.config.protect_ssh_chains,
+                protect_foreground_groups: true,
+            };
+
+            let mut analyzer = SessionAnalyzer::with_config(session_config);
+            let pt_pid = std::process::id();
+            match analyzer.analyze(pid, pt_pid) {
+                Ok(result) => {
+                    if result.is_protected {
+                        // Build a descriptive reason based on protection types
+                        let protection_desc: Vec<&str> = result.protection_types.iter().map(|p| {
+                            match p {
+                                SessionProtectionType::SessionLeader => "session leader",
+                                SessionProtectionType::SameSession => "same session as pt",
+                                SessionProtectionType::ParentShell => "parent shell of pt",
+                                SessionProtectionType::TmuxServer => "tmux server",
+                                SessionProtectionType::TmuxClient => "tmux client",
+                                SessionProtectionType::ScreenServer => "screen server",
+                                SessionProtectionType::ScreenClient => "screen client",
+                                SessionProtectionType::SshChain => "SSH connection chain",
+                                SessionProtectionType::ForegroundGroup => "foreground process group",
+                                SessionProtectionType::TtyController => "TTY controller",
+                            }
+                        }).collect();
+
+                        let reason = if let Some(r) = result.reason {
+                            r
+                        } else {
+                            format!("protected session chain: {}", protection_desc.join(", "))
+                        };
+
+                        debug!(pid, protections = ?result.protection_types, "process is session-protected");
+                        return PreCheckResult::Blocked {
+                            check: PreCheck::CheckSessionSafety,
+                            reason,
+                        };
+                    }
+                }
+                Err(e) => {
+                    // Log but don't fail on analyzer errors - fall through to pass
+                    trace!(pid, error = %e, "session analyzer error, skipping enhanced checks");
+                }
+            }
         }
 
         PreCheckResult::Passed
@@ -519,6 +764,69 @@ mod tests {
         assert!(provider.check_session_safety(123, None).is_passed());
     }
 
+    #[test]
+    fn supervisor_action_display() {
+        let restart = SupervisorAction::RestartUnit {
+            command: "systemctl restart nginx.service".to_string(),
+        };
+        assert!(restart.to_string().contains("restart"));
+        assert!(restart.to_string().contains("nginx.service"));
+
+        let stop = SupervisorAction::StopUnit {
+            command: "systemctl stop test.scope".to_string(),
+        };
+        assert!(stop.to_string().contains("stop"));
+
+        let kill = SupervisorAction::KillProcess;
+        assert!(kill.to_string().contains("kill"));
+    }
+
+    #[test]
+    fn supervisor_info_from_parent() {
+        let info = SupervisorInfo::from_parent_supervisor("supervisord");
+        assert_eq!(info.supervisor, "supervisord");
+        assert!(info.unit_name.is_none());
+        assert!(!info.is_main_process);
+        assert!(matches!(info.recommended_action, SupervisorAction::KillProcess));
+    }
+
+    #[test]
+    fn supervisor_info_block_reason_restart() {
+        let info = SupervisorInfo {
+            supervisor: "systemd".to_string(),
+            unit_name: Some("nginx.service".to_string()),
+            unit_type: Some(SystemdUnitType::Service),
+            is_main_process: true,
+            recommended_action: SupervisorAction::RestartUnit {
+                command: "systemctl restart nginx.service".to_string(),
+            },
+            systemd_unit: None,
+        };
+
+        let reason = info.to_block_reason();
+        assert!(reason.contains("systemd"));
+        assert!(reason.contains("nginx.service"));
+        assert!(reason.contains("systemctl restart"));
+    }
+
+    #[test]
+    fn supervisor_info_block_reason_stop() {
+        let info = SupervisorInfo {
+            supervisor: "systemd".to_string(),
+            unit_name: Some("session-1.scope".to_string()),
+            unit_type: Some(SystemdUnitType::Scope),
+            is_main_process: false,
+            recommended_action: SupervisorAction::StopUnit {
+                command: "systemctl stop session-1.scope".to_string(),
+            },
+            systemd_unit: None,
+        };
+
+        let reason = info.to_block_reason();
+        assert!(reason.contains("systemctl stop"));
+        assert!(reason.contains("session-1.scope"));
+    }
+
     #[cfg(target_os = "linux")]
     mod linux_tests {
         use super::*;
@@ -553,6 +861,28 @@ mod tests {
             // With max_open_write_fds = 0, any write fd would exceed
             // The test binary likely has stdout/stderr which may or may not count
             let _ = (exceeds, count);
+        }
+
+        #[test]
+        fn live_provider_extract_cgroup_unit() {
+            let provider = LivePreCheckProvider::with_defaults();
+            let pid = std::process::id();
+
+            // Try to extract cgroup unit for self - may or may not have one
+            let unit = provider.extract_cgroup_unit(pid);
+            // Just verify the function doesn't panic
+            let _ = unit;
+        }
+
+        #[test]
+        fn live_provider_get_supervisor_info() {
+            let provider = LivePreCheckProvider::with_defaults();
+            let pid = std::process::id();
+
+            // Get supervisor info for self - should handle gracefully
+            let info = provider.get_supervisor_info(pid);
+            // Just verify the function returns without panicking
+            let _ = info;
         }
     }
 }

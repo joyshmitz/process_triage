@@ -18,6 +18,7 @@ pub use signal::{SignalActionRunner, SignalConfig};
 
 pub use prechecks::{
     LivePreCheckConfig, NoopPreCheckProvider, PreCheckError, PreCheckProvider, PreCheckResult,
+    SupervisorAction, SupervisorInfo,
 };
 #[cfg(target_os = "linux")]
 pub use prechecks::LivePreCheckProvider;
