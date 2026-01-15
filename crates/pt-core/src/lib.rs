@@ -10,6 +10,7 @@
 //! The binary entry point is in `main.rs`.
 
 pub mod action;
+pub mod audit;
 pub mod capabilities;
 pub mod cli;
 pub mod collect;
