@@ -399,7 +399,7 @@ mod traits {
     #[test]
     fn exit_code_is_clone() {
         let code = ExitCode::Clean;
-        let cloned = code.clone();
+        let cloned = code;
         assert_eq!(code, cloned);
     }
 

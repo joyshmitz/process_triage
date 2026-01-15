@@ -376,10 +376,7 @@ pub fn compute_tick_delta(
 
     let mut warnings = Vec::new();
     if after.identity.quality != IdentityQuality::Full {
-        warnings.push(format!(
-            "identity quality is {}",
-            after.identity.quality
-        ));
+        warnings.push(format!("identity quality is {}", after.identity.quality));
     }
 
     let n_eff_param = match config.n_eff_policy {

@@ -243,7 +243,7 @@ pub fn parse_schedstat(pid: u32) -> Option<SchedStats> {
 
 /// Parse schedstat file content (for testing).
 pub fn parse_schedstat_content(content: &str) -> Option<SchedStats> {
-    let parts: Vec<&str> = content.trim().split_whitespace().collect();
+    let parts: Vec<&str> = content.split_whitespace().collect();
     if parts.len() < 3 {
         return None;
     }
@@ -309,7 +309,7 @@ pub fn parse_statm(pid: u32) -> Option<MemStats> {
 
 /// Parse statm file content (for testing).
 pub fn parse_statm_content(content: &str) -> Option<MemStats> {
-    let parts: Vec<&str> = content.trim().split_whitespace().collect();
+    let parts: Vec<&str> = content.split_whitespace().collect();
     if parts.len() < 7 {
         return None;
     }
@@ -413,7 +413,7 @@ pub fn parse_fdinfo_content(content: &str) -> Option<OpenMode> {
         if let Some(flags_str) = line.strip_prefix("flags:") {
             // flags is an octal number, parse it
             let flags_str = flags_str.trim();
-            if let Ok(flags) = u32::from_str_radix(flags_str.trim_start_matches("0"), 8) {
+            if let Ok(flags) = u32::from_str_radix(flags_str, 8) {
                 // O_RDONLY = 0, O_WRONLY = 1, O_RDWR = 2
                 // Access mode is in the lowest 2 bits
                 let access_mode = flags & 0o3;
@@ -696,6 +696,22 @@ nice                                         :                    0
         assert_eq!(categorize_fd("/home/user/file.txt"), "file");
         assert_eq!(categorize_fd("anon_inode:[eventfd]"), "anon:eventfd");
         assert_eq!(categorize_fd("anon_inode:[eventpoll]"), "anon:eventpoll");
+    }
+
+    #[test]
+    fn test_parse_fdinfo_content_readonly_flags() {
+        let content = "flags:\t00000000\n";
+        let mode = parse_fdinfo_content(content).unwrap();
+        assert!(mode.read);
+        assert!(!mode.write);
+    }
+
+    #[test]
+    fn test_parse_fdinfo_content_readwrite_flags() {
+        let content = "flags:\t00000002\n";
+        let mode = parse_fdinfo_content(content).unwrap();
+        assert!(mode.read);
+        assert!(mode.write);
     }
 
     #[test]

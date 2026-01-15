@@ -118,7 +118,11 @@ impl<R: Read + std::io::Seek> BundleReader<R> {
         let mut data = Vec::new();
         file.read_to_end(&mut data)?;
 
-        debug!(path, bytes = data.len(), "Read file from bundle (unverified)");
+        debug!(
+            path,
+            bytes = data.len(),
+            "Read file from bundle (unverified)"
+        );
 
         Ok(data)
     }
@@ -433,10 +437,7 @@ mod tests {
         let mut reader = BundleReader::from_bytes(bytes).unwrap();
 
         // Verify manifest matches
-        assert_eq!(
-            reader.manifest().session_id,
-            orig_manifest.session_id
-        );
+        assert_eq!(reader.manifest().session_id, orig_manifest.session_id);
         assert_eq!(reader.manifest().file_count(), orig_manifest.file_count());
 
         // Verify all files

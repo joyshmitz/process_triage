@@ -324,7 +324,7 @@ impl EvidenceLedger {
             .iter()
             .filter(|bf| bf.strength as u8 >= EvidenceStrength::Substantial as u8)
             .take(3)
-            .map(|bf| format_evidence_summary(bf))
+            .map(format_evidence_summary)
             .collect();
 
         // Build glyph map for features present

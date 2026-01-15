@@ -25,10 +25,7 @@ mod snapshot_basic {
 
     #[test]
     fn snapshot_runs_without_error() {
-        pt_core()
-            .args(["agent", "snapshot"])
-            .assert()
-            .success();
+        pt_core().args(["agent", "snapshot"]).assert().success();
     }
 
     #[test]
@@ -51,11 +48,13 @@ mod snapshot_basic {
             .stdout
             .clone();
 
-        let json: Value = serde_json::from_slice(&output)
-            .expect("Output should be valid JSON");
+        let json: Value = serde_json::from_slice(&output).expect("Output should be valid JSON");
 
         // Verify required fields exist
-        assert!(json.get("schema_version").is_some(), "Missing schema_version");
+        assert!(
+            json.get("schema_version").is_some(),
+            "Missing schema_version"
+        );
         assert!(json.get("session_id").is_some(), "Missing session_id");
         assert!(json.get("generated_at").is_some(), "Missing generated_at");
     }
@@ -132,7 +131,8 @@ mod snapshot_schema {
             .clone();
 
         let json: Value = serde_json::from_slice(&output).unwrap();
-        let version = json.get("schema_version")
+        let version = json
+            .get("schema_version")
             .expect("Missing schema_version")
             .as_str()
             .expect("schema_version should be string");
@@ -156,14 +156,19 @@ mod snapshot_schema {
             .clone();
 
         let json: Value = serde_json::from_slice(&output).unwrap();
-        let session_id = json.get("session_id")
+        let session_id = json
+            .get("session_id")
             .expect("Missing session_id")
             .as_str()
             .expect("session_id should be string");
 
         // Session ID should be non-empty and have reasonable format
         assert!(!session_id.is_empty(), "Session ID should not be empty");
-        assert!(session_id.len() >= 8, "Session ID seems too short: {}", session_id);
+        assert!(
+            session_id.len() >= 8,
+            "Session ID seems too short: {}",
+            session_id
+        );
     }
 
     #[test]
@@ -177,7 +182,8 @@ mod snapshot_schema {
             .clone();
 
         let json: Value = serde_json::from_slice(&output).unwrap();
-        let generated_at = json.get("generated_at")
+        let generated_at = json
+            .get("generated_at")
             .expect("Missing generated_at")
             .as_str()
             .expect("generated_at should be string");

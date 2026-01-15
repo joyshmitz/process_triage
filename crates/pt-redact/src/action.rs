@@ -65,4 +65,3 @@ impl std::fmt::Display for Action {
         write!(f, "{}", s)
     }
 }
-

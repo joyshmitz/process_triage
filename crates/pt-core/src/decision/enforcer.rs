@@ -759,45 +759,41 @@ impl PolicyEnforcer {
         }
 
         // Check locked files
-        if self.data_loss_gates.block_if_locked_files {
-            if candidate.has_locked_files == Some(true) {
-                return Some(PolicyViolation {
-                    kind: ViolationKind::DataLossGate,
-                    message: "process has locked files".to_string(),
-                    rule: "data_loss_gates.block_if_locked_files".to_string(),
-                    context: Some("killing may corrupt locked files".to_string()),
-                });
-            }
+        if self.data_loss_gates.block_if_locked_files && candidate.has_locked_files == Some(true) {
+            return Some(PolicyViolation {
+                kind: ViolationKind::DataLossGate,
+                message: "process has locked files".to_string(),
+                rule: "data_loss_gates.block_if_locked_files".to_string(),
+                context: Some("killing may corrupt locked files".to_string()),
+            });
         }
 
         // Check active TTY
-        if self.data_loss_gates.block_if_active_tty {
-            if candidate.has_active_tty == Some(true) {
-                return Some(PolicyViolation {
-                    kind: ViolationKind::DataLossGate,
-                    message: "process has active TTY".to_string(),
-                    rule: "data_loss_gates.block_if_active_tty".to_string(),
-                    context: Some("process may be interactive".to_string()),
-                });
-            }
+        if self.data_loss_gates.block_if_active_tty && candidate.has_active_tty == Some(true) {
+            return Some(PolicyViolation {
+                kind: ViolationKind::DataLossGate,
+                message: "process has active TTY".to_string(),
+                rule: "data_loss_gates.block_if_active_tty".to_string(),
+                context: Some("process may be interactive".to_string()),
+            });
         }
 
         // Check deleted CWD
-        if self.data_loss_gates.block_if_deleted_cwd == Some(true) {
-            if candidate.cwd_deleted == Some(true) {
-                return Some(PolicyViolation {
-                    kind: ViolationKind::DataLossGate,
-                    message: "process CWD is deleted".to_string(),
-                    rule: "data_loss_gates.block_if_deleted_cwd".to_string(),
-                    context: Some("process may be orphaned or stale".to_string()),
-                });
-            }
+        if self.data_loss_gates.block_if_deleted_cwd == Some(true)
+            && candidate.cwd_deleted == Some(true)
+        {
+            return Some(PolicyViolation {
+                kind: ViolationKind::DataLossGate,
+                message: "process CWD is deleted".to_string(),
+                rule: "data_loss_gates.block_if_deleted_cwd".to_string(),
+                context: Some("process may be orphaned or stale".to_string()),
+            });
         }
 
         // Check recent I/O
         if let Some(threshold) = self.data_loss_gates.block_if_recent_io_seconds {
             if let Some(since_io) = candidate.seconds_since_io {
-                if since_io < threshold as u64 {
+                if since_io < threshold {
                     return Some(PolicyViolation {
                         kind: ViolationKind::DataLossGate,
                         message: format!(

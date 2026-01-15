@@ -6,12 +6,12 @@
 //! - Process group awareness
 //! - Outcome verification
 
+use super::executor::{ActionError, ActionRunner};
 use crate::decision::Action;
 use crate::plan::PlanAction;
-use super::executor::{ActionError, ActionRunner};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// Signal action runner configuration.
 #[derive(Debug, Clone)]
@@ -115,10 +115,8 @@ impl SignalActionRunner {
         let poll_interval = Duration::from_millis(self.config.poll_interval_ms);
 
         while start.elapsed() < timeout {
-            if expect_exit {
-                if !self.process_exists(pid) {
-                    return Ok(());
-                }
+            if expect_exit && !self.process_exists(pid) {
+                return Ok(());
             }
 
             if let Some(stopped) = expect_stopped {
@@ -203,11 +201,7 @@ impl SignalActionRunner {
     /// Execute a resume action (SIGCONT) - not directly in Action enum, but may be needed.
     #[cfg(unix)]
     pub fn resume(&self, pid: u32, use_group: bool, pgid: Option<u32>) -> Result<(), ActionError> {
-        let target = if use_group {
-            pgid.unwrap_or(pid)
-        } else {
-            pid
-        };
+        let target = if use_group { pgid.unwrap_or(pid) } else { pid };
         self.send_signal(target, libc::SIGCONT, use_group)
     }
 
@@ -228,11 +222,15 @@ impl ActionRunner for SignalActionRunner {
             Action::Keep => Ok(()),
             Action::Throttle => {
                 // Throttle requires cgroup operations, not signals
-                Err(ActionError::Failed("throttle requires cgroup support".to_string()))
+                Err(ActionError::Failed(
+                    "throttle requires cgroup support".to_string(),
+                ))
             }
             Action::Restart => {
                 // Restart requires supervisor awareness
-                Err(ActionError::Failed("restart requires supervisor support".to_string()))
+                Err(ActionError::Failed(
+                    "restart requires supervisor support".to_string(),
+                ))
             }
         }
     }
@@ -250,11 +248,15 @@ impl ActionRunner for SignalActionRunner {
 #[cfg(not(unix))]
 impl ActionRunner for SignalActionRunner {
     fn execute(&self, _action: &PlanAction) -> Result<(), ActionError> {
-        Err(ActionError::Failed("signals not supported on this platform".to_string()))
+        Err(ActionError::Failed(
+            "signals not supported on this platform".to_string(),
+        ))
     }
 
     fn verify(&self, _action: &PlanAction) -> Result<(), ActionError> {
-        Err(ActionError::Failed("signals not supported on this platform".to_string()))
+        Err(ActionError::Failed(
+            "signals not supported on this platform".to_string(),
+        ))
     }
 }
 

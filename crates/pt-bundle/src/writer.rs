@@ -322,7 +322,9 @@ mod tests {
 
         writer.add_telemetry("proc_samples", vec![0, 1, 2, 3]);
 
-        let entry = writer.manifest().find_file("telemetry/proc_samples.parquet");
+        let entry = writer
+            .manifest()
+            .find_file("telemetry/proc_samples.parquet");
         assert!(entry.is_some());
         assert_eq!(
             entry.unwrap().mime_type,
@@ -355,7 +357,9 @@ mod tests {
         let mut writer = BundleWriter::new("session-123", "host-abc", ExportProfile::Safe)
             .with_pt_version("0.1.0");
 
-        writer.add_summary(&serde_json::json!({"total": 42})).unwrap();
+        writer
+            .add_summary(&serde_json::json!({"total": 42}))
+            .unwrap();
         writer.add_file("data.txt", b"test data".to_vec(), None);
 
         let manifest = writer.write(&bundle_path).unwrap();
@@ -369,7 +373,9 @@ mod tests {
     fn test_bundle_writer_write_to_vec() {
         let mut writer = BundleWriter::new("session-123", "host-abc", ExportProfile::Safe);
 
-        writer.add_summary(&serde_json::json!({"total": 42})).unwrap();
+        writer
+            .add_summary(&serde_json::json!({"total": 42}))
+            .unwrap();
 
         let (bytes, manifest) = writer.write_to_vec().unwrap();
 
@@ -405,7 +411,10 @@ mod tests {
     fn test_file_type_from_path() {
         assert!(matches!(FileType::from_path("test.json"), FileType::Json));
         assert!(matches!(FileType::from_path("test.jsonl"), FileType::Log));
-        assert!(matches!(FileType::from_path("test.parquet"), FileType::Parquet));
+        assert!(matches!(
+            FileType::from_path("test.parquet"),
+            FileType::Parquet
+        ));
         assert!(matches!(FileType::from_path("test.html"), FileType::Html));
         assert!(matches!(FileType::from_path("test.bin"), FileType::Binary));
     }

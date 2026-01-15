@@ -170,7 +170,7 @@ fn resolve_config_dir(options: &ConfigOptions) -> Result<PathBuf, ConfigError> {
 
 /// Load priors configuration.
 fn load_priors(
-    config_dir: &PathBuf,
+    config_dir: &std::path::Path,
     explicit_path: &Option<PathBuf>,
 ) -> Result<(Priors, Option<PathBuf>, Option<String>), ConfigError> {
     // Try explicit path first
@@ -192,7 +192,7 @@ fn load_priors(
 
 /// Load policy configuration.
 fn load_policy(
-    config_dir: &PathBuf,
+    config_dir: &std::path::Path,
     explicit_path: &Option<PathBuf>,
 ) -> Result<(Policy, Option<PathBuf>, Option<String>), ConfigError> {
     // Try explicit path first

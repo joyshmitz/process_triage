@@ -125,7 +125,7 @@ pub enum SystemdActiveState {
 
 impl SystemdActiveState {
     /// Parse active state from string.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "active" => SystemdActiveState::Active,
             "activating" => SystemdActiveState::Activating,
@@ -241,7 +241,7 @@ pub fn parse_systemctl_output(output: &str, pid: u32) -> Option<SystemdUnit> {
 
     let active_state = props
         .get("ActiveState")
-        .map(|s| SystemdActiveState::from_str(s))
+        .map(|s| SystemdActiveState::parse(s))
         .unwrap_or_default();
 
     let sub_state = props
@@ -377,23 +377,23 @@ mod tests {
     #[test]
     fn test_active_state_from_str() {
         assert_eq!(
-            SystemdActiveState::from_str("active"),
+            SystemdActiveState::parse("active"),
             SystemdActiveState::Active
         );
         assert_eq!(
-            SystemdActiveState::from_str("Active"),
+            SystemdActiveState::parse("Active"),
             SystemdActiveState::Active
         );
         assert_eq!(
-            SystemdActiveState::from_str("inactive"),
+            SystemdActiveState::parse("inactive"),
             SystemdActiveState::Inactive
         );
         assert_eq!(
-            SystemdActiveState::from_str("failed"),
+            SystemdActiveState::parse("failed"),
             SystemdActiveState::Failed
         );
         assert_eq!(
-            SystemdActiveState::from_str("unknown-state"),
+            SystemdActiveState::parse("unknown-state"),
             SystemdActiveState::Unknown
         );
     }

@@ -14,7 +14,8 @@ fn pt_core_clean() -> Command {
     let mut cmd = cargo_bin_cmd!("pt-core");
     cmd.timeout(Duration::from_secs(30));
     // Use a non-existent config dir to force defaults
-    cmd.arg("--config").arg("/tmp/pt-core-test-nonexistent-config");
+    cmd.arg("--config")
+        .arg("/tmp/pt-core-test-nonexistent-config");
     cmd
 }
 
@@ -42,10 +43,13 @@ mod scan_workflow {
             .stdout
             .clone();
 
-        let json: Value = serde_json::from_slice(&output)
-            .expect("Scan output should be valid JSON");
+        let json: Value =
+            serde_json::from_slice(&output).expect("Scan output should be valid JSON");
 
-        assert!(json.get("schema_version").is_some(), "Missing schema_version");
+        assert!(
+            json.get("schema_version").is_some(),
+            "Missing schema_version"
+        );
         assert!(json.get("session_id").is_some(), "Missing session_id");
         assert!(json.get("scan").is_some(), "Missing scan data");
     }
@@ -108,7 +112,10 @@ mod scan_workflow {
         let scan = json.get("scan").expect("Missing scan data");
         let metadata = scan.get("metadata").expect("Missing metadata");
 
-        assert!(metadata.get("process_count").is_some(), "Missing process_count");
+        assert!(
+            metadata.get("process_count").is_some(),
+            "Missing process_count"
+        );
         assert!(metadata.get("duration_ms").is_some(), "Missing duration_ms");
         assert!(metadata.get("platform").is_some(), "Missing platform");
     }
@@ -132,8 +139,8 @@ mod agent_workflow {
             .stdout
             .clone();
 
-        let snapshot: Value = serde_json::from_slice(&snapshot_output)
-            .expect("Snapshot should produce valid JSON");
+        let snapshot: Value =
+            serde_json::from_slice(&snapshot_output).expect("Snapshot should produce valid JSON");
         assert!(snapshot.get("session_id").is_some());
 
         // Step 2: Create plan (would use snapshot session_id in real impl)
@@ -145,8 +152,8 @@ mod agent_workflow {
             .stdout
             .clone();
 
-        let plan: Value = serde_json::from_slice(&plan_output)
-            .expect("Plan should produce valid JSON");
+        let plan: Value =
+            serde_json::from_slice(&plan_output).expect("Plan should produce valid JSON");
         assert!(plan.get("session_id").is_some());
     }
 
@@ -246,10 +253,13 @@ mod check_workflow {
             .stdout
             .clone();
 
-        let json: Value = serde_json::from_slice(&output)
-            .expect("Check output should be valid JSON");
+        let json: Value =
+            serde_json::from_slice(&output).expect("Check output should be valid JSON");
 
-        assert!(json.get("schema_version").is_some(), "Missing schema_version");
+        assert!(
+            json.get("schema_version").is_some(),
+            "Missing schema_version"
+        );
         assert!(json.get("status").is_some(), "Missing status");
         assert!(json.get("checks").is_some(), "Missing checks array");
     }
@@ -299,10 +309,13 @@ mod config_workflow {
             .stdout
             .clone();
 
-        let json: Value = serde_json::from_slice(&output)
-            .expect("Config show should produce valid JSON");
+        let json: Value =
+            serde_json::from_slice(&output).expect("Config show should produce valid JSON");
 
-        assert!(json.get("schema_version").is_some(), "Missing schema_version");
+        assert!(
+            json.get("schema_version").is_some(),
+            "Missing schema_version"
+        );
         assert!(json.get("priors").is_some(), "Missing priors section");
         assert!(json.get("policy").is_some(), "Missing policy section");
     }
@@ -352,10 +365,13 @@ mod capabilities_workflow {
             .stdout
             .clone();
 
-        let json: Value = serde_json::from_slice(&output)
-            .expect("Capabilities should produce valid JSON");
+        let json: Value =
+            serde_json::from_slice(&output).expect("Capabilities should produce valid JSON");
 
-        assert!(json.get("schema_version").is_some(), "Missing schema_version");
+        assert!(
+            json.get("schema_version").is_some(),
+            "Missing schema_version"
+        );
         assert!(json.get("os").is_some(), "Missing os section");
     }
 
@@ -495,8 +511,8 @@ mod full_pipeline {
             .stdout
             .clone();
 
-        let check_json: Value = serde_json::from_slice(&check_output)
-            .expect("check --all should produce valid JSON");
+        let check_json: Value =
+            serde_json::from_slice(&check_output).expect("check --all should produce valid JSON");
         assert!(check_json.get("schema_version").is_some());
 
         let config_output = pt_core_clean()
@@ -507,8 +523,8 @@ mod full_pipeline {
             .stdout
             .clone();
 
-        let config_json: Value = serde_json::from_slice(&config_output)
-            .expect("config show should produce valid JSON");
+        let config_json: Value =
+            serde_json::from_slice(&config_output).expect("config show should produce valid JSON");
         assert!(config_json.get("schema_version").is_some());
     }
 }

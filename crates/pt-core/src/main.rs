@@ -618,8 +618,8 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
                     println!();
 
                     println!(
-                        "{:<8} {:<8} {:<10} {:<6} {:<6} {:<6} {}",
-                        "PID", "PPID", "USER", "STATE", "%CPU", "RSS", "COMMAND"
+                        "{:<8} {:<8} {:<10} {:<6} {:<6} {:<6} COMMAND",
+                        "PID", "PPID", "USER", "STATE", "%CPU", "RSS"
                     );
 
                     for p in result.processes.iter().take(20) {

@@ -12,19 +12,15 @@ use thiserror::Error;
 /// FDR control method.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum FdrMethod {
     /// e-value Benjamini-Hochberg (assumes independence or PRDS).
     EBh,
     /// e-value Benjamini-Yekutieli (conservative, handles arbitrary dependence).
+    #[default]
     EBy,
     /// No FDR control (select all with e-value > 1).
     None,
-}
-
-impl Default for FdrMethod {
-    fn default() -> Self {
-        FdrMethod::EBy // Conservative default
-    }
 }
 
 /// Target identity for a candidate process.

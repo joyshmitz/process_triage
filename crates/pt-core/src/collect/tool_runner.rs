@@ -427,7 +427,7 @@ impl ToolRunner {
         }
 
         // Reject commands with shell metacharacters
-        if cmd.contains(|c: char| matches!(c, '|' | '&' | ';' | '$' | '`' | '\n' | '\r')) {
+        if cmd.contains(['|', '&', ';', '$', '`', '\n', '\r']) {
             return Err(ToolError::InvalidPath(format!(
                 "command contains shell metacharacters: {}",
                 cmd
@@ -483,6 +483,7 @@ impl ToolRunner {
     }
 
     /// Execute a child process with timeout and output capture.
+    #[allow(clippy::type_complexity)]
     fn execute_with_timeout(
         &self,
         child: &mut Child,
@@ -634,7 +635,6 @@ impl ToolRunner {
         match child.try_wait() {
             Ok(Some(_)) => {
                 trace!(pid, "process exited after SIGTERM");
-                return;
             }
             Ok(None) => {
                 // Still running, escalate to SIGKILL

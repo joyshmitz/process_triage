@@ -399,7 +399,7 @@ fn collect_memory_limits(details: &mut CgroupDetails, _pid: u32) {
 /// Read cpu.max file (v2 format: "quota period" or "max period").
 fn read_cpu_max(path: &str) -> Option<(Option<i64>, u64)> {
     let content = fs::read_to_string(path).ok()?;
-    let parts: Vec<&str> = content.trim().split_whitespace().collect();
+    let parts: Vec<&str> = content.split_whitespace().collect();
     if parts.len() < 2 {
         return None;
     }
@@ -536,7 +536,7 @@ mod tests {
         // This would require a mock filesystem or temp files for true testing
         // Here we just test the parsing logic with a helper
         let content = "50000 100000";
-        let parts: Vec<&str> = content.trim().split_whitespace().collect();
+        let parts: Vec<&str> = content.split_whitespace().collect();
         let quota = parts[0].parse::<i64>().ok();
         let period = parts[1].parse::<u64>().ok();
 
@@ -547,7 +547,7 @@ mod tests {
     #[test]
     fn test_read_cpu_max_unlimited() {
         let content = "max 100000";
-        let parts: Vec<&str> = content.trim().split_whitespace().collect();
+        let parts: Vec<&str> = content.split_whitespace().collect();
         let quota = if parts[0] == "max" {
             None
         } else {

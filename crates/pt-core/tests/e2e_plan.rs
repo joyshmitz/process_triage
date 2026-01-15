@@ -25,10 +25,7 @@ mod plan_basic {
 
     #[test]
     fn plan_runs_without_error() {
-        pt_core()
-            .args(["agent", "plan"])
-            .assert()
-            .success();
+        pt_core().args(["agent", "plan"]).assert().success();
     }
 
     #[test]
@@ -51,11 +48,13 @@ mod plan_basic {
             .stdout
             .clone();
 
-        let json: Value = serde_json::from_slice(&output)
-            .expect("Output should be valid JSON");
+        let json: Value = serde_json::from_slice(&output).expect("Output should be valid JSON");
 
         // Verify required fields exist
-        assert!(json.get("schema_version").is_some(), "Missing schema_version");
+        assert!(
+            json.get("schema_version").is_some(),
+            "Missing schema_version"
+        );
         assert!(json.get("session_id").is_some(), "Missing session_id");
         assert!(json.get("generated_at").is_some(), "Missing generated_at");
     }
@@ -120,10 +119,14 @@ mod plan_options {
     fn plan_with_combined_options() {
         pt_core()
             .args([
-                "agent", "plan",
-                "--max-candidates", "5",
-                "--threshold", "0.9",
-                "--only", "kill",
+                "agent",
+                "plan",
+                "--max-candidates",
+                "5",
+                "--threshold",
+                "0.9",
+                "--only",
+                "kill",
             ])
             .assert()
             .success();
@@ -193,7 +196,8 @@ mod plan_schema {
             .clone();
 
         let json: Value = serde_json::from_slice(&output).unwrap();
-        let version = json.get("schema_version")
+        let version = json
+            .get("schema_version")
             .expect("Missing schema_version")
             .as_str()
             .expect("schema_version should be string");
@@ -217,14 +221,19 @@ mod plan_schema {
             .clone();
 
         let json: Value = serde_json::from_slice(&output).unwrap();
-        let session_id = json.get("session_id")
+        let session_id = json
+            .get("session_id")
             .expect("Missing session_id")
             .as_str()
             .expect("session_id should be string");
 
         // Session ID should be non-empty
         assert!(!session_id.is_empty(), "Session ID should not be empty");
-        assert!(session_id.len() >= 8, "Session ID seems too short: {}", session_id);
+        assert!(
+            session_id.len() >= 8,
+            "Session ID seems too short: {}",
+            session_id
+        );
     }
 
     #[test]
@@ -238,7 +247,8 @@ mod plan_schema {
             .clone();
 
         let json: Value = serde_json::from_slice(&output).unwrap();
-        let generated_at = json.get("generated_at")
+        let generated_at = json
+            .get("generated_at")
             .expect("Missing generated_at")
             .as_str()
             .expect("generated_at should be string");

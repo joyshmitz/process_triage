@@ -57,7 +57,11 @@ pub fn expected_recovery(beta: &BetaParams) -> f64 {
 pub fn update_beta(params: &BetaParams, successes: f64, trials: f64, eta: f64) -> BetaParams {
     let n = trials.max(0.0);
     let s = successes.max(0.0).min(n);
-    let eta = if eta.is_finite() && eta > 0.0 { eta } else { 1.0 };
+    let eta = if eta.is_finite() && eta > 0.0 {
+        eta
+    } else {
+        1.0
+    };
     BetaParams {
         alpha: params.alpha + eta * s,
         beta: params.beta + eta * (n - s),

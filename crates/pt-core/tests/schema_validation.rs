@@ -264,8 +264,10 @@ mod priors_schema {
     /// Priors with wrong schema version should fail validation.
     #[test]
     fn wrong_schema_version_fails() {
-        let mut priors = Priors::default();
-        priors.schema_version = "2.0.0".to_string();
+        let priors = Priors {
+            schema_version: "2.0.0".to_string(),
+            ..Default::default()
+        };
         assert!(priors.validate().is_err());
     }
 

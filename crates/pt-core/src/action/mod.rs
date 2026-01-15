@@ -10,7 +10,7 @@ pub use executor::{
     ExecutionResult, ExecutionSummary, IdentityProvider, NoopActionRunner, StaticIdentityProvider,
 };
 pub use recovery::{plan_recovery, ActionFailure, FailureKind, RecoveryDecision, RetryPolicy};
-#[cfg(unix)]
-pub use signal::{SignalActionRunner, SignalConfig};
 #[cfg(target_os = "linux")]
 pub use signal::LiveIdentityProvider;
+#[cfg(unix)]
+pub use signal::{SignalActionRunner, SignalConfig};

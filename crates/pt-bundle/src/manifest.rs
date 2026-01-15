@@ -79,7 +79,11 @@ impl BundleManifest {
     }
 
     /// Set the redaction policy version and hash.
-    pub fn with_redaction_policy(mut self, version: impl Into<String>, hash: impl Into<String>) -> Self {
+    pub fn with_redaction_policy(
+        mut self,
+        version: impl Into<String>,
+        hash: impl Into<String>,
+    ) -> Self {
         self.redaction_policy_version = version.into();
         self.redaction_policy_hash = hash.into();
         self
@@ -267,16 +271,8 @@ mod tests {
     fn test_manifest_add_file() {
         let mut manifest = BundleManifest::new("session-123", "host-abc", ExportProfile::Safe);
 
-        manifest.add_file(FileEntry::new(
-            "summary.json",
-            "a".repeat(64),
-            100,
-        ));
-        manifest.add_file(FileEntry::new(
-            "plan.json",
-            "b".repeat(64),
-            200,
-        ));
+        manifest.add_file(FileEntry::new("summary.json", "a".repeat(64), 100));
+        manifest.add_file(FileEntry::new("plan.json", "b".repeat(64), 200));
 
         assert_eq!(manifest.file_count(), 2);
         assert_eq!(manifest.total_bytes(), 300);
@@ -364,8 +360,8 @@ mod tests {
 
     #[test]
     fn test_file_entry_with_mime() {
-        let entry = FileEntry::new("test.json", "a".repeat(64), 100)
-            .with_mime_type("application/json");
+        let entry =
+            FileEntry::new("test.json", "a".repeat(64), 100).with_mime_type("application/json");
 
         assert_eq!(entry.mime_type, Some("application/json".to_string()));
     }
