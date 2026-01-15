@@ -362,6 +362,11 @@ Success criteria:
 
 This plan includes ALL of the following ideas and formulas from the conversation, verbatim or fully represented:
 
+Notation conventions used below:
+- Beta(α,β): shape parameters α,β.
+- Gamma(α,β): shape α, **rate** β (density ∝ t^{α-1} e^{-β t}).
+- When a Gamma scale parameter is needed, it is written explicitly as `scale=θ` (with rate β = 1/θ).
+
 A) Basic closed-form Bayesian model (non-ML)
 - Class set: C in {useful, useful-but-bad, abandoned, zombie}
 - Bayes rule: P(C|x) proportional to P(C) * P(x|C)
@@ -371,7 +376,7 @@ A) Basic closed-form Bayesian model (non-ML)
     - k_ticks = Δticks over window Δt (from /proc/PID/stat)
     - n_ticks = round(CLK_TCK * Δt * min(N_eff_cores, threads))  (where CLK_TCK = sysconf(_SC_CLK_TCK), and N_eff_cores accounts for affinity/cpuset/quota when available)
     - u = k_ticks / n_ticks (derived occupancy estimate; clamp to [0,1] if rounding/noise yields slight overflow); posterior for p_{u,C} is Beta(alpha_C+k_ticks, beta_C+n_ticks-k_ticks)
-  - t|C ~ Gamma(k_C, theta_C)
+  - t|C ~ Gamma(α_{t,C}, β_{t,C})
   - orphan o|C ~ Bernoulli(p_{o,C}), p_{o,C} ~ Beta(a_{o,C}, b_{o,C})
   - state flags s|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha^{state}_C)
   - command/CWD categories g|C ~ Categorical(rho_C), rho_C ~ Dirichlet(alpha^{cmd}_C)
@@ -379,7 +384,7 @@ A) Basic closed-form Bayesian model (non-ML)
   P(C|x) proportional to P(C) * product_j P(x_j|C)
   (conditional-independence approximation; mitigate correlated-signal double counting via conservative calibration and dependence summaries)
 - Log-posterior formula:
-  log P(C|x) = log P(C) + log BetaBinomial(k_ticks; n_ticks, alpha_C, beta_C) + log GammaPDF(t; k_C, theta_C)
+  log P(C|x) = log P(C) + log BetaBinomial(k_ticks; n_ticks, alpha_C, beta_C) + log GammaPDF(t; α_{t,C}, β_{t,C})
                 + log BetaBernoulliPred(o; a_{o,C}, b_{o,C}) + log DirichletCatPred(g; alpha^{cmd}_C) + ...
   (DirichletCatPred(g; α_vec) = α_vec[g]/sum(α_vec); categorical terms use Dirichlet-Multinomial posterior-predictives; decision core uses log-domain Beta/Gamma/Dirichlet special functions, not heuristic approximations)
 
@@ -398,6 +403,7 @@ C) Survival analysis and hazards
 - Gamma prior on lambda_C yields closed-form posterior; marginal survival (Gamma-mixed exponential) is Lomax/Pareto-II:
   P(T>t) = (β/(β+t))^α (rate-parameterization)
 - Time-varying covariates handled via piecewise-constant hazards (or stratified hazards) with conjugate Gamma updates per segment; yields closed-form posterior survival curves while capturing events like TTY loss, PPID reparenting, or IO flatlines.
+- Modeling hygiene: do **not** multiply a separate runtime likelihood term (e.g., `t|C ~ Gamma(α_{t,C}, β_{t,C})`) with a survival/hazard runtime term in the same posterior; treat these as alternative ways to represent the runtime evidence (choose one per run/config) to avoid double-counting.
 
 D) Change-point detection (closed-form)
 - Let k_t be the count of “busy” samples (or threshold exceedances) in a window of n_t samples.
@@ -412,7 +418,7 @@ E) Hierarchical priors by command category
 
 F) Continuous-time hidden semi-Markov chain
 - S_t in {useful, useful-bad, abandoned, zombie}
-- durations D_S ~ Gamma(k_S, theta_S)
+- durations D_S ~ Gamma(α_{D,S}, β_{D,S})
 
 G) CPU model as Markov-modulated Poisson / Levy subordinator
 - N(t) ~ Poisson(kappa_S * t)
@@ -478,7 +484,7 @@ Q) Practical enhancements
 - Rate limiting and quarantine
 - Systemd / Kubernetes plugins
 - Explainability ledger and audit logs
-- Kill simulations (SIGSTOP) before kill
+- Optional pause simulation (SIGSTOP) before kill for low-risk targets (reversible but can be disruptive; gate on blast radius and avoid when locks/dependencies are likely)
 - No silent deletion; transparent logs; explicit retention policy (summaries/ledger retained longer than raw high-volume traces)
 
 S) Causal intervention layer (do-calculus)
@@ -582,7 +588,7 @@ AS) Conformal prediction (distribution-free coverage)
 
 AT) False Discovery Rate (FDR) control across many processes
 - Multiple-testing correction (Benjamini-Hochberg, local fdr) for kill recommendations
-- Prevents “1 false-kill in a thousand processes” during large scans
+- Prevents “a few false kills among many kills” during large scans by bounding the expected fraction of false kills among the selected/acted-on set (not among all scanned processes)
 - Post-selection caveat: pt selects/ranks candidates before acting/reporting; when reporting uncertainty *after selection* (top-K drilldowns, “most suspicious” dashboards), either (a) use selection-safe e-values/e-FDR rules (preferred under optional stopping), or (b) condition on the selection event (selective inference) so “top-K” reporting doesn’t silently inflate error guarantees.
 
 AU) Restless bandits / Whittle index policies
@@ -661,6 +667,7 @@ BK) Dormant mode (always-on guardian)
 BL) Anytime-valid inference (e-values / e-processes) for 24/7 monitoring
 - Use nonnegative supermartingales / “betting” style tests to get time-uniform validity under optional stopping
 - Natural fit for dormant mode: continuous monitoring without inflating false-alarm/false-kill risk over time
+- Construction hygiene: e-processes must be built from a proper filtration (sequential conditional likelihood ratios / Bayes factors on non-overlapping increments). Do not “double count” by multiplying evidence from overlapping windows unless the overlap is handled explicitly (e.g., downsample to disjoint blocks, or use a conservative anytime bound that is valid for your chosen sampling scheme).
 - Game-theoretic probability lens (Shafer/Vovk): e-processes are literal capital processes of a bettor challenging a hypothesis; mixture betting (combining multiple betting strategies) gives robustness to misspecification and changing regimes with no loss of time-uniform validity.
 - Defensive forecasting / expert aggregation: combine multiple “alien sensors” (signatures, Bayes core, CTW code-length anomalies, drift gates) into a single calibrated forecast with provable regret/calibration guarantees, while still emitting a decomposable evidence ledger per component.
 
@@ -864,7 +871,8 @@ All of the above ideas (A through CD) are integrated in the system design below.
 - Feature computation is deterministic and provenance-aware: each derived quantity records its input sources and time window so it can be recomputed and debugged from telemetry.
 - Δt: scan window duration (seconds), CLK_TCK: process CPU-time ticks per second (sysconf(_SC_CLK_TCK))
 - N_eff_cores: effective core capacity available to the process (honor affinity/cpuset/quota when available; else total logical CPUs)
-- k_ticks: CPU tick delta over Δt (utime+stime delta)
+- k_ticks: CPU tick delta over Δt (utime+stime delta from `/proc/PID/stat` fields 14+15)
+- threads: thread count of the process (Linux: `/proc/PID/stat` field 20 num_threads or `/proc/PID/status` Threads line; macOS: proc_pidinfo thread count); note that this counts all threads, including blocked ones—when most threads are blocked, n_ticks will overestimate capacity, which is handled by the n_eff correction and shadow-mode calibration
 - n_ticks: integer tick budget over Δt: n_ticks = round(CLK_TCK * Δt * min(N_eff_cores, threads))
 - u: CPU occupancy fraction (clamp to [0,1] if rounding/noise yields slight overflow): u = k_ticks / n_ticks
 - u_cores: estimated cores used (can exceed 1): u_cores = k_ticks / (CLK_TCK * Δt)
@@ -886,7 +894,7 @@ All of the above ideas (A through CD) are integrated in the system design below.
 - child activity: active_children/idle_children/no_children
 - change-point statistics for CPU and IO
 - CTW prequential log-loss/regret on discretized activity sequences (universal sequence prediction; feeds change-point + anomaly evidence without ML)
-- survival term for runtime vs expected lifetime
+- survival term for runtime vs expected lifetime (optional; use when runtime is modeled via hazards instead of a separate direct runtime likelihood term)
 - dependency impact score: live sockets, client count, open files, service bindings
 - user intent signal: active TTY + recent shell + editor focus + project activity window
 - belief transition probabilities for POMDP update
@@ -1424,11 +1432,12 @@ Pattern matching uses:
 
 #### Fleet-Wide FDR Control
 When operating across a fleet, FDR control must span all hosts:
-- Single-host FDR might allow 1 false kill per 100 processes
+- A single-host FDR target might allow ~1 false kill per 100 **kills** (in expectation), which becomes unacceptable when scaled across many hosts and repeated runs
 - Fleet FDR prevents "1 false kill spread across 100 hosts" (unacceptable)
 - Implementation: treat the entire fleet as one multiple-testing domain
-- **Conservative option**: `α_per_host = α_fleet / n_hosts` (Bonferroni-style, provides strict guarantee)
-- **Adaptive option** (heuristic): `α_per_host ≈ α_fleet / sqrt(n_hosts)` scales more gently but lacks formal FDR guarantee; use only when shadow-mode calibration validates it for your fleet size and dependence structure
+- **Preferred (pooled FDR)**: pool all candidates across all hosts into a single list and apply BH/BY or e-BH at fleet-level α; this is the proper FDR procedure and avoids the conservatism of Bonferroni-style splitting. Requires aggregated telemetry (section below) or a coordination protocol.
+- **Fallback (conservative per-host)**: `α_per_host = α_fleet / n_hosts` (Bonferroni-style; strictly controls FWER and therefore also controls FDR, but is very conservative—use when pooled FDR is impractical)
+- **Not recommended (heuristic per-host)**: `α_per_host ≈ α_fleet / sqrt(n_hosts)` scales more gently but lacks formal FDR guarantee; use only when shadow-mode calibration validates it for your fleet size and dependence structure, and understand you're trading guarantees for power
 
 #### Aggregated Telemetry
 Fleet mode can aggregate telemetry to a central store:
@@ -1586,7 +1595,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 4.2 Priors and Likelihoods (Conjugate)
 - CPU occupancy from tick deltas: p_{u,C} ~ Beta(alpha_C, beta_C), k_ticks|p_{u,C},C ~ Binomial(n_ticks, p_{u,C}). (Use the Beta-Binomial posterior-predictive for k_ticks; u = k_ticks/n_ticks is a derived occupancy estimate. Posterior: p_{u,C}|data ~ Beta(alpha_C+k_ticks, beta_C+n_ticks-k_ticks).)
   - Modeling note: Binomial independence is an approximation (ticks are temporally correlated). To avoid overconfidence, optionally use an effective tick count n_eff (derived from autocorrelation/dispersion) in place of n_ticks; validate via shadow-mode calibration.
-- Runtime t|C ~ Gamma(k_C, theta_C)
+- Runtime t|C ~ Gamma(α_{t,C}, β_{t,C})
 - Orphan o|C ~ Bernoulli(p_{o,C}), p_{o,C} ~ Beta(a_{o,C}, b_{o,C})
 - State flags s|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha^{state}_C)
 - Command/CWD g|C ~ Categorical(rho_C), rho_C ~ Dirichlet(alpha^{cmd}_C)
@@ -1596,10 +1605,11 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 4.3 Posterior Computation (Closed-form)
 - P(C|x) proportional to P(C) * product_j P(x_j|C)
 - Modeling note: the product assumes conditional independence of features given C. To avoid overconfident “double counting” when signals are correlated (CPU/PSI/IO, PPID/TTY, etc.), use conservative calibration (n_eff, shrinkage), feature collapsing, or a single dependence correction term (e.g., copula-based summaries) rather than multiplying many redundant terms.
+- Modeling note (runtime): represent runtime evidence either via a direct runtime likelihood term (e.g., `t|C ~ Gamma(α_{t,C}, β_{t,C})`) **or** via an explicit survival/hazard model (section 4.5); do not include both in the same posterior product.
 - log posterior formula:
   log P(C|x) = log P(C)
                + log BetaBinomial(k_ticks; n_ticks, alpha_C, beta_C)
-               + log GammaPDF(t; k_C, theta_C)
+               + log GammaPDF(t; α_{t,C}, β_{t,C})
                + log BetaBernoulliPred(o; a_{o,C}, b_{o,C})
                + log DirichletCatPred(g; alpha^{cmd}_C) + ...
   where BetaBernoulliPred(o; a,b) = a/(a+b) if o=1 else b/(a+b), DirichletCatPred(g; α_vec) = α_vec[g]/sum(α_vec), and categorical terms use Dirichlet-Multinomial posterior-predictives
@@ -1619,7 +1629,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 4.5 Semi-Markov and Competing Hazards
 - hidden semi-Markov states S_t
-- duration D_S ~ Gamma(k_S, theta_S)
+- duration D_S ~ Gamma(α_{D,S}, β_{D,S})
 - competing hazards (per class/state): lambda_finish,C, lambda_abandon,C, lambda_bad,C
 - survival term (constant hazards): P(still running | t, C) = exp(-(lambda_finish,C+lambda_abandon,C+lambda_bad,C) * t)
 - Gamma priors on hazard rates yield closed-form posterior
@@ -1705,7 +1715,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
   - Report both: Bayesian credible bound (4.15) and PAC-Bayes bound (this section) as complementary safety evidence before enabling aggressive `--robot` thresholds.
 
 ### 4.16 Empirical Bayes Hyperparameter Calibration
-- Maximize marginal likelihood over shadow logs to tune alpha/beta/k/theta
+- Maximize marginal likelihood over shadow logs to tune conjugate hyperparameters (Beta α/β, Gamma shape/rate, Dirichlet α-vectors)
 - Still closed-form for conjugate families; update priors periodically
 
 ### 4.17 Minimax / Least-Favorable Priors
@@ -1727,7 +1737,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - Discrete-time hazard h_t with Beta priors; closed-form updates per bin
 - Captures long-tail stuckness beyond Gamma assumptions
 - Explicit discrete-time form:
-  - Bin time into t = 1..T with exposure n_t (e.g., number of samples or elapsed time in bin) and event indicator d_t in {0,1}
+  - Bin time into t = 1..T with at-risk count n_t (number of process-trials that are still running at the start of bin t) and event count d_t (number that terminate in bin t)
   - Prior: h_t ~ Beta(a_t, b_t)
   - Posterior: h_t | data ~ Beta(a_t + d_t, b_t + n_t - d_t)
   - Survival: S(t) = ∏_{j=1..t} (1 - h_j)
@@ -1736,7 +1746,9 @@ C in {useful, useful-but-bad, abandoned, zombie}
   - For each regime r, hazard λ_r ~ Gamma(α_r, β_r)
   - With exposure E_r (time spent in regime r) and event count N_r, posterior:
     λ_r | data ~ Gamma(α_r + N_r, β_r + E_r)
-  - Survival over a path of regimes: S(t) = exp(-∑_r λ_r * E_r)
+  - Conditional survival (given point estimates λ̂_r, e.g., posterior mean (α_r+N_r)/(β_r+E_r)): S(t | λ̂) = exp(-∑_r λ̂_r * E_r)
+  - Marginal/posterior predictive survival (integrating out λ_r): S̄(t) = Π_r (β_r / (β_r + E_r))^{α_r + N_r}, which is a product of Lomax tails—use this for uncertainty quantification and credible intervals on time-to-event
+  - Both forms are closed-form; the conditional form is interpretable for display, the marginal form is proper for probabilistic predictions
   - This yields a closed-form, interpretable hazard inflation when regimes shift (e.g., TTY loss increases λ_r)
 
 ### 4.22 Robust Statistics (Huberized Likelihoods)
@@ -1772,13 +1784,15 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - Distribution-free (under exchangeability) prediction intervals for runtime/CPU; use time-blocked / online conformal variants to reduce temporal dependence issues
 - Regression-style conformal interval (runtime/CPU):
   - Choose a point predictor ŷ_i and nonconformity score s_i = |y_i - ŷ_i| (or s_i = -log p(y_i|x_i))
-  - Let q_{1-α} be the (1-α) empirical quantile of {s_i} over a calibration window
-  - For new x_{n+1}, output interval: [ŷ_{n+1} - q_{1-α}, ŷ_{n+1} + q_{1-α}]
+  - Let q be the conformal quantile: the ⌈(n+1)(1-α)⌉-th smallest value in {s_i} over a calibration window of size n
+  - For new x_{n+1}, output interval: [ŷ_{n+1} - q, ŷ_{n+1} + q]
   - Guarantees: P(y_{n+1} in interval) ≥ 1 - α under exchangeability
 - Classification-style conformal set (process state):
-  - Nonconformity for class c: s_i(c) = 1 - P(C=c | x_i) (or NLL)
-  - p-value for class c: p_c = (1 + #{i: s_i(c) ≥ s_{n+1}(c)}) / (n + 1)
-  - Predict set: {c : p_c > α}, providing finite-sample coverage
+  - For each calibration example i with true label y_i, define nonconformity s_i = 1 - P̂(C=y_i | x_i) (or s_i = -log P̂(C=y_i|x_i))
+  - For candidate label c on the new example, define s_{n+1}(c) = 1 - P̂(C=c | x_{n+1}) (or NLL)
+  - p-value for label c: p_c = (1 + #{i: s_i ≥ s_{n+1}(c)}) / (n + 1)
+  - Predict set: {c : p_c > α}, providing finite-sample marginal coverage under exchangeability
+  - Optional (Mondrian / label-conditional): compute p_c using only calibration points with y_i=c to target per-class coverage
 - Time dependence handling:
   - Use blocked or rolling-window conformal (calibration on recent window), or online conformal with decaying weights to reduce drift sensitivity
   - Report window size and coverage target in the explainability ledger
@@ -1792,6 +1806,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - Modern “anytime” framing (fits pt well): use e-values/e-processes derived from likelihood ratios/Bayes factors so optional stopping and sequential scanning remain valid, then apply an e-FDR control procedure (and connect it directly to online alpha-investing in section 4.40).
 - e-value definition and e-FDR rule (explicit):
   - e_i ≥ 0 with E[e_i | null] ≤ 1 (e.g., e_i = BayesFactor_i or likelihood-ratio martingale)
+  - Composite-null hygiene: if “useful” is composite (parameters unknown), ensure validity as sup_{θ∈H0} E_θ[e_i] ≤ 1 (or be explicit that the null is the mixture model you chose). When unsure, prefer conservative mixture/hedged e-values or blockwise e-processes over pretending a simple-null guarantee.
   - Sort e-values descending: e_(1) ≥ e_(2) ≥ ... ≥ e_(m)
   - e-BH (one valid form): choose largest k such that (1/k) * Σ_{i=1..k} (1 / e_(i)) ≤ α
   - Reject/kill the top k; this controls FDR under arbitrary dependence when e-values are valid
@@ -1865,7 +1880,7 @@ Goal: predict future process state based on current trends, enabling proactive i
 #### Trend Models
 For each resource metric (CPU, memory, IO rate), fit a trend model:
 - **Linear trend**: y(t) = a + b*t, estimated via Bayesian linear regression
-- **Exponential trend**: y(t) = a * exp(b*t), for memory leaks and growth patterns
+- **Exponential trend**: y(t) = a * exp(b*t), for memory leaks and growth patterns; fit via log-transform (log y = log a + b*t) then Bayesian linear regression on the log scale, which assumes multiplicative/log-normal errors—appropriate for growth processes where relative error is more stable than absolute error
 - **Plateau detection**: identify if metric is stabilizing or continuing to grow
 
 Use Kalman filtering (4.23) to smooth noisy observations before trend fitting.
@@ -1962,6 +1977,7 @@ Goal: integrate pattern library matches (section 3.9) with Bayesian inference.
 - kill if:
   log [P(abandoned|x)/P(useful|x)] > log [(L(kill,useful)-L(keep,useful)) / (L(keep,abandoned)-L(kill,abandoned))]
   (i.e., kill when posterior odds exceed the Bayes-risk threshold implied by the loss matrix; equivalently compare Bayes factors + prior odds to this threshold)
+- Terminology note: the inequality is a Bayes-risk posterior-odds decision boundary; when implemented online using incremental likelihood ratios/Bayes factors over time, it induces an SPRT-style stopping rule.
 
 ### 5.3 Value of Information (VOI)
 - VOI = E[loss_now - loss_after_measurement] - cost(measurement/waiting)
@@ -2119,10 +2135,10 @@ Goal: coordinate decisions across multiple hosts to maintain fleet-level safety 
 
 #### Fleet FDR Control
 When applying FDR control across a fleet:
-- Pool all candidates across all hosts into a single FDR domain
-- Stricter per-host thresholds to maintain fleet-level guarantee
-- Conservative: `α_per_host = α_fleet / n_hosts` (Bonferroni-style, strict guarantee)
-- Adaptive (heuristic, requires shadow-mode validation): `α_per_host ≈ α_fleet / sqrt(n_hosts)`
+- Preferred: pool all candidates across all hosts into a single FDR domain and run one global selection rule (then dispatch the chosen actions back to each host).
+- If hosts must decide independently (no full pooling), allocate per-host error budgets:
+  - Conservative: `α_per_host = α_fleet / n_hosts` (Bonferroni-style; strictly controls FWER and therefore also controls FDR, but is very conservative)
+  - Adaptive (heuristic, requires shadow-mode validation): `α_per_host ≈ α_fleet / sqrt(n_hosts)`
 
 #### Cross-Host Correlation
 Detect correlated patterns:
@@ -2157,8 +2173,9 @@ Operational realism notes:
 - Uninterruptible sleep (`D`) may not respond to SIGKILL until the kernel unblocks; default to investigation (wchan, IO device, dependency impact) rather than blind killing.
 - Supervised processes often respawn: if a PID is under systemd/launchd/supervisord/nodemon/etc., killing the PID alone may be ineffective or harmful; prefer unit/supervisor actions and log “respawn detected” in after-action outcomes.
 - Process groups matter: many “rogue” workloads are actually a tree; staged actions should be group-aware (pause group → observe → term group → observe → kill group) to avoid leaving orphans.
+- SIGSTOP is reversible but not “free”: pausing a process can stall services, hold locks, and block other processes. Treat pause/freeze as potentially disruptive; default to throttling/quarantine where possible and gate pause behind low-blast-radius checks.
 - Session safety: protect the active login/session chain by default (current shell, tmux/screen, SSH server/client, controlling TTY) so triage never cuts off the user running it.
-- PID reuse / TOCTOU safety: always revalidate a target immediately before action (at minimum: `(pid,start_id,uid)` from section 3.5). If identity mismatches, block and require a fresh plan; never “best-effort” kill by PID alone.
+- PID reuse / TOCTOU safety: always revalidate a target immediately before action (at minimum: `(pid,start_id,uid)` from section 3.2). If identity mismatches, block and require a fresh plan; never “best-effort” kill by PID alone.
 - Privilege/UID safety: by default, only execute actions against processes owned by the invoking user. Cross-UID (other users/root) actions require explicit privileges + policy allowlists; do not allow cross-UID auto-execution by default even if `sudo` is available.
 
 ### 6.1 Supervisor Detection and Supervisor-Aware Actions
