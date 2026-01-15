@@ -741,7 +741,7 @@ BW) Confidence-bounded automation controls
 
 BX) Session resumability and idempotency
 - Sessions are durable artifacts that survive connection interruptions
-- `pt agent apply --resume-session <id>` continues from where it left off
+- `pt agent apply --session <id> --resume` continues from where it left off
 - Track: plan, applied actions, pending actions, outcomes
 - Idempotent execution: re-running a completed action is a no-op
 
@@ -1089,7 +1089,8 @@ Core options:
         "title": "e-FDR (Anytime-Valid)",
         "equations": [
           "e_i ≥ 0 with E[e_i | null] ≤ 1",
-          "choose k s.t. (1/k) * Σ_{i=1..k} (1 / e_(i)) ≤ α"
+          "p_i = min(1, 1/e_i)",
+          "BH/BY on {p_i} selects k; reject top k"
         ],
         "values": {"alpha":0.05,"k":3,"included_in_set":true}
       },
@@ -1138,7 +1139,7 @@ Confirmation:
 - `--abort-on-unknown` - Stop if any unexpected condition encountered
 
 Resumability:
-- `--resume-session <id>` - Resume an interrupted session from where it left off
+- `--resume` - Resume an interrupted session from where it left off (requires `--session <id>`)
 - Sessions track: plan, applied actions, pending actions, outcomes
 - Idempotent: re-running a completed action is a no-op
 
@@ -1201,7 +1202,7 @@ Recommended actions:
    This appears to be a hung test process with no recent I/O activity.
 2. Kill the orphaned Next.js dev server (PID 5678) - running for 2 days since its parent terminal 
    was closed, consuming 800MB RAM.
-3. Kill the zombie webpack watcher (PID 9012) - defunct process from a crashed build, consuming 
+3. Kill the orphaned webpack watcher (PID 9012) - stale process from a crashed build, consuming
    400MB RAM.
 4. Review the Python training script (PID 3456) - consuming 8.4GB but has recent I/O; may be 
    legitimately working.
@@ -1216,7 +1217,7 @@ I've cleaned up 3 abandoned processes on your devbox:
 Completed actions:
 - Killed the stuck Jest worker (PID 1234): process terminated cleanly in 150ms, freed 1.2GB RAM
 - Killed the orphaned Next.js dev server (PID 5678): freed 800MB RAM
-- Killed the zombie webpack watcher (PID 9012): freed 400MB RAM
+- Killed the orphaned webpack watcher (PID 9012): freed 400MB RAM
 
 Results:
 - Total memory recovered: 2.4GB (available memory: 4.2GB → 6.6GB)
@@ -2274,7 +2275,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
   - With exposure E_r (time spent in regime r) and event count N_r, posterior:
     λ_r | data ~ Gamma(α_r + N_r, β_r + E_r)
   - Conditional survival (given point estimates λ̂_r, e.g., posterior mean (α_r+N_r)/(β_r+E_r)): S(t | λ̂) = exp(-∑_r λ̂_r * E_r)
-  - Marginal/posterior predictive survival (integrating out λ_r): S̄(t) = Π_r (β_r / (β_r + E_r))^{α_r + N_r}, which is a product of Lomax tails—use this for uncertainty quantification and credible intervals on time-to-event
+  - Marginal/posterior predictive survival (integrating out λ_r over future horizon t): S̄(t) = Π_r ((β_r + E_r) / (β_r + E_r + t))^{α_r + N_r}, which is a product of Lomax tails—use this for uncertainty quantification and credible intervals on time-to-event
   - Both forms are closed-form; the conditional form is interpretable for display, the marginal form is proper for probabilistic predictions
   - This yields a closed-form, interpretable hazard inflation when regimes shift (e.g., TTY loss increases λ_r)
 
@@ -2335,8 +2336,10 @@ C in {useful, useful-but-bad, abandoned, zombie}
   - e_i ≥ 0 with E[e_i | null] ≤ 1 (e.g., e_i = BayesFactor_i or likelihood-ratio martingale)
   - Composite-null hygiene: if “useful” is composite (parameters unknown), ensure validity as sup_{θ∈H0} E_θ[e_i] ≤ 1 (or be explicit that the null is the mixture model you chose). When unsure, prefer conservative mixture/hedged e-values or blockwise e-processes over pretending a simple-null guarantee.
   - Sort e-values descending: e_(1) ≥ e_(2) ≥ ... ≥ e_(m)
-  - e-BH (one valid form): choose largest k such that (1/k) * Σ_{i=1..k} (1 / e_(i)) ≤ α
-  - Reject/kill the top k; this controls FDR under arbitrary dependence when e-values are valid
+  - Map to p-values: p_i = min(1, 1/e_i) (valid by Markov when e_i are valid)
+  - BH on p-values (independence/PRDS): choose largest k with p_(k) ≤ (α k)/m (equivalently e_(k) ≥ m/(α k))
+  - BY on p-values (arbitrary dependence): choose largest k with p_(k) ≤ (α k)/(m * c(m)), c(m)=Σ_{j=1}^m 1/j (equivalently e_(k) ≥ (m*c(m))/(α k))
+  - Reject/kill the top k accordingly (default to conservative BY when dependence is unclear)
 
 ### 4.33 Restless Bandits / Whittle Index Scheduling
 - Each PID is an arm; actions are {quick-scan, deep-scan, instrument, pause, throttle}
@@ -2533,8 +2536,8 @@ Goal: integrate pattern library matches (section 3.9) with Bayesian inference.
 - This prevents “scan many processes and inevitably kill one useful one”
 - Under dependence (shared PPID/cgroups), default to conservative or structured FDR control (BY, group/hierarchical FDR by unit/container/process-group) rather than assuming independence.
 - If using e-values (anytime-valid), replace lfdr ranking with e-value ranking:
-  - Sort e_i descending; choose largest k such that (1/k) * Σ_{i=1..k} (1 / e_(i)) ≤ α
-  - Kill only that top-k set; this keeps the batch decision valid under optional stopping and repeated scans
+  - Sort e_i descending; map to p_i = min(1, 1/e_i) and apply BH/BY as in 4.32 to choose a top-k set
+  - Kill only that top-k set; e-values/e-processes keep per-candidate evidence valid under optional stopping and repeated scans, while BH/BY handles multiplicity across candidates
 - Post-selection inference note: “top-K drilldowns” and delta-mode shortlists are adaptive selections. Prefer e-values/e-FDR for automation, and if you also publish uncertainty statements for the selected set, apply selective-inference adjustments (conditioning on the selection event) instead of reusing naive marginal intervals.
 
 ### 5.9 Budgeted Instrumentation Policy (Whittle / VOI)
@@ -2995,7 +2998,7 @@ Requirement: at any time, the user can toggle a “galaxy-brain” view (keybind
       - Show p_c per class (and label-conditional/Mondrian variant if enabled)
     - **e-values / e-FDR** (anytime-valid selection):
       - e_i (from Bayes factor or likelihood-ratio martingale)
-      - e-BH rule: choose largest k with (1/k) * Σ_{i=1..k} (1 / e_(i)) ≤ α
+      - Choose k via BH/BY on p_i = min(1, 1/e_i) (see 4.32), then include only the top-k set
       - Show current k, α, and whether the PID is inside the accepted set
     - **Alpha-investing** (online budget):
       - Wealth update: W_i = W_{i-1} - α_i + ω (if discovery), else W_i = W_{i-1} - α_i
@@ -3375,7 +3378,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
   - Identify new/changed/resolved candidates
 - Implement session resumability:
   - Persist session state to artifact directory
-  - Support `pt agent resume --session <id>`
+  - Support `pt agent apply --session <id> --resume`
   - Maintain full context across session boundaries
 - Implement session comparison:
   - Compare two sessions to identify trends
@@ -3499,7 +3502,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - **What-if explainer**: Flip condition identification, delta_p estimation, and detailed "what would change my mind" output.
 - **Human-friendly summary modes**: Brief, narrative, and structured summary output formats for different consumption contexts.
 - **Differential session support**: Baseline tracking, delta computation, `--since` flag, and session-over-session comparison.
-- **Session resumability**: State persistence, `pt agent resume --session <id>`, and context preservation.
+- **Session resumability**: State persistence, `pt agent apply --session <id> --resume`, and context preservation.
 
 ### Fleet-Specific Deliverables
 - **Fleet session manager**: Multi-host session schema, parallel scanning, result aggregation, and cross-host comparison.
