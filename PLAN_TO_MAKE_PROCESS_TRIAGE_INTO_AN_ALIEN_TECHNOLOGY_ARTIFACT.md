@@ -385,10 +385,12 @@ All of these are integrated in the system design below.
 
 ### 3.3 Telemetry & Analytics Layer (Parquet-first, DuckDB query engine)
 Telemetry is a first-class system component, not an afterthought. It is the substrate for shadow-mode calibration, PAC-Bayes guarantees, FDR tuning, empirical Bayes hyperparameters, and manual “why did it do that?” debugging.
+DuckDB is the query engine because it is analytics-native: fast columnar scans, great for time series slices, joins across runs, and ad-hoc postmortems on decisions.
 
 Storage approach:
 - Write append-only Parquet partitions as the primary sink (low overhead, compressible, concurrency-safe).
 - Query the Parquet lake with DuckDB (views over partitions). Optionally maintain a small `.duckdb` file for convenience views and macros, but do not rely on it for multi-writer ingestion.
+- Avoid per-row inserts; batch writes per scan cycle and emit new Parquet files atomically.
 
 What gets logged (raw + derived + outcomes):
 - `runs`: run_id, host fingerprint, git commit, priors/policy snapshot hash, tool availability/capabilities, pt-core version.
@@ -780,7 +782,7 @@ Use the model to interpret the observed snapshot:
 - Deep scan: /proc IO, CPU deltas, wchan, net, children, TTY
 - Implement a tool runner in `pt-core` with timeouts, output-size caps, and backpressure so “collect everything” does not destabilize the machine.
 - Persist raw tool events + parsed samples to Parquet as the scan runs (batched), so failures still leave an analyzable trail.
-- Optional system tools (auto-install):
+- Maximal system tools (auto-install; attempt all, degrade gracefully):
   - Linux: sysstat, perf, bpftrace/bcc/bpftool, iotop, nethogs/iftop, lsof, atop, sysdig, smem, numactl/numastat, turbostat/powertop, strace/ltrace, acct/psacct, auditd, pcp
   - macOS: fs_usage, sample, spindump, nettop, powermetrics, lsof, dtruss (if permitted)
 
@@ -890,6 +892,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 
 ### Phase 4: Inference Integration
 - Combine evidence to compute P(C|x)
+- Persist `proc_features`, `proc_inference`, and the per-process explainability ledger to Parquet (batched); generate DuckDB views/macros for standard “why” queries.
 - Add Bayes factor ledger output
 - Add confidence metrics
 - Add Hawkes / marked point process layers for bursty events
