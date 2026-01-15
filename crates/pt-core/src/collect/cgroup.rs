@@ -361,6 +361,9 @@ fn collect_memory_limits(details: &mut CgroupDetails, _pid: u32) {
         provenance.limit_paths_tried.push(swap_path.clone());
         if let Some(swap) = read_memory_limit(&swap_path) {
             limits.swap_max_bytes = swap;
+            if limits.source == MemoryLimitSource::None {
+                limits.source = MemoryLimitSource::CgroupV2;
+            }
         }
     }
 
@@ -382,11 +385,17 @@ fn collect_memory_limits(details: &mut CgroupDetails, _pid: u32) {
             provenance.limit_paths_tried.push(soft_path.clone());
             if let Some(high) = read_v1_memory_limit(&soft_path) {
                 limits.high_bytes = high;
+                if limits.source == MemoryLimitSource::None {
+                    limits.source = MemoryLimitSource::CgroupV1;
+                }
             }
 
             provenance.limit_paths_tried.push(swap_path.clone());
             if let Some(swap) = read_v1_memory_limit(&swap_path) {
                 limits.swap_max_bytes = swap;
+                if limits.source == MemoryLimitSource::None {
+                    limits.source = MemoryLimitSource::CgroupV1;
+                }
             }
         }
     }
