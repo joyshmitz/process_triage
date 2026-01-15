@@ -918,6 +918,7 @@ mod session_safety {
     fn test_precheck_session_safety_integration() {
         // Test that LivePreCheckProvider correctly uses SessionAnalyzer
         let config = LivePreCheckConfig {
+            block_if_open_write_fds: false,
             max_open_write_fds: 100,
             block_if_locked_files: false,
             block_if_active_tty: false, // Disable to focus on session checks
