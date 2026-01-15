@@ -1,0 +1,38 @@
+[package]
+name = "pt-report"
+description = "HTML report generator for process triage sessions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+
+# Templating
+askama = { version = "0.12", features = ["with-axum"] }
+
+# Asset processing
+base64 = "0.22"
+minify-html = "0.15"
+
+# HTTP client (for embed mode)
+ureq = { version = "2", features = ["json"], optional = true }
+
+# Logging
+tracing = "0.1"
+
+# Local dependencies
+pt-bundle = { path = "../pt-bundle" }
+pt-redact = { path = "../pt-redact" }
+
+[dev-dependencies]
+tempfile = "3"
+
+[features]
+default = []
+embed = ["ureq"]
