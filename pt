@@ -17,13 +17,44 @@ readonly DECISIONS_FILE="$CONFIG_DIR/decisions.json"
 readonly PRIORS_FILE="$CONFIG_DIR/priors.json"
 readonly LOG_FILE="$CONFIG_DIR/triage.log"
 
-# Colors
-readonly C_KILL=$'\e[91m'      # Bright red
-readonly C_REVIEW=$'\e[93m'    # Bright yellow
-readonly C_SPARE=$'\e[92m'     # Bright green
-readonly C_DIM=$'\e[90m'       # Gray
-readonly C_BOLD=$'\e[1m'
-readonly C_RESET=$'\e[0m'
+# ══════════════════════════════════════════════════════════════════════════════
+# Terminal Detection
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Detect if we're in an interactive terminal
+IS_TTY=false
+[[ -t 1 ]] && IS_TTY=true
+
+# Detect if colors should be disabled
+# NO_COLOR is a standard: https://no-color.org/
+USE_COLOR=true
+if [[ "$IS_TTY" != "true" ]] || [[ -n "${NO_COLOR:-}" ]]; then
+    USE_COLOR=false
+fi
+
+# Detect CI environment
+IS_CI=false
+[[ -n "${CI:-}" ]] && IS_CI=true
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Colors (conditional on terminal detection)
+# ══════════════════════════════════════════════════════════════════════════════
+
+if [[ "$USE_COLOR" == "true" ]]; then
+    readonly C_KILL=$'\e[91m'      # Bright red
+    readonly C_REVIEW=$'\e[93m'    # Bright yellow
+    readonly C_SPARE=$'\e[92m'     # Bright green
+    readonly C_DIM=$'\e[90m'       # Gray
+    readonly C_BOLD=$'\e[1m'
+    readonly C_RESET=$'\e[0m'
+else
+    readonly C_KILL=''
+    readonly C_REVIEW=''
+    readonly C_SPARE=''
+    readonly C_DIM=''
+    readonly C_BOLD=''
+    readonly C_RESET=''
+fi
 
 # Scoring thresholds
 readonly THRESHOLD_KILL=60

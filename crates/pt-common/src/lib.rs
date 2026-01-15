@@ -8,11 +8,13 @@
 //! - Configuration loading and validation
 //! - Capabilities detection and caching
 //! - Command and CWD category taxonomies
+//! - Galaxy-brain math transparency types
 
 pub mod capabilities;
 pub mod categories;
 pub mod config;
 pub mod error;
+pub mod galaxy_brain;
 pub mod id;
 pub mod output;
 pub mod schema;
@@ -26,6 +28,11 @@ pub use capabilities::{
 pub use categories::{
     CategoryMatcher, CategoryTaxonomy, CommandCategory, CommandCategoryDef, CommandPattern,
     CwdCategory, CwdCategoryDef, CwdPattern, PriorHints, CATEGORIES_SCHEMA_VERSION,
+};
+pub use galaxy_brain::{
+    CardId, CliHints, CliOutputFormat, CliVerbosity, ComputedValue, Equation, GalaxyBrainData,
+    MathCard, MathRenderer, Reference, RenderHints, ReportHints, TuiColorScheme, TuiHints,
+    ValueFormat, ValueType, GALAXY_BRAIN_SCHEMA_VERSION,
 };
 pub use config::{Config, ConfigPaths, ConfigResolver, ConfigSnapshot, Policy, Priors};
 pub use error::{Error, Result};
