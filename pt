@@ -266,6 +266,84 @@ check_for_update() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Checksum verification (security)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Cross-platform SHA256 (Linux sha256sum, macOS shasum, fallback openssl)
+sha256_file() {
+    local file="$1"
+
+    if command -v sha256sum &>/dev/null; then
+        sha256sum "$file" | cut -d' ' -f1
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 "$file" | cut -d' ' -f1
+    elif command -v openssl &>/dev/null; then
+        openssl dgst -sha256 "$file" | awk '{print $NF}'
+    else
+        log_warn "No SHA256 tool available (sha256sum, shasum, or openssl)"
+        return 1
+    fi
+}
+
+# Verify downloaded file against published checksum
+# Returns 0 if verified, 1 if mismatch or unavailable (strict mode)
+verify_update_checksum() {
+    local file="$1"
+    local version="$2"
+    local expected actual
+
+    # Download expected checksum from release
+    local checksum_url="${RELEASES_URL}/download/v${version}/pt.sha256"
+
+    expected=$(curl -fsSL --connect-timeout 5 --max-time 10 "$checksum_url" 2>/dev/null) || {
+        log_warn "Could not download checksum file"
+        log_warn "URL: $checksum_url"
+
+        # In non-interactive mode, refuse to continue without verification
+        if [[ "$IS_TTY" != "true" ]]; then
+            log_error "Checksum verification required in non-interactive mode"
+            return 1
+        fi
+
+        # Interactive: prompt user
+        log_warn "Update will proceed WITHOUT verification"
+        if ! gum_confirm "Continue without checksum verification?"; then
+            log_info "Update cancelled"
+            return 1
+        fi
+        return 0  # User accepted risk
+    }
+
+    # Extract hash (format: "hash  filename" or just "hash")
+    expected="${expected%% *}"
+    expected="${expected%%$'\n'*}"  # Remove any trailing newline
+
+    # Compute actual checksum
+    actual=$(sha256_file "$file") || {
+        log_warn "Could not compute checksum (no SHA256 tool)"
+        if [[ "$IS_TTY" != "true" ]]; then
+            log_error "Checksum verification required in non-interactive mode"
+            return 1
+        fi
+        return 0
+    }
+
+    # Compare
+    if [[ "$expected" == "$actual" ]]; then
+        log_success "Checksum verified: ${actual:0:16}..."
+        return 0
+    else
+        log_error "Checksum mismatch!"
+        log_error "Expected: $expected"
+        log_error "Actual:   $actual"
+        log_error ""
+        log_error "The downloaded file may be corrupted or tampered with."
+        log_error "Update aborted for security."
+        return 1
+    fi
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Gum wrapper functions with ANSI fallback
 # ──────────────────────────────────────────────────────────────────────────────
 
