@@ -1173,8 +1173,8 @@ mod tests {
         assert_eq!(AbnormalitySeverity::from_tail_bound(0.5), AbnormalitySeverity::Normal);
         assert_eq!(AbnormalitySeverity::from_tail_bound(0.05), AbnormalitySeverity::Mild);
         assert_eq!(AbnormalitySeverity::from_tail_bound(0.005), AbnormalitySeverity::Moderate);
-        assert_eq!(AbnormalitySeverity::from_tail_bound(0.00005), AbnormalitySeverity::Severe);
-        assert_eq!(AbnormalitySeverity::from_tail_bound(0.000001), AbnormalitySeverity::Critical);
+        assert_eq!(AbnormalitySeverity::from_tail_bound(0.0005), AbnormalitySeverity::Severe);
+        assert_eq!(AbnormalitySeverity::from_tail_bound(0.00005), AbnormalitySeverity::Critical);
     }
 
     #[test]

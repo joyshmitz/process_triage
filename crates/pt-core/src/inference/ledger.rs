@@ -247,6 +247,14 @@ pub fn default_glyph_map() -> HashMap<&'static str, FeatureGlyph> {
             label: "Prior",
         },
     );
+    map.insert(
+        "kl_surprisal",
+        FeatureGlyph {
+            feature: "kl_surprisal".to_string(),
+            glyph: "🧠",
+            label: "Surprisal",
+        },
+    );
     map
 }
 
@@ -262,6 +270,7 @@ pub fn get_glyph(feature: &str) -> &'static str {
         "state_flag" => "🚦",
         "command_category" => "📦",
         "prior" => "📊",
+        "kl_surprisal" => "🧠",
         _ => "❓",
     }
 }

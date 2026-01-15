@@ -1,15 +1,19 @@
 //! Inference engine modules.
 
 pub mod belief_prop;
+pub mod beta_stacy;
+pub mod bma;
 pub mod bocpd;
 pub mod ctw;
 pub mod conformal;
 pub mod evt;
+pub mod graph_smoothing;
 pub mod hawkes;
 pub mod hazard;
 #[cfg(target_os = "linux")]
 pub mod impact;
 pub mod kalman;
+pub mod kl_surprisal;
 pub mod ledger;
 pub mod martingale;
 pub mod mpp;
@@ -24,6 +28,11 @@ pub use belief_prop::{
     propagate_beliefs, BeliefPropConfig, BeliefPropError, BeliefPropEvidence, BeliefPropResult,
     BeliefPropagator, ProcessNode, ProcessTree, State, TreeSummary,
 };
+pub use beta_stacy::{
+    BetaParams, BetaStacyError, BetaStacyModel, BetaStacyBin, BinningKind, BinningScheme,
+    BinSpec, LifetimeSample,
+};
+pub use bma::{combine_posteriors, BmaError, ModelAveragedPosterior, ModelPosterior, ModelWeight};
 pub use bocpd::{
     BatchResult, BocpdConfig, BocpdDetector, BocpdError, BocpdEvidence, BocpdUpdateResult,
     ChangePoint, EmissionModel,
@@ -40,6 +49,10 @@ pub use conformal::{
 pub use evt::{
     BatchEvtAnalyzer, EstimationMethod, EvtError, EvtEvidence, GpdConfig, GpdFitter, GpdResult,
     TailType, ThresholdMethod,
+};
+pub use graph_smoothing::{
+    build_neighbors, edges_from_clusters, smooth_values, GraphSmoothingConfig,
+    GraphSmoothingError, GraphSmoothingResult,
 };
 pub use hawkes::{
     BurstLevel, CrossExcitationSummary, HawkesConfig, HawkesDetector, HawkesEvidence, HawkesResult,
@@ -83,6 +96,12 @@ pub use sketches::{
 pub use martingale::{
     BatchMartingaleAnalyzer, BoundParameters, BoundType, MartingaleAnalyzer, MartingaleConfig,
     MartingaleError, MartingaleEvidence, MartingaleResult, MartingaleUpdateResult,
+};
+pub use kl_surprisal::{
+    kl_divergence_discrete, symmetric_kl_divergence, AbnormalitySeverity, BatchKlAnalyzer,
+    BernoulliObservation, DeviationDirection, DeviationType, KlSurprisalAnalyzer,
+    KlSurprisalConfig, KlSurprisalError, KlSurprisalEvidence, KlSurprisalFeatures,
+    KlSurprisalResult, ReferenceClass,
 };
 pub use mpp::{
     BatchMppAnalyzer, BurstinessLevel, InterArrivalStats, MarkDistribution, MarkedEvent,

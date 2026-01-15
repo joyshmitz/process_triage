@@ -277,28 +277,20 @@ impl SufficientStats {
                 alpha,
                 beta,
             } => {
-                // Conjugate update for Normal-Gamma
-                let new_n = *n + 1.0;
-                let new_sum_x = *sum_x + x;
-                let new_sum_x2 = *sum_x2 + x * x;
-
-                // Update parameters
+                // Conjugate update for Normal-Gamma (Incremental)
+                // We update parameters directly from the previous posterior state.
+                let x_minus_mu = x - *mu;
                 let kappa_n = *kappa + 1.0;
+                
                 let mu_n = (*kappa * *mu + x) / kappa_n;
                 let alpha_n = *alpha + 0.5;
+                let beta_n = *beta + (*kappa * x_minus_mu * x_minus_mu) / (2.0 * kappa_n);
 
-                // Update beta using variance decomposition
-                let xbar = if new_n > 0.0 {
-                    new_sum_x / new_n
-                } else {
-                    0.0
-                };
-                let ss = new_sum_x2 - new_n * xbar * xbar;
-                let beta_n = *beta + 0.5 * ss + (*kappa * new_n * (xbar - *mu).powi(2)) / (2.0 * kappa_n);
+                // Update counts for record keeping (though not used for param update anymore)
+                *n += 1.0;
+                *sum_x += x;
+                *sum_x2 += x * x;
 
-                *n = new_n;
-                *sum_x = new_sum_x;
-                *sum_x2 = new_sum_x2;
                 *kappa = kappa_n;
                 *mu = mu_n;
                 *alpha = alpha_n;
