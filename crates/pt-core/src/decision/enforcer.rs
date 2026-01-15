@@ -22,6 +22,7 @@
 //! }
 //! ```
 
+use crate::collect::ProcessState;
 use crate::config::policy::{DataLossGates, Guardrails, PatternEntry, Policy, RobotMode};
 use regex::Regex;
 use serde::Serialize;
@@ -117,6 +118,8 @@ pub enum ViolationKind {
     DataLossGate,
     /// Force review required.
     ForceReview,
+    /// Process state prevents action (zombie/D-state).
+    ProcessStateInvalid,
 }
 
 /// Information about a process candidate for policy checking.
@@ -152,6 +155,10 @@ pub struct ProcessCandidate {
     pub seconds_since_io: Option<u64>,
     /// Whether process CWD is deleted.
     pub cwd_deleted: Option<bool>,
+    /// Current process state (for zombie/D-state detection).
+    pub process_state: Option<ProcessState>,
+    /// Kernel wait channel (what D-state process is blocked on).
+    pub wchan: Option<String>,
 }
 
 /// Compiled pattern for efficient matching.
@@ -508,6 +515,16 @@ impl PolicyEnforcer {
             });
         }
 
+        // Check process state constraints (zombie/D-state)
+        // These are fundamental constraints: you cannot kill a zombie (already dead)
+        // and killing D-state processes usually fails (stuck in kernel I/O)
+        if let Some(ref state) = candidate.process_state {
+            if let Some(violation) = self.check_process_state_constraints(candidate, state, action)
+            {
+                return PolicyCheckResult::blocked(violation);
+            }
+        }
+
         // Check protected patterns
         for pattern in &self.protected_patterns {
             if pattern.matches(&candidate.cmdline) {
@@ -805,6 +822,68 @@ impl PolicyEnforcer {
         None
     }
 
+    /// Check process state constraints for zombie and D-state processes.
+    ///
+    /// Zombie processes are already dead and cannot be killed - the parent must reap them.
+    /// D-state processes are stuck in uninterruptible kernel I/O and may ignore SIGKILL.
+    fn check_process_state_constraints(
+        &self,
+        candidate: &ProcessCandidate,
+        state: &ProcessState,
+        action: Action,
+    ) -> Option<PolicyViolation> {
+        // Only check for destructive signal-based actions
+        let is_signal_action = matches!(action, Action::Kill | Action::Pause | Action::Resume);
+        if !is_signal_action {
+            return None;
+        }
+
+        // Zombie processes: cannot be killed, they're already dead
+        if state.is_zombie() {
+            return Some(PolicyViolation {
+                kind: ViolationKind::ProcessStateInvalid,
+                message: format!(
+                    "PID {} is a zombie (Z state): process is already dead, \
+                     only its parent (PPID {}) can reap it",
+                    candidate.pid, candidate.ppid
+                ),
+                rule: "process_state.zombie".to_string(),
+                context: Some(
+                    "Zombie processes cannot be killed. Consider restarting the parent \
+                     process or its supervisor to clean up the zombie."
+                        .to_string(),
+                ),
+            });
+        }
+
+        // D-state processes: may not respond to signals
+        if state.is_disksleep() && action == Action::Kill {
+            let wchan_info = candidate
+                .wchan
+                .as_ref()
+                .map(|w| format!(" (blocked in kernel: {})", w))
+                .unwrap_or_default();
+
+            return Some(PolicyViolation {
+                kind: ViolationKind::ProcessStateInvalid,
+                message: format!(
+                    "PID {} is in uninterruptible sleep (D state){}: \
+                     kill action is unreliable and may fail",
+                    candidate.pid, wchan_info
+                ),
+                rule: "process_state.disksleep".to_string(),
+                context: Some(
+                    "D-state processes are blocked in kernel I/O and may ignore SIGKILL. \
+                     Consider investigating the underlying I/O issue (check mounts, \
+                     disk health, NFS locks) instead of killing."
+                        .to_string(),
+                ),
+            });
+        }
+
+        None
+    }
+
     /// Reset rate limit counters (call at start of new run).
     pub fn reset_run_counters(&self) {
         self.rate_limiter.reset_run_counter();
@@ -857,6 +936,8 @@ mod tests {
             has_active_tty: Some(false),
             seconds_since_io: Some(120),
             cwd_deleted: Some(false),
+            process_state: None, // Normal processes have no special state
+            wchan: None,
         }
     }
 
@@ -1329,5 +1410,154 @@ mod tests {
             result.violation.as_ref().unwrap().kind,
             ViolationKind::RateLimitExceeded
         );
+    }
+
+    #[test]
+    fn test_zombie_process_kill_blocked() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.process_state = Some(ProcessState::Zombie);
+
+        // Kill action should be blocked for zombie
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::ProcessStateInvalid
+        );
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("zombie"));
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains(&format!("PPID {}", candidate.ppid)));
+    }
+
+    #[test]
+    fn test_zombie_process_pause_blocked() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.process_state = Some(ProcessState::Zombie);
+
+        // Pause action should also be blocked for zombie
+        let result = enforcer.check_action(&candidate, Action::Pause, false);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::ProcessStateInvalid
+        );
+    }
+
+    #[test]
+    fn test_zombie_process_keep_allowed() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.process_state = Some(ProcessState::Zombie);
+
+        // Keep action should be allowed even for zombie
+        let result = enforcer.check_action(&candidate, Action::Keep, false);
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_disksleep_process_kill_blocked() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.process_state = Some(ProcessState::DiskSleep);
+        candidate.wchan = Some("nfs_wait".to_string());
+
+        // Kill action should be blocked for D-state
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::ProcessStateInvalid
+        );
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("uninterruptible sleep"));
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("nfs_wait"));
+    }
+
+    #[test]
+    fn test_disksleep_process_pause_allowed() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.process_state = Some(ProcessState::DiskSleep);
+
+        // Pause action is technically allowed for D-state (not blocked like Kill)
+        // The process might respond to SIGSTOP eventually
+        let result = enforcer.check_action(&candidate, Action::Pause, false);
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_disksleep_process_without_wchan() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.process_state = Some(ProcessState::DiskSleep);
+        candidate.wchan = None; // No wchan info available
+
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+        // Should still block but message won't include wchan details
+        assert!(!result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("blocked in kernel"));
+    }
+
+    #[test]
+    fn test_normal_running_process_allowed() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.process_state = Some(ProcessState::Running);
+
+        // Running process can be killed
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn test_sleeping_process_allowed() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.process_state = Some(ProcessState::Sleeping);
+
+        // Sleeping process can be killed
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(result.allowed);
     }
 }
