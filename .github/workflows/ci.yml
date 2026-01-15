@@ -179,3 +179,80 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: test/
           retention-days: 14
+
+  install-test:
+    name: Installation Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Bash 5 (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install bash
+          echo "/opt/homebrew/bin" >> $GITHUB_PATH
+
+      - name: Run installer
+        run: |
+          # Run installer from local file (not curl, since we're testing the branch)
+          bash install.sh
+        env:
+          PT_NO_PATH: '1'  # Don't modify shell config in CI
+
+      - name: Verify installation
+        run: |
+          # Check executable exists
+          if [[ ! -x "$HOME/.local/bin/pt" ]]; then
+            echo "::error::pt not installed to expected location"
+            ls -la "$HOME/.local/bin/" || true
+            exit 1
+          fi
+
+          echo "✓ pt installed successfully"
+
+      - name: Test --version
+        run: |
+          version=$("$HOME/.local/bin/pt" --version)
+          echo "Version output: $version"
+
+          if [[ ! "$version" =~ ^pt\ version\ [0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Unexpected version output format"
+            exit 1
+          fi
+
+          echo "✓ --version works correctly"
+
+      - name: Test --help
+        run: |
+          help_output=$("$HOME/.local/bin/pt" --help)
+
+          # Check for expected content
+          if [[ "$help_output" != *"Process Triage"* ]]; then
+            echo "::error::Help output missing expected content"
+            exit 1
+          fi
+
+          if [[ "$help_output" != *"scan"* ]]; then
+            echo "::error::Help output missing 'scan' command"
+            exit 1
+          fi
+
+          echo "✓ --help works correctly"
+
+      - name: Test scan command
+        run: |
+          # scan should work (may find 0 candidates, that's OK)
+          "$HOME/.local/bin/pt" scan || {
+            echo "::error::pt scan failed"
+            exit 1
+          }
+          echo "✓ scan command works"
+        env:
+          CI: 'true'
+          NO_COLOR: '1'
