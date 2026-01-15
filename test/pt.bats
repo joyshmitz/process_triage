@@ -30,7 +30,7 @@ teardown() {
 @test "pt --version shows version" {
     run pt --version
     [ "$status" -eq 0 ]
-    [[ "$output" == *"1.0.0"* ]]
+    [[ "$output" == *"2.0.0"* ]]
 }
 
 @test "pt unknown command fails" {
@@ -41,6 +41,18 @@ teardown() {
 @test "pt scan runs without error" {
     command -v gum &>/dev/null || skip "gum not installed"
     run timeout 10 pt scan
+    [ "$status" -eq 0 ] || [ "$status" -eq 124 ]
+}
+
+@test "pt scan deep runs without error" {
+    command -v gum &>/dev/null || skip "gum not installed"
+    run timeout 15 pt scan deep
+    [ "$status" -eq 0 ] || [ "$status" -eq 124 ]
+}
+
+@test "pt deep runs without error" {
+    command -v gum &>/dev/null || skip "gum not installed"
+    run timeout 15 pt deep
     [ "$status" -eq 0 ] || [ "$status" -eq 124 ]
 }
 

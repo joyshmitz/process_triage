@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# pt - Process Triage
-# Interactive zombie/abandoned process killer with learning memory
+# pt - Process Triage v2.0.0
+# Bayesian-inspired zombie/abandoned process detection with evidence gathering
 #
-# Usage: pt [scan|history|clear|help]
+# Usage: pt [scan|deep|history|clear|help]
 #
 set -euo pipefail
 
@@ -11,22 +11,35 @@ set -euo pipefail
 # Configuration
 # ══════════════════════════════════════════════════════════════════════════════
 
-readonly VERSION="1.0.0"
+readonly VERSION="2.0.0"
 readonly CONFIG_DIR="${PROCESS_TRIAGE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/process_triage}"
 readonly DECISIONS_FILE="$CONFIG_DIR/decisions.json"
+readonly PRIORS_FILE="$CONFIG_DIR/priors.json"
 readonly LOG_FILE="$CONFIG_DIR/triage.log"
 
-# Colors (using gum's ANSI support)
+# Colors
 readonly C_KILL=$'\e[91m'      # Bright red
 readonly C_REVIEW=$'\e[93m'    # Bright yellow
 readonly C_SPARE=$'\e[92m'     # Bright green
 readonly C_DIM=$'\e[90m'       # Gray
-readonly C_BOLD=$'\e[1m'       # Bold
-readonly C_RESET=$'\e[0m'      # Reset
+readonly C_BOLD=$'\e[1m'
+readonly C_CYAN=$'\e[96m'
+readonly C_RESET=$'\e[0m'
 
 # Scoring thresholds
-readonly THRESHOLD_KILL=50
-readonly THRESHOLD_REVIEW=20
+readonly THRESHOLD_KILL=60
+readonly THRESHOLD_REVIEW=30
+
+# Process type expected lifetimes (seconds)
+declare -A TYPE_LIFETIME=(
+    [test]=1800        # 30 min - tests should complete quickly
+    [dev_server]=259200 # 3 days - dev servers can run a while
+    [agent]=43200      # 12 hours - agent sessions
+    [shell]=3600       # 1 hour - shell wrappers
+    [build]=7200       # 2 hours - builds
+    [daemon]=0         # Never expires
+    [unknown]=86400    # 1 day default
+)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Dependency Management
@@ -34,9 +47,7 @@ readonly THRESHOLD_REVIEW=20
 
 ensure_gum() {
     command -v gum &>/dev/null && return 0
-
     echo "Installing gum..."
-
     if command -v apt-get &>/dev/null; then
         sudo mkdir -p /etc/apt/keyrings 2>/dev/null || true
         curl -fsSL https://repo.charm.sh/apt/gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/charm.gpg 2>/dev/null
@@ -44,23 +55,19 @@ ensure_gum() {
         sudo apt-get update -qq && sudo apt-get install -y gum
     elif command -v brew &>/dev/null; then
         brew install gum
-    elif command -v pacman &>/dev/null; then
-        sudo pacman -S --noconfirm gum
     else
-        # Direct binary download
         local arch; arch=$(uname -m)
         [[ "$arch" == "x86_64" ]] && arch="amd64"
         [[ "$arch" == "aarch64" ]] && arch="arm64"
-        local url="https://github.com/charmbracelet/gum/releases/download/v0.14.1/gum_0.14.1_linux_${arch}.tar.gz"
-        curl -fsSL "$url" | sudo tar xz -C /usr/local/bin gum
+        curl -fsSL "https://github.com/charmbracelet/gum/releases/download/v0.14.1/gum_0.14.1_linux_${arch}.tar.gz" | sudo tar xz -C /usr/local/bin gum
     fi
-
     command -v gum &>/dev/null || { echo "Failed to install gum"; exit 1; }
 }
 
 ensure_config() {
     mkdir -p "$CONFIG_DIR"
     [[ -s "$DECISIONS_FILE" ]] || echo '{}' > "$DECISIONS_FILE"
+    [[ -s "$PRIORS_FILE" ]] || echo '{}' > "$PRIORS_FILE"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -85,62 +92,18 @@ format_memory() {
     fi
 }
 
-get_process_info() {
-    # Returns: pid|ppid|age_seconds|mem_mb|cmd
-    ps -eo pid,ppid,etimes,rss,args --no-headers -u "$(whoami)" 2>/dev/null | while read -r pid ppid age rss cmd; do
-        [[ -z "$pid" || "$pid" == "PID" ]] && continue
-        local mem_mb=$((rss / 1024))
-        echo "$pid|$ppid|$age|$mem_mb|$cmd"
-    done
-}
-
 # ══════════════════════════════════════════════════════════════════════════════
-# Decision Memory
+# Decision Memory & Learning
 # ══════════════════════════════════════════════════════════════════════════════
 
-normalize_pattern() {
-    # Create a stable pattern from a command for learning
-    echo "$1" | sed -E \
-        -e 's/[0-9]{5,}//g' \
-        -e 's/--port[= ]*[0-9]+/--port=PORT/g' \
-        -e 's/:[0-9]{4,5}/:PORT/g' \
-        -e 's/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/UUID/g' \
-        -e 's|/tmp/[^ ]+|/tmp/TMP|g' \
-        | tr -s ' ' | cut -c1-150
-}
-
-save_decision() {
-    local pattern=$1 decision=$2
-    command -v jq &>/dev/null || return 0
-    local escaped; escaped=$(echo "$pattern" | sed 's/"/\\"/g; s/\\/\\\\/g')
-    local tmp; tmp=$(mktemp)
-    jq --arg k "$escaped" --arg v "$decision" '.[$k] = $v' "$DECISIONS_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$DECISIONS_FILE"
-    log "Decision: $decision for: $pattern"
-}
-
-get_past_decision() {
-    local pattern=$1
-    command -v jq &>/dev/null || { echo "unknown"; return; }
-    local escaped; escaped=$(echo "$pattern" | sed 's/"/\\"/g; s/\\/\\\\/g')
-    jq -r --arg k "$escaped" '.[$k] // "unknown"' "$DECISIONS_FILE" 2>/dev/null || echo "unknown"
-}
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Process Scoring
-# ══════════════════════════════════════════════════════════════════════════════
-
-# Cache for decisions - stored as temp file for grep lookups
 DECISIONS_CACHE_FILE=""
 DECISIONS_CACHE_LOADED=false
 
 load_decisions_cache() {
     [[ "$DECISIONS_CACHE_LOADED" == "true" ]] && return 0
     DECISIONS_CACHE_LOADED=true
-
     command -v jq &>/dev/null || return 0
     [[ -s "$DECISIONS_FILE" ]] || return 0
-
-    # Create temp file with pattern<TAB>decision format for fast grep lookups
     DECISIONS_CACHE_FILE=$(mktemp)
     jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$DECISIONS_FILE" > "$DECISIONS_CACHE_FILE" 2>/dev/null || true
 }
@@ -154,78 +117,410 @@ trap cleanup_cache EXIT
 get_cached_decision() {
     local pattern=$1
     [[ -z "$DECISIONS_CACHE_FILE" || ! -s "$DECISIONS_CACHE_FILE" ]] && { echo "unknown"; return; }
-    # Use grep -F for fast literal matching
     local result
     result=$(grep -F -- "$pattern" "$DECISIONS_CACHE_FILE" 2>/dev/null | head -1 | cut -f2)
     echo "${result:-unknown}"
 }
 
-score_process() {
-    local pid=$1 ppid=$2 age=$3 mem=$4 cmd=$5
+normalize_pattern() {
+    echo "$1" | sed -E \
+        -e 's/[0-9]{5,}//g' \
+        -e 's/--port[= ]*[0-9]+/--port=PORT/g' \
+        -e 's/:[0-9]{4,5}/:PORT/g' \
+        -e 's/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/UUID/g' \
+        -e 's|/tmp/[^ ]+|/tmp/TMP|g' \
+        -e 's|shell-snapshot[^ ]*|shell-snapshot|g' \
+        | tr -s ' ' | cut -c1-150
+}
+
+save_decision() {
+    local pattern=$1 decision=$2
+    command -v jq &>/dev/null || return 0
+    local tmp; tmp=$(mktemp)
+    jq --arg k "$pattern" --arg v "$decision" '.[$k] = $v' "$DECISIONS_FILE" > "$tmp" 2>/dev/null && mv "$tmp" "$DECISIONS_FILE"
+    log "Decision: $decision for: $pattern"
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Process Classification
+# ══════════════════════════════════════════════════════════════════════════════
+
+classify_process() {
+    local cmd=$1
+
+    # Test processes
+    if [[ "$cmd" =~ (bun\ test|jest|vitest|pytest|cargo\ test|npm\ test|go\ test|rspec|mocha) ]]; then
+        echo "test"
+    # Dev servers
+    elif [[ "$cmd" =~ (--hot|--watch|next\ dev|vite|webpack-dev|npm\ run\ dev|yarn\ dev|bun\ run\ dev) ]]; then
+        echo "dev_server"
+    # AI agents
+    elif [[ "$cmd" =~ (claude|codex|gemini|copilot|cursor|aider) ]]; then
+        echo "agent"
+    # Shell wrappers (from agents)
+    elif [[ "$cmd" =~ (shell-snapshot|/bin/sh\ -c|/bin/bash\ -c|zsh\ -c) ]]; then
+        echo "shell"
+    # Build processes
+    elif [[ "$cmd" =~ (cargo\ build|npm\ run\ build|tsc|rustc|gcc|clang|make\ ) ]]; then
+        echo "build"
+    # System daemons
+    elif [[ "$cmd" =~ (systemd|journald|dockerd|containerd|postgres|elasticsearch|redis|nginx|sshd|cron) ]]; then
+        echo "daemon"
+    else
+        echo "unknown"
+    fi
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Evidence Gathering (Bayesian-inspired)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Check if process has I/O activity (strong evidence of life)
+check_io_activity() {
+    local pid=$1
+    local io_file="/proc/$pid/io"
+    [[ -r "$io_file" ]] || { echo "unknown"; return; }
+
+    local read1 write1 read2 write2
+    read1=$(awk '/read_bytes/ {print $2}' "$io_file" 2>/dev/null) || { echo "unknown"; return; }
+    write1=$(awk '/write_bytes/ {print $2}' "$io_file" 2>/dev/null)
+
+    sleep 0.5
+
+    read2=$(awk '/read_bytes/ {print $2}' "$io_file" 2>/dev/null) || { echo "unknown"; return; }
+    write2=$(awk '/write_bytes/ {print $2}' "$io_file" 2>/dev/null)
+
+    if [[ "$read1" != "$read2" ]] || [[ "$write1" != "$write2" ]]; then
+        echo "active"
+    else
+        echo "idle"
+    fi
+}
+
+# Check if CPU time is increasing (evidence of progress)
+check_cpu_progress() {
+    local pid=$1
+    local stat_file="/proc/$pid/stat"
+    [[ -r "$stat_file" ]] || { echo "unknown"; return; }
+
+    local cpu1 cpu2
+    cpu1=$(awk '{print $14+$15}' "$stat_file" 2>/dev/null) || { echo "unknown"; return; }
+    sleep 0.5
+    cpu2=$(awk '{print $14+$15}' "$stat_file" 2>/dev/null) || { echo "unknown"; return; }
+
+    if [[ "$cpu1" != "$cpu2" ]]; then
+        echo "progressing"
+    else
+        echo "stalled"
+    fi
+}
+
+# Check terminal session status
+check_terminal_session() {
+    local pid=$1 tty=$2
+
+    [[ -z "$tty" || "$tty" == "?" ]] && { echo "detached"; return; }
+
+    # Check if the TTY has an active who entry
+    local tty_short="${tty#*/dev/}"
+    if who | grep -q "$tty_short"; then
+        echo "active_session"
+    else
+        echo "dead_session"
+    fi
+}
+
+# Check for open network connections (evidence of service)
+check_network_activity() {
+    local pid=$1
+
+    # Check for listening or established sockets
+    local sockets
+    sockets=$(ss -tnp 2>/dev/null | grep -c "pid=$pid," || echo "0")
+
+    if ((sockets > 0)); then
+        echo "connected"
+    else
+        echo "no_connections"
+    fi
+}
+
+# Check if process has active children
+check_children() {
+    local pid=$1
+    local children
+    children=$(pgrep -P "$pid" 2>/dev/null | wc -l)
+
+    if ((children > 0)); then
+        # Check if any child is using CPU
+        local active=0
+        for cpid in $(pgrep -P "$pid" 2>/dev/null); do
+            local cpu
+            cpu=$(ps -p "$cpid" -o %cpu= 2>/dev/null | tr -d ' ' | cut -d. -f1)
+            ((cpu > 5)) && ((active++))
+        done
+        if ((active > 0)); then
+            echo "active_children:$children"
+        else
+            echo "idle_children:$children"
+        fi
+    else
+        echo "no_children"
+    fi
+}
+
+# Check memory behavior (growing = possibly leaking)
+check_memory_trend() {
+    local pid=$1
+    local status_file="/proc/$pid/status"
+    [[ -r "$status_file" ]] || { echo "unknown"; return; }
+
+    local rss1 rss2
+    rss1=$(awk '/VmRSS/ {print $2}' "$status_file" 2>/dev/null) || { echo "unknown"; return; }
+    sleep 0.5
+    rss2=$(awk '/VmRSS/ {print $2}' "$status_file" 2>/dev/null) || { echo "unknown"; return; }
+
+    local diff=$((rss2 - rss1))
+    if ((diff > 1000)); then
+        echo "growing"
+    elif ((diff < -1000)); then
+        echo "shrinking"
+    else
+        echo "stable"
+    fi
+}
+
+# Check what the process is waiting on
+check_wait_channel() {
+    local pid=$1
+    local wchan_file="/proc/$pid/wchan"
+    [[ -r "$wchan_file" ]] || { echo "unknown"; return; }
+
+    local wchan
+    wchan=$(cat "$wchan_file" 2>/dev/null) || { echo "unknown"; return; }
+
+    case "$wchan" in
+        *futex*|*poll*|*select*|*epoll*) echo "waiting_io" ;;
+        *sleep*|*nanosleep*) echo "sleeping" ;;
+        *wait*) echo "waiting_child" ;;
+        0|"") echo "running" ;;
+        *) echo "waiting:$wchan" ;;
+    esac
+}
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Bayesian Scoring Engine
+# ══════════════════════════════════════════════════════════════════════════════
+
+score_process_bayesian() {
+    local pid=$1 ppid=$2 age=$3 mem=$4 cpu=$5 tty=$6 cmd=$7
+    local deep_scan=${8:-false}
+
     local score=0
-    local reasons=()
-    local hours=$((age / 3600))
+    local evidence=()
+    local confidence="medium"
 
-    # Age scoring
-    if ((hours > 168)); then
-        ((score += 50)); reasons+=(">1wk")
-    elif ((hours > 48)); then
-        ((score += 30)); reasons+=(">2d")
-    elif ((hours > 24)); then
-        ((score += 20)); reasons+=(">1d")
-    fi
+    # Classify the process type
+    local ptype
+    ptype=$(classify_process "$cmd")
+    local expected_lifetime=${TYPE_LIFETIME[$ptype]:-86400}
 
-    # Orphan detection
-    [[ "$ppid" == "1" ]] && { ((score += 25)); reasons+=("orphan"); }
+    # ═══════════════════════════════════════════════════════════════════════
+    # Prior probability based on type (Bayesian prior)
+    # ═══════════════════════════════════════════════════════════════════════
 
-    # Pattern detection
-    if [[ "$cmd" =~ (bun\ test|jest|pytest|cargo\ test|npm\ test|vitest) ]] && ((age > 3600)); then
-        ((score += 40)); reasons+=("stuck test")
-    fi
-
-    if [[ "$cmd" =~ (--hot|--watch|next\ dev|vite\ dev) ]] && ((hours > 48)); then
-        ((score += 20)); reasons+=("old dev")
-    fi
-
-    if [[ "$cmd" =~ (claude|codex|gemini|anthropic) ]] && [[ "$cmd" =~ (bash|/bin/sh) ]] && ((hours > 24)); then
-        ((score += 35)); reasons+=("agent shell")
-    fi
-
-    # High memory hog
-    ((mem > 2000 && hours > 12)) && { ((score += 15)); reasons+=("high mem"); }
-
-    # Protected patterns - system daemons and services
-    if [[ "$cmd" =~ (systemd|journald|logind|networkd|resolved|timesyncd) ]] ||
-       [[ "$cmd" =~ (dockerd|containerd|dbus-daemon|avahi-daemon) ]] ||
-       [[ "$cmd" =~ ^/usr/libexec/(upowerd|fwupd|power-profiles|rtkit|udisks|accounts-daemon|polkit|switcheroo|at-spi) ]] ||
-       [[ "$cmd" =~ ^/usr/(sbin|bin)/(NetworkManager|ModemManager|rsyslogd|tailscaled|sddm|smartd|wpa_supplicant|rpc\.|chronyd) ]] ||
-       [[ "$cmd" =~ ^/usr/lib/(polkit|postgresql|bluetooth) ]] ||
-       [[ "$cmd" =~ ^/usr/bin/(pulseaudio|pipewire) ]] ||
-       [[ "$cmd" =~ ^sshd ]] ||
-       [[ "$cmd" =~ /usr/sbin/cron ]]; then
-        ((score -= 200))
-    fi
-
-    # Learning from history (using cache)
-    local pattern; pattern=$(normalize_pattern "$cmd")
-    local past; past=$(get_cached_decision "$pattern")
-    case "$past" in
-        kill)  ((score += 20)); reasons+=("killed") ;;
-        spare) ((score -= 30)); reasons+=("spared") ;;
+    case "$ptype" in
+        test)      ((score += 25)); evidence+=("test_process") ;;
+        shell)     ((score += 20)); evidence+=("shell_wrapper") ;;
+        agent)     ((score += 15)); evidence+=("ai_agent") ;;
+        dev_server) ((score += 10)); evidence+=("dev_server") ;;
+        build)     ((score += 15)); evidence+=("build_proc") ;;
+        daemon)    ((score -= 100)); evidence+=("daemon:protected") ;;
     esac
 
-    # Build reason string
-    local reason_str=""
-    ((${#reasons[@]} > 0)) && reason_str=$(IFS=", "; echo "${reasons[*]}")
+    # ═══════════════════════════════════════════════════════════════════════
+    # Age-based evidence (relative to expected lifetime)
+    # ═══════════════════════════════════════════════════════════════════════
 
-    # Determine recommendation
-    local rec
-    if ((score >= THRESHOLD_KILL)); then rec="KILL"
-    elif ((score >= THRESHOLD_REVIEW)); then rec="REVIEW"
-    else rec="SPARE"
+    if ((expected_lifetime > 0)); then
+        local age_ratio=$((age * 100 / expected_lifetime))
+        if ((age_ratio > 400)); then
+            ((score += 50)); evidence+=("age:${age_ratio}%_expected")
+            confidence="high"
+        elif ((age_ratio > 200)); then
+            ((score += 35)); evidence+=("age:${age_ratio}%_expected")
+        elif ((age_ratio > 100)); then
+            ((score += 20)); evidence+=("age:over_expected")
+        fi
     fi
 
-    echo "$score|$rec|$reason_str"
+    # Absolute age thresholds
+    local hours=$((age / 3600))
+    if ((hours > 168)); then
+        ((score += 40)); evidence+=(">1_week")
+        confidence="high"
+    elif ((hours > 48)); then
+        ((score += 25)); evidence+=(">2_days")
+    elif ((hours > 24)); then
+        ((score += 15)); evidence+=(">1_day")
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Orphan detection (strong evidence)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    if [[ "$ppid" == "1" ]] && [[ "$ptype" != "daemon" ]]; then
+        ((score += 35)); evidence+=("orphaned:PPID=1")
+        confidence="high"
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # CPU pattern analysis
+    # ═══════════════════════════════════════════════════════════════════════
+
+    local cpu_int=${cpu%.*}
+    cpu_int=${cpu_int:-0}
+
+    if ((cpu_int >= 95 && hours > 6)); then
+        ((score += 30)); evidence+=("stuck:99%_cpu_${hours}h")
+        confidence="high"
+    elif ((cpu_int >= 90 && hours > 2)); then
+        ((score += 20)); evidence+=("high_cpu:${cpu_int}%")
+    elif ((cpu_int == 0 && hours > 2)); then
+        ((score += 25)); evidence+=("idle:0%_cpu")
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Memory analysis
+    # ═══════════════════════════════════════════════════════════════════════
+
+    if ((mem > 8000 && hours > 12)); then
+        ((score += 20)); evidence+=("memory_hog:${mem}MB")
+    elif ((mem > 4000 && hours > 24)); then
+        ((score += 15)); evidence+=("high_mem:${mem}MB")
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Command pattern evidence
+    # ═══════════════════════════════════════════════════════════════════════
+
+    # Shell snapshot = leftover from agent
+    if [[ "$cmd" =~ shell-snapshot ]]; then
+        ((score += 30)); evidence+=("agent_shell_leftover")
+    fi
+
+    # Specific stuck patterns
+    if [[ "$cmd" =~ (bun\ test|vitest|jest) ]] && ((age > 3600)); then
+        ((score += 35)); evidence+=("stuck_test:${hours}h")
+        confidence="high"
+    fi
+
+    if [[ "$cmd" =~ gemini.*--yolo ]] && ((hours > 24)); then
+        ((score += 30)); evidence+=("old_gemini_yolo")
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Deep scan: gather runtime evidence (slower but more accurate)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    if [[ "$deep_scan" == "true" ]]; then
+        # I/O activity check
+        local io_status
+        io_status=$(check_io_activity "$pid")
+        case "$io_status" in
+            active) ((score -= 25)); evidence+=("io:active") ;;
+            idle)   ((score += 20)); evidence+=("io:idle") ;;
+        esac
+
+        # CPU progress check
+        local cpu_progress
+        cpu_progress=$(check_cpu_progress "$pid")
+        case "$cpu_progress" in
+            progressing) ((score -= 20)); evidence+=("cpu:progressing") ;;
+            stalled)     ((score += 25)); evidence+=("cpu:stalled") ;;
+        esac
+
+        # Terminal session check
+        local session_status
+        session_status=$(check_terminal_session "$pid" "$tty")
+        case "$session_status" in
+            active_session) ((score -= 20)); evidence+=("tty:active") ;;
+            dead_session)   ((score += 20)); evidence+=("tty:dead") ;;
+            detached)       ((score += 10)); evidence+=("tty:detached") ;;
+        esac
+
+        # Children check
+        local children_status
+        children_status=$(check_children "$pid")
+        case "$children_status" in
+            active_children*) ((score -= 15)); evidence+=("children:active") ;;
+            idle_children*)   ((score += 10)); evidence+=("children:idle") ;;
+            no_children)      ;; # Neutral
+        esac
+
+        # Network activity
+        local net_status
+        net_status=$(check_network_activity "$pid")
+        case "$net_status" in
+            connected) ((score -= 20)); evidence+=("net:connected") ;;
+        esac
+
+        confidence="high"
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Historical learning (Bayesian update from past decisions)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    local pattern
+    pattern=$(normalize_pattern "$cmd")
+    local past_decision
+    past_decision=$(get_cached_decision "$pattern")
+
+    case "$past_decision" in
+        kill)
+            ((score += 30)); evidence+=("history:killed_before")
+            confidence="high"
+            ;;
+        spare)
+            ((score -= 40)); evidence+=("history:spared_before")
+            ;;
+    esac
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Protected patterns (never flag)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    if [[ "$cmd" =~ (systemd|journald|logind|networkd|resolved|timesyncd) ]] ||
+       [[ "$cmd" =~ (dockerd|containerd|dbus-daemon|avahi-daemon) ]] ||
+       [[ "$cmd" =~ ^/usr/libexec/(upowerd|fwupd|power-profiles|rtkit|udisks|accounts-daemon|polkit) ]] ||
+       [[ "$cmd" =~ ^/usr/(sbin|bin)/(NetworkManager|ModemManager|rsyslogd|tailscaled|sddm|smartd|cron) ]] ||
+       [[ "$cmd" =~ ^/usr/lib/(polkit|postgresql|bluetooth) ]] ||
+       [[ "$cmd" =~ ^/usr/bin/(pulseaudio|pipewire) ]] ||
+       [[ "$cmd" =~ elasticsearch ]] ||
+       [[ "$cmd" =~ ^sshd ]]; then
+        ((score -= 200))
+        evidence=("protected:system_service")
+    fi
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # Determine recommendation
+    # ═══════════════════════════════════════════════════════════════════════
+
+    local rec
+    if ((score >= THRESHOLD_KILL)); then
+        rec="KILL"
+    elif ((score >= THRESHOLD_REVIEW)); then
+        rec="REVIEW"
+    else
+        rec="SPARE"
+    fi
+
+    # Build evidence string
+    local evidence_str
+    evidence_str=$(IFS="|"; echo "${evidence[*]}")
+
+    echo "$score|$rec|$confidence|$ptype|$evidence_str"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -233,43 +528,43 @@ score_process() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 collect_candidates() {
-    local min_age=${1:-3600}  # Default 1 hour
+    local min_age=${1:-3600}
+    local deep_scan=${2:-false}
     local candidates=()
 
-    # Load decisions cache once
     load_decisions_cache
 
-    # Fast pre-filter: only keep processes older than min_age
-    # and skip obviously safe patterns
+    # Get processes with CPU and TTY info
     local procs
-    procs=$(ps -eo pid,ppid,etimes,rss,args --no-headers -u "$(whoami)" 2>/dev/null | awk -v min="$min_age" '
+    procs=$(ps -eo pid,ppid,etimes,rss,%cpu,tty,args --no-headers -u "$(whoami)" 2>/dev/null | awk -v min="$min_age" '
         $3 >= min &&
-        $5 !~ /systemd/ &&
-        $5 !~ /^sshd/ &&
-        $5 !~ /^\/usr\/sbin\/(cron|NetworkManager|rsyslogd|tailscaled|sddm|ModemManager|smartd|wpa_supplicant|rpc|chronyd|avahi)/ &&
-        $5 !~ /^\/usr\/libexec\/(upowerd|fwupd|power-profiles|rtkit|udisks|accounts-daemon|polkit|switcheroo|at-spi)/ &&
-        $5 !~ /^\/usr\/lib\/(polkit|postgresql|bluetooth)/ &&
-        $5 !~ /dockerd/ &&
-        $5 !~ /containerd/ &&
-        $5 !~ /dbus-daemon/ &&
-        $5 !~ /avahi-daemon/ &&
-        $5 !~ /journald|logind|networkd|resolved|timesyncd/ &&
-        $5 !~ /^\/usr\/bin\/(pulseaudio|pipewire)/
-        { print $1 "|" $2 "|" $3 "|" int($4/1024) "|" substr($0, index($0,$5)) }
+        $7 !~ /systemd/ &&
+        $7 !~ /^sshd/ &&
+        $7 !~ /dockerd/ &&
+        $7 !~ /containerd/ &&
+        $7 !~ /dbus-daemon/ &&
+        $7 !~ /journald|logind|networkd|resolved/ &&
+        $7 !~ /^\/usr\/bin\/(pulseaudio|pipewire)/
+        {
+            # pid|ppid|age|mem_mb|cpu|tty|cmd
+            print $1 "|" $2 "|" $3 "|" int($4/1024) "|" $5 "|" $6 "|" substr($0, index($0,$7))
+        }
     ')
 
-    while IFS='|' read -r pid ppid age mem cmd; do
+    while IFS='|' read -r pid ppid age mem cpu tty cmd; do
         [[ -z "$pid" ]] && continue
 
-        local result; result=$(score_process "$pid" "$ppid" "$age" "${mem:-0}" "$cmd")
-        local score rec reasons
-        IFS='|' read -r score rec reasons <<< "$result"
+        local result
+        result=$(score_process_bayesian "$pid" "$ppid" "$age" "${mem:-0}" "${cpu:-0}" "${tty:-?}" "$cmd" "$deep_scan")
 
-        # Use TAB as outer delimiter
-        ((score > 0)) && candidates+=("$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$score" "$pid" "$age" "${mem:-0}" "$rec" "$reasons" "$cmd")")
+        local score rec confidence ptype evidence
+        IFS='|' read -r score rec confidence ptype evidence <<< "$result"
+
+        # Only include if score > 0
+        ((score > 0)) && candidates+=("$(printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s' \
+            "$score" "$pid" "$age" "${mem:-0}" "$rec" "$confidence" "$ptype" "$evidence" "$cmd")")
     done <<< "$procs"
 
-    # Sort by score descending (field 1, tab-delimited)
     printf '%s\n' "${candidates[@]}" | sort -t$'\t' -k1 -nr
 }
 
@@ -285,37 +580,44 @@ show_header() {
         --padding "0 2" \
         --margin "0 0 1 0" \
         "$(gum style --foreground 99 --bold '  Process Triage')" \
-        "$(gum style --foreground 245 "  v$VERSION")"
+        "$(gum style --foreground 245 "  v$VERSION • Bayesian Evidence Engine")"
 }
 
 show_system_stats() {
     local load; load=$(cut -d' ' -f1-3 < /proc/loadavg)
     local cores; cores=$(nproc)
     local mem_info; mem_info=$(free -h | awk '/^Mem:/ {printf "%s / %s", $3, $2}')
+    local procs; procs=$(pgrep -cu "$(whoami)")
 
-    gum style --foreground 245 "  Load: $load ($cores cores)  │  Memory: $mem_info"
+    gum style --foreground 245 "  Load: $load ($cores cores)  │  Memory: $mem_info  │  Procs: $procs"
     echo
 }
 
-format_row() {
-    local score=$1 pid=$2 age_s=$3 mem_mb=$4 rec=$5 reasons=$6 cmd=$7
+format_evidence() {
+    local evidence=$1
+    local formatted=""
 
-    local age_fmt; age_fmt=$(format_duration "$age_s")
-    local mem_fmt; mem_fmt=$(format_memory "$mem_mb")
-    local cmd_short; cmd_short=$(echo "$cmd" | cut -c1-50)
-    [[ ${#cmd} -gt 50 ]] && cmd_short="${cmd_short}…"
+    # Parse evidence items and format nicely
+    IFS='|' read -ra items <<< "$evidence"
+    for item in "${items[@]}"; do
+        case "$item" in
+            *protected*) formatted+="${C_SPARE}◆${C_RESET}" ;;
+            *killed_before*) formatted+="${C_KILL}◆${C_RESET}" ;;
+            *spared_before*) formatted+="${C_SPARE}◆${C_RESET}" ;;
+            *orphaned*) formatted+="${C_KILL}○${C_RESET}" ;;
+            *stuck*) formatted+="${C_KILL}!${C_RESET}" ;;
+            *io:active*) formatted+="${C_SPARE}↔${C_RESET}" ;;
+            *io:idle*) formatted+="${C_REVIEW}⊘${C_RESET}" ;;
+            *cpu:progressing*) formatted+="${C_SPARE}↻${C_RESET}" ;;
+            *cpu:stalled*) formatted+="${C_KILL}⊗${C_RESET}" ;;
+            *tty:active*) formatted+="${C_SPARE}●${C_RESET}" ;;
+            *tty:dead*) formatted+="${C_KILL}○${C_RESET}" ;;
+            *age:*) formatted+="${C_REVIEW}⏱${C_RESET}" ;;
+            *memory*) formatted+="${C_REVIEW}▣${C_RESET}" ;;
+        esac
+    done
 
-    # Color the recommendation badge
-    local badge
-    case "$rec" in
-        KILL)   badge="${C_KILL}KILL${C_RESET}" ;;
-        REVIEW) badge="${C_REVIEW}REVIEW${C_RESET}" ;;
-        SPARE)  badge="${C_SPARE}SPARE${C_RESET}" ;;
-        *)      badge="${C_DIM}????${C_RESET}" ;;
-    esac
-
-    printf "%6s │ %5s │ %6s │ %6s │ %s │ %s\n" \
-        "$badge" "$pid" "$age_fmt" "$mem_fmt" "$(printf '%3d' "$score")" "$cmd_short"
+    echo "$formatted"
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -323,70 +625,139 @@ format_row() {
 # ══════════════════════════════════════════════════════════════════════════════
 
 cmd_scan() {
+    local deep=${1:-false}
+
     show_header
     show_system_stats
 
-    gum spin --spinner dot --title "  Scanning processes..." -- sleep 0.3
+    local scan_msg="  Scanning processes..."
+    [[ "$deep" == "true" ]] && scan_msg="  Deep scanning (gathering evidence)..."
+
+    gum spin --spinner dot --title "$scan_msg" -- sleep 0.3
 
     local candidates=()
-    mapfile -t candidates < <(collect_candidates)
+    mapfile -t candidates < <(collect_candidates 3600 "$deep")
 
     if [[ ${#candidates[@]} -eq 0 ]] || [[ -z "${candidates[0]}" ]]; then
         gum style --foreground 82 --bold "  ✓ No suspicious processes found"
         echo
-        exit 0
+        return 0
     fi
 
-    gum style --foreground 245 "  Found ${#candidates[@]} candidate(s):"
-    echo
-    printf "  %6s │ %5s │ %6s │ %6s │ %3s │ %s\n" "STATUS" "PID" "AGE" "MEM" "SCR" "COMMAND"
-    echo "  ───────┼───────┼────────┼────────┼─────┼────────────────────────────────"
-
+    # Count by recommendation
+    local kill_count=0 review_count=0 spare_count=0
     for c in "${candidates[@]}"; do
         [[ -z "$c" ]] && continue
-        IFS=$'\t' read -r score pid age mem rec reasons cmd <<< "$c"
-        printf "  "
-        format_row "$score" "$pid" "$age" "$mem" "$rec" "$reasons" "$cmd"
+        local rec
+        rec=$(echo "$c" | cut -d$'\t' -f5)
+        case "$rec" in
+            KILL) ((kill_count++)) ;;
+            REVIEW) ((review_count++)) ;;
+            SPARE) ((spare_count++)) ;;
+        esac
     done
 
     echo
-    gum style --foreground 245 "  Run 'pt' for interactive mode"
+    gum style --foreground 245 "  Found ${#candidates[@]} candidates: ${C_KILL}$kill_count KILL${C_RESET} | ${C_REVIEW}$review_count REVIEW${C_RESET} | ${C_SPARE}$spare_count SPARE${C_RESET}"
+    echo
+
+    # Header
+    printf "  %6s │ %5s │ %5s │ %5s │ %4s │ %8s │ %s\n" "STATUS" "PID" "AGE" "MEM" "CONF" "TYPE" "EVIDENCE → COMMAND"
+    echo "  ───────┼───────┼───────┼───────┼──────┼──────────┼─────────────────────────────"
+
+    for c in "${candidates[@]}"; do
+        [[ -z "$c" ]] && continue
+
+        IFS=$'\t' read -r score pid age mem rec confidence ptype evidence cmd <<< "$c"
+
+        local age_fmt; age_fmt=$(format_duration "$age")
+        local mem_fmt; mem_fmt=$(format_memory "$mem")
+        local cmd_short; cmd_short=$(echo "$cmd" | cut -c1-35)
+        [[ ${#cmd} -gt 35 ]] && cmd_short="${cmd_short}…"
+
+        # Format confidence
+        local conf_fmt
+        case "$confidence" in
+            high)   conf_fmt="${C_BOLD}HIGH${C_RESET}" ;;
+            medium) conf_fmt="${C_DIM}MED${C_RESET}" ;;
+            *)      conf_fmt="${C_DIM}LOW${C_RESET}" ;;
+        esac
+
+        # Color badge
+        local badge
+        case "$rec" in
+            KILL)   badge="${C_KILL}KILL${C_RESET}" ;;
+            REVIEW) badge="${C_REVIEW}REVIEW${C_RESET}" ;;
+            SPARE)  badge="${C_SPARE}SPARE${C_RESET}" ;;
+            *)      badge="${C_DIM}????${C_RESET}" ;;
+        esac
+
+        # Format evidence indicators
+        local ev_fmt
+        ev_fmt=$(format_evidence "$evidence")
+
+        printf "  %6s │ %5s │ %5s │ %5s │ %4s │ %8s │ %s %s\n" \
+            "$badge" "$pid" "$age_fmt" "$mem_fmt" "$conf_fmt" "$ptype" "$ev_fmt" "$cmd_short"
+    done
+
+    echo
+    gum style --foreground 245 "  Legend: ${C_KILL}○${C_RESET}orphan ${C_KILL}!${C_RESET}stuck ${C_SPARE}↔${C_RESET}I/O ${C_KILL}⊗${C_RESET}stalled ${C_SPARE}●${C_RESET}tty ${C_REVIEW}⏱${C_RESET}age ${C_KILL}◆${C_RESET}killed ${C_SPARE}◆${C_RESET}spared"
+    echo
+    gum style --foreground 245 "  Run 'pt' for interactive mode or 'pt deep' for evidence gathering"
 }
 
 cmd_run() {
+    local deep=${1:-false}
+
     show_header
     show_system_stats
 
-    gum spin --spinner dot --title "  Scanning processes..." -- sleep 0.3
+    local scan_msg="  Scanning processes..."
+    [[ "$deep" == "true" ]] && scan_msg="  Deep scanning (gathering runtime evidence)..."
+
+    gum spin --spinner dot --title "$scan_msg" -- sleep 0.3
 
     local candidates=()
-    mapfile -t candidates < <(collect_candidates)
+    mapfile -t candidates < <(collect_candidates 3600 "$deep")
 
     if [[ ${#candidates[@]} -eq 0 ]] || [[ -z "${candidates[0]}" ]]; then
         gum style --foreground 82 --bold "  ✓ System is clean"
         echo
         gum style --foreground 245 "  No suspicious processes found."
         echo
-        exit 0
+        return 0
     fi
 
-    # Build selection items
+    # Build selection items with evidence
     local items=()
     local preselect=()
-    declare -A pid_map  # Map display line -> original data
+    declare -A pid_map
 
     for c in "${candidates[@]}"; do
         [[ -z "$c" ]] && continue
-        IFS=$'\t' read -r score pid age mem rec reasons cmd <<< "$c"
+
+        IFS=$'\t' read -r score pid age mem rec confidence ptype evidence cmd <<< "$c"
 
         local age_fmt; age_fmt=$(format_duration "$age")
         local mem_fmt; mem_fmt=$(format_memory "$mem")
-        local cmd_short; cmd_short=$(echo "$cmd" | cut -c1-45)
-        [[ ${#cmd} -gt 45 ]] && cmd_short="${cmd_short}…"
+        local cmd_short; cmd_short=$(echo "$cmd" | cut -c1-40)
+        [[ ${#cmd} -gt 40 ]] && cmd_short="${cmd_short}…"
 
-        # Create display line
+        # Format type
+        local type_short
+        case "$ptype" in
+            test) type_short="TEST" ;;
+            dev_server) type_short="DEV" ;;
+            agent) type_short="AGENT" ;;
+            shell) type_short="SHELL" ;;
+            build) type_short="BUILD" ;;
+            *) type_short="???" ;;
+        esac
+
+        # Build display line
         local line
-        line=$(printf "[%-6s] PID:%-6s %5s %6s │ %s" "$rec" "$pid" "$age_fmt" "$mem_fmt" "$cmd_short")
+        line=$(printf "[%-6s] %3d PID:%-7s %5s %5s %-5s │ %s" "$rec" "$score" "$pid" "$age_fmt" "$mem_fmt" "$type_short" "$cmd_short")
+
         items+=("$line")
         pid_map["$line"]="$c"
 
@@ -394,23 +765,24 @@ cmd_run() {
         [[ "$rec" == "KILL" ]] && preselect+=("$line")
     done
 
+    # Count categories
     echo
-    gum style --foreground 245 "  ${#candidates[@]} candidates found. Pre-selected: ${#preselect[@]} KILL recommendations"
+    gum style --foreground 245 "  ${#candidates[@]} candidates. Pre-selected: ${C_KILL}${#preselect[@]} KILL${C_RESET}"
     echo
-    gum style --foreground 245 "  ${C_KILL}[KILL]${C_RESET} = recommended  ${C_REVIEW}[REVIEW]${C_RESET} = check  ${C_SPARE}[SPARE]${C_RESET} = safe"
+    gum style --foreground 245 "  ${C_KILL}[KILL]${C_RESET}=kill  ${C_REVIEW}[REVIEW]${C_RESET}=check  ${C_SPARE}[SPARE]${C_RESET}=safe  │  Score reflects abandonment probability"
     echo
 
     # Interactive selection
     local selected
     if [[ ${#preselect[@]} -gt 0 ]]; then
-        selected=$(printf '%s\n' "${items[@]}" | gum choose --no-limit --height 15 \
+        selected=$(printf '%s\n' "${items[@]}" | gum choose --no-limit --height 20 \
             --cursor-prefix "[ ] " --selected-prefix "[✓] " --unselected-prefix "[ ] " \
             --header "Select processes to KILL (↑↓ move, space toggle, enter confirm):" \
             --selected.foreground 212 \
             --cursor.foreground 212 \
             --selected "${preselect[@]}" 2>/dev/null) || true
     else
-        selected=$(printf '%s\n' "${items[@]}" | gum choose --no-limit --height 15 \
+        selected=$(printf '%s\n' "${items[@]}" | gum choose --no-limit --height 20 \
             --cursor-prefix "[ ] " --selected-prefix "[✓] " --unselected-prefix "[ ] " \
             --header "Select processes to KILL (↑↓ move, space toggle, enter confirm):" \
             --selected.foreground 212 \
@@ -420,18 +792,30 @@ cmd_run() {
     if [[ -z "$selected" ]]; then
         echo
         gum style --foreground 214 "  No processes selected"
-        exit 0
+        return 0
     fi
 
-    local count; count=$(echo "$selected" | wc -l)
+    local count
+    count=$(echo "$selected" | wc -l)
     echo
     gum style --foreground 212 --bold "  Selected $count process(es) to terminate"
     echo
 
+    # Show what will be killed with evidence
+    gum style --foreground 245 "  Summary of selected:"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        local orig="${pid_map[$line]}"
+        IFS=$'\t' read -r score pid age mem rec confidence ptype evidence cmd <<< "$orig"
+        local evidence_readable="${evidence//|/, }"
+        printf "    PID %s: %s\n" "$pid" "${C_DIM}$evidence_readable${C_RESET}"
+    done <<< "$selected"
+    echo
+
     # Confirmation
-    if ! gum confirm --affirmative "Kill" --negative "Cancel" "  Proceed with terminating $count process(es)?"; then
+    if ! gum confirm --affirmative "Kill $count" --negative "Cancel" "  Proceed with terminating $count process(es)?"; then
         gum style --foreground 214 "  Cancelled"
-        exit 0
+        return 0
     fi
 
     echo
@@ -440,13 +824,13 @@ cmd_run() {
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
 
-        # Extract PID from the line
-        local pid; pid=$(echo "$line" | grep -oE 'PID:[0-9]+' | cut -d: -f2)
+        local pid
+        pid=$(echo "$line" | grep -oE 'PID:[0-9]+' | cut -d: -f2)
         [[ -z "$pid" ]] && continue
 
-        # Get original data (tab-delimited: score pid age mem rec reasons cmd)
         local orig="${pid_map[$line]}"
-        local cmd; cmd=$(echo "$orig" | cut -d$'\t' -f7)
+        local cmd
+        cmd=$(echo "$orig" | cut -d$'\t' -f9)
 
         printf "  Killing PID %s... " "$pid"
 
@@ -463,7 +847,8 @@ cmd_run() {
         fi
 
         # Save decision
-        local pattern; pattern=$(normalize_pattern "$cmd")
+        local pattern
+        pattern=$(normalize_pattern "$cmd")
         save_decision "$pattern" "kill"
     done <<< "$selected"
 
@@ -472,8 +857,10 @@ cmd_run() {
         if ! echo "$selected" | grep -qF "$line"; then
             local orig="${pid_map[$line]}"
             [[ -z "$orig" ]] && continue
-            local cmd; cmd=$(echo "$orig" | cut -d$'\t' -f7)
-            local pattern; pattern=$(normalize_pattern "$cmd")
+            local cmd
+            cmd=$(echo "$orig" | cut -d$'\t' -f9)
+            local pattern
+            pattern=$(normalize_pattern "$cmd")
             save_decision "$pattern" "spare"
         fi
     done
@@ -492,17 +879,21 @@ cmd_history() {
         gum style --foreground 214 "  No decision history yet"
         echo
         gum style --foreground 245 "  Run 'pt' to build up a decision history."
-        exit 0
+        return 0
     fi
 
     echo
-    gum style --foreground 245 "  Past Decisions:"
+    local kill_count spare_count
+    kill_count=$(jq '[.[] | select(. == "kill")] | length' "$DECISIONS_FILE" 2>/dev/null || echo 0)
+    spare_count=$(jq '[.[] | select(. == "spare")] | length' "$DECISIONS_FILE" 2>/dev/null || echo 0)
+
+    gum style --foreground 245 "  Decision History: ${C_KILL}$kill_count kills${C_RESET} | ${C_SPARE}$spare_count spares${C_RESET}"
     echo
 
     if command -v jq &>/dev/null; then
         jq -r 'to_entries | sort_by(.value) | .[] |
-            if .value == "kill" then "  \u001b[91mKILL\u001b[0m  │ \(.key)"
-            else "  \u001b[92mSPARE\u001b[0m │ \(.key)" end' \
+            if .value == "kill" then "  \u001b[91mKILL\u001b[0m  │ \(.key[0:80])"
+            else "  \u001b[92mSPARE\u001b[0m │ \(.key[0:80])" end' \
             "$DECISIONS_FILE" 2>/dev/null | head -30
     else
         cat "$DECISIONS_FILE"
@@ -521,7 +912,7 @@ cmd_clear() {
     echo
     if ((count == 0)); then
         gum style --foreground 214 "  No decision history to clear"
-        exit 0
+        return 0
     fi
 
     gum style --foreground 245 "  Found $count saved decisions"
@@ -538,31 +929,48 @@ cmd_clear() {
 
 cmd_help() {
     cat << 'EOF'
-pt - Process Triage v1.0.0
+pt - Process Triage v2.0.0
+Bayesian-inspired zombie/abandoned process detection
 
 USAGE
     pt              Interactive mode - scan, select, kill
-    pt scan         Show candidates without killing
+    pt deep         Deep scan with runtime evidence gathering
+    pt scan         Show candidates (quick scan)
+    pt scan deep    Show candidates (deep scan)
     pt history      Show past decisions
     pt clear        Clear decision history
     pt help         Show this help
 
 HOW IT WORKS
-    pt scores processes based on:
-    • Age (older = more suspicious)
-    • Parent PID (orphans are suspicious)
-    • Pattern matching (stuck tests, old dev servers)
-    • Past decisions (learns from your choices)
+    pt uses a Bayesian-inspired scoring system that weighs multiple
+    evidence sources to estimate the probability a process is abandoned:
 
-    Recommendations:
-    • KILL   (score ≥50) - Pre-selected for killing
-    • REVIEW (score 20-49) - Worth checking
-    • SPARE  (score <20) - Probably safe
+    EVIDENCE SOURCES
+    ├── Process Type     Test, dev server, agent, shell, daemon
+    ├── Age Analysis     Compared to expected lifetime for type
+    ├── Orphan Status    PPID=1 indicates orphaned process
+    ├── CPU Patterns     Stuck at 99% or idle at 0%
+    ├── Memory Usage     High memory + old age
+    ├── Command Patterns shell-snapshot, --hot, test runners
+    └── Past Decisions   Learns from your kill/spare choices
+
+    DEEP SCAN (slower, more accurate)
+    ├── I/O Activity     Is the process reading/writing?
+    ├── CPU Progress     Is CPU time accumulating?
+    ├── Terminal Status  Is the TTY session still active?
+    ├── Child Processes  Are children still running?
+    └── Network Status   Any open connections?
+
+    RECOMMENDATIONS
+    • KILL   (score ≥60, high confidence) - Pre-selected for killing
+    • REVIEW (score 30-59) - Worth investigating
+    • SPARE  (score <30) - Probably safe to keep
 
 EXAMPLES
-    pt                     # Interactive - select and kill
-    pt scan                # Just show what's suspicious
-    pt history             # See past decisions
+    pt                     # Interactive triage
+    pt deep                # Deep scan with evidence gathering
+    pt scan                # Quick scan, view only
+    pt scan deep           # Deep scan, view only
 
 CONFIG
     ~/.config/process_triage/decisions.json  - Learned decisions
@@ -580,12 +988,31 @@ main() {
     ensure_config
 
     case "${1:-run}" in
-        run|"")   cmd_run ;;
-        scan)     cmd_scan ;;
-        history)  cmd_history ;;
-        clear)    cmd_clear ;;
-        help|-h|--help) cmd_help ;;
-        version|-v|--version) echo "pt version $VERSION" ;;
+        run|"")
+            cmd_run false
+            ;;
+        deep)
+            cmd_run true
+            ;;
+        scan)
+            if [[ "${2:-}" == "deep" ]]; then
+                cmd_scan true
+            else
+                cmd_scan false
+            fi
+            ;;
+        history)
+            cmd_history
+            ;;
+        clear)
+            cmd_clear
+            ;;
+        help|-h|--help)
+            cmd_help
+            ;;
+        version|-v|--version)
+            echo "pt version $VERSION"
+            ;;
         *)
             echo "Unknown command: $1"
             echo "Run 'pt help' for usage"
