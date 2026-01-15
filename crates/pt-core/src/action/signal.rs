@@ -114,8 +114,16 @@ impl SignalActionRunner {
         let poll_interval = Duration::from_millis(self.config.poll_interval_ms);
 
         while start.elapsed() < timeout {
-            if expect_exit && !self.process_exists(pid) {
-                return Ok(());
+            if expect_exit {
+                if !self.process_exists(pid) {
+                    return Ok(());
+                }
+                // On Linux, consider a zombie process as "exited" for our purposes
+                // (we successfully terminated it, even if parent hasn't reaped it)
+                #[cfg(target_os = "linux")]
+                if let Some('Z') = self.get_process_state(pid) {
+                    return Ok(());
+                }
             }
 
             if let Some(stopped) = expect_stopped {
@@ -552,6 +560,48 @@ mod tests {
 
             let valid = provider.revalidate(&identity).expect("revalidate");
             assert!(!valid, "nonexistent should not validate");
+        }
+
+        #[test]
+        fn test_zombie_detection() {
+            use std::process::Command;
+
+            // Spawn a process that exits immediately
+            // It will become a zombie because we hold the handle and don't wait() yet
+            let mut child = Command::new("true")
+                .spawn()
+                .expect("failed to spawn true");
+
+            let pid = child.id();
+            let runner = SignalActionRunner::with_defaults();
+
+            // Wait for it to become a zombie
+            let start = Instant::now();
+            loop {
+                if start.elapsed() > Duration::from_secs(2) {
+                    // Fallback cleanup if it never becomes Z (unlikely)
+                    let _ = child.wait();
+                    panic!("Process did not become zombie in time");
+                }
+                if let Some('Z') = runner.get_process_state(pid) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+
+            // Verify wait_for_state_change considers it exited
+            // Without the fix, this would timeout because process_exists() is true for zombies
+            let result = runner.wait_for_state_change(
+                pid,
+                true, // expect_exit
+                None,
+                Duration::from_millis(500),
+            );
+
+            assert!(result.is_ok(), "Zombie should be considered exited");
+
+            // Cleanup
+            let _ = child.wait();
         }
     }
 }
