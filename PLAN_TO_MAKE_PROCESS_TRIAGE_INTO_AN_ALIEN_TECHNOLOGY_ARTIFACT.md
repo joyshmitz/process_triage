@@ -253,6 +253,18 @@ BB) Online FDR / alpha-investing for sequential operations
 - Control false-kill risk over time as decisions accumulate
 - Complements batch BH FDR in 4.32
 
+BC) Posterior predictive checks / Bayesian model criticism
+- Detect model misspecification by comparing observed traces to posterior predictive distributions
+- Can be computed in closed form for conjugate families (e.g., Beta-Binomial, Gamma-Poisson)
+
+BD) Distributionally robust decision theory (DRO)
+- Guard against distribution shift using ambiguity sets (e.g., Wasserstein / f-divergence balls)
+- Produces conservative expected-loss estimates; complements robust Bayes
+
+BE) Submodular probe selection (near-optimal sensor scheduling)
+- When probes have overhead and mutual redundancy, choose a set maximizing coverage/information
+- Greedy selection with approximation guarantees; integrates with active sensing/Whittle policies
+
 R) Use-case interpretation of observed processes
 - bun test at 91% CPU for 18m in /data/projects/flywheel_gateway
 - gemini --yolo workers at 25m to 4h46m
@@ -301,6 +313,8 @@ All of these are integrated in the system design below.
   - optional: flamegraph toolchain (stack profiling visualization)
   - optional: gdb + pstack/eu-stack (stack traces)
   - optional: language profilers: py-spy (Python), rbspy (Ruby), async-profiler (JVM), xctrace (macOS, if Xcode)
+  - optional: osquery (structured system query surface)
+  - optional: intel-pcm (memory bandwidth / uncore counters, where available)
 - OS-level metrics for queueing cost and VOI:
   - loadavg, run-queue delay, iowait, memory pressure, swap activity
 
@@ -533,6 +547,18 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - Maintain an error budget over time; allocate “kill attempts” only when posterior is extremely strong
 - Provides long-run safety even under repeated scans
 
+### 4.41 Posterior Predictive Checks
+- Compare observed traces to posterior predictive distributions to detect misspecification
+- If PPC fails, widen priors / switch to more robust layers (Huberization, DRO, robust Bayes)
+
+### 4.42 Distributionally Robust Optimization (DRO)
+- Replace expected loss with worst-case expected loss over an ambiguity set (e.g., Wasserstein ball)
+- Produces conservative “don’t kill unless safe” decisions under distribution shift
+
+### 4.43 Submodular Probe Selection
+- When probes overlap (redundant info) and have overhead, pick a near-optimal set maximizing information gain
+- Greedy selection yields approximation guarantees; integrates with 4.34 active sensing
+
 ---
 
 ## 5) Decision Theory and Optimal Stopping
@@ -586,6 +612,14 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 5.11 Online FDR Risk Budget (Alpha-Investing)
 - Maintain a global false-kill risk budget across time and across repeated scans
 - Spend budget only on extremely strong posterior odds; replenish with confirmed-correct actions
+
+### 5.12 DRO / Worst-Case Expected Loss
+- When model misspecification is detected (via PPC) or drift is high (Wasserstein), switch to worst-case loss estimates
+- This tightens kill thresholds under uncertainty
+
+### 5.13 Submodular Probe Set Selection
+- If “install everything” is possible but “run everything at once” is too heavy, select a probe subset maximizing incremental value
+- Provides a principled way to be maximal over time while staying safe on overhead
 
 ---
 
@@ -703,6 +737,7 @@ Linux package managers:
   - acct, auditd, pcp
   - gdb, elfutils (eu-stack), binutils
   - python3-pip + pipx (py-spy), openjdk (async-profiler)
+  - osquery (if available), intel-pcm (pcm) (if available)
 - Fedora/RHEL (dnf):
   - sysstat, perf, bpftrace, bcc, bpftool, iotop, nethogs, iftop, lsof
   - atop, sysdig, smem, numactl
@@ -711,6 +746,7 @@ Linux package managers:
   - psacct, audit, pcp
   - gdb, elfutils, binutils
   - python3-pip + pipx (py-spy), java-latest-openjdk (async-profiler)
+  - osquery (if available), intel-pcm (if available)
 - Arch (pacman):
   - sysstat, perf, bpftrace, bcc, bpftool, iotop, nethogs, iftop, lsof
   - atop, sysdig, smem, numactl
@@ -719,6 +755,7 @@ Linux package managers:
   - acct, audit, pcp
   - gdb, elfutils, binutils
   - python-pipx (py-spy), jdk-openjdk (async-profiler)
+  - osquery (if available), intel-pcm (if available)
 - Alpine (apk):
   - sysstat, perf, bpftrace, iotop, nethogs, iftop, lsof
   - atop, sysdig, smem, numactl
@@ -727,6 +764,7 @@ Linux package managers:
   - acct (if available), audit (if available), pcp (if available)
   - gdb, binutils, elfutils (if available)
   - py3-pip + pipx (py-spy), openjdk (async-profiler) (if available)
+  - osquery (if available), intel-pcm (if available)
 
 macOS (Homebrew):
 - core utils: lsof, iproute2mac (if needed), htop
@@ -758,6 +796,8 @@ Capability matrix (signal -> tool -> OS support -> fallback):
 - process accounting history: acct/psacct (Linux) -> fallback: none
 - syscall audit stream: auditd (Linux) -> fallback: strace (limited)
 - systemwide historical TSDB: pcp (Linux) -> fallback: sar (limited)
+- memory bandwidth / uncore: intel-pcm (Linux) -> fallback: perf counters (if available) or none
+- structured system inventory: osquery (Linux/macOS) -> fallback: ad-hoc commands
 
 Data-to-math mapping (signal -> model layer):
 - CPU bursts + syscall spikes -> Hawkes / marked point process intensities
@@ -778,6 +818,8 @@ Data-to-math mapping (signal -> model layer):
 - Extreme spikes -> EVT (POT/GPD) + tail-risk penalties (CVaR)
 - Periodic patterns -> wavelet/spectral features + survival priors
 - Coupled tree inference -> belief propagation (sum-product) on PPID forest
+- Memory bandwidth / uncore -> likelihood refinement for “useful heavy compute” vs “pathological spin”
+- osquery inventory -> context priors (service classification, user/session context)
 
 ### Phase 4: Inference Integration
 - Combine evidence to compute P(C|x)
@@ -793,6 +835,9 @@ Data-to-math mapping (signal -> model layer):
 - Add wavelet/spectral periodicity features
 - Add switching LDS (IMM) for regime-switching dynamics
 - Add Bayesian model averaging over inference submodels
+- Add posterior predictive checks for model misspecification
+- Add DRO layer for worst-case expected-loss under drift
+- Add submodular probe selection utilities for overlapping probes
 
 ### Phase 5: Decision Theory
 - Implement expected loss, SPRT threshold, VOI
@@ -801,6 +846,7 @@ Data-to-math mapping (signal -> model layer):
 - Add active sensing policy (choose next best measurement per cost)
 - Add Whittle/VOI index policy for budgeted instrumentation
 - Add online FDR/alpha-investing safety budget for repeated scans
+- Add DRO/worst-case loss gating when model criticism flags drift or misspecification
 
 ### Phase 6: Action Tray
 - Keep/pause/throttle/kill suggestions
@@ -837,6 +883,9 @@ Data-to-math mapping (signal -> model layer):
 - Periodicity feature regression tests
 - IMM filter regression tests
 - Online FDR/alpha-investing tests
+- Posterior predictive check tests (detect misspecification)
+- DRO gating tests (conservative under drift)
+- Submodular probe selection tests (monotonicity/approx sanity)
 
 ---
 
