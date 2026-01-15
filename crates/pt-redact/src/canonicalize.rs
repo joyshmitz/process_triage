@@ -198,20 +198,6 @@ impl Default for Canonicalizer {
 /// Helper to replace numeric suffixes while preserving [PLACEHOLDER] tokens.
 fn canonicalize_numeric_suffixes(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
-    let mut in_bracket = false;
-    let mut last_idx = 0;
-
-    for (idx, ch) in input.char_indices() {
-        if ch == '[' {
-            in_bracket = true;
-        } else if ch == ']' {
-            in_bracket = false;
-        }
-
-        // Don't track, just rebuild
-        last_idx = idx;
-        let _ = last_idx; // silence warning
-    }
 
     // Simple approach: only replace suffixes not inside brackets
     // Split on brackets, process, rejoin

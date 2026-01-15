@@ -40,7 +40,7 @@ impl StartId {
     }
 
     /// Create a new StartId from components (macOS).
-    pub fn from_macos(boot_id: &str, pid: u32, start_time: u64) -> Self {
+    pub fn from_macos(boot_id: &str, start_time: u64, pid: u32) -> Self {
         StartId(format!("{}:{}:{}", boot_id, start_time, pid))
     }
 
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_start_id_macos() {
-        let sid = StartId::from_macos("9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f", 1234, 987654321);
+        let sid = StartId::from_macos("9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f", 987654321, 1234);
         assert_eq!(
             sid.0,
             "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:987654321:1234"

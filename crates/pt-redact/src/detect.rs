@@ -76,85 +76,40 @@ impl SecretType {
     }
 }
 
-/// Detection pattern definition.
-struct DetectionPattern {
-    secret_type: SecretType,
-    pattern: Lazy<Regex>,
-    description: &'static str,
-}
+// Pre-compiled detection patterns as individual Lazy statics
+static RE_AWS_ACCESS_KEY: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap());
 
-// Pre-compiled detection patterns
-static PATTERNS: &[DetectionPattern] = &[
-    DetectionPattern {
-        secret_type: SecretType::AwsAccessKey,
-        pattern: Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap()),
-        description: "AWS Access Key ID",
-    },
-    DetectionPattern {
-        secret_type: SecretType::GitHubToken,
-        pattern: Lazy::new(|| Regex::new(r"gh[pousr]_[A-Za-z0-9_]{36,}").unwrap()),
-        description: "GitHub Personal Access Token",
-    },
-    DetectionPattern {
-        secret_type: SecretType::GitLabToken,
-        pattern: Lazy::new(|| Regex::new(r"glpat-[A-Za-z0-9\-_]{20,}").unwrap()),
-        description: "GitLab Personal Access Token",
-    },
-    DetectionPattern {
-        secret_type: SecretType::SlackToken,
-        pattern: Lazy::new(|| Regex::new(r"xox[baprs]-[A-Za-z0-9\-]+").unwrap()),
-        description: "Slack Token",
-    },
-    DetectionPattern {
-        secret_type: SecretType::Jwt,
-        pattern: Lazy::new(|| {
-            Regex::new(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap()
-        }),
-        description: "JSON Web Token",
-    },
-    DetectionPattern {
-        secret_type: SecretType::PrivateKey,
-        pattern: Lazy::new(|| Regex::new(r"-----BEGIN[A-Z ]*PRIVATE KEY-----").unwrap()),
-        description: "Private Key (PEM)",
-    },
-    DetectionPattern {
-        secret_type: SecretType::AiApiKey,
-        pattern: Lazy::new(|| {
-            // OpenAI: sk-..., Anthropic: sk-ant-...
-            Regex::new(r"sk-(?:ant-)?[A-Za-z0-9_-]{20,}").unwrap()
-        }),
-        description: "AI API Key (OpenAI/Anthropic)",
-    },
-];
+static RE_GITHUB_TOKEN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"gh[pousr]_[A-Za-z0-9_]{36,}").unwrap());
 
-// Argument patterns (for command line detection)
-static ARG_PATTERNS: &[DetectionPattern] = &[
-    DetectionPattern {
-        secret_type: SecretType::PasswordArg,
-        pattern: Lazy::new(|| Regex::new(r"--password[=\s]+[^\s]+").unwrap()),
-        description: "Password argument",
-    },
-    DetectionPattern {
-        secret_type: SecretType::TokenArg,
-        pattern: Lazy::new(|| Regex::new(r"--token[=\s]+[^\s]+").unwrap()),
-        description: "Token argument",
-    },
-    DetectionPattern {
-        secret_type: SecretType::ApiKeyArg,
-        pattern: Lazy::new(|| Regex::new(r"--api[-_]?key[=\s]+[^\s]+").unwrap()),
-        description: "API key argument",
-    },
-];
+static RE_GITLAB_TOKEN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"glpat-[A-Za-z0-9\-_]{20,}").unwrap());
 
-// Environment variable patterns
-static ENV_SECRET_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i).*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH).*=.+").unwrap()
+static RE_SLACK_TOKEN: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"xox[baprs]-[A-Za-z0-9\-]+").unwrap());
+
+static RE_JWT: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap()
 });
 
-// Connection string patterns
-static CONNECTION_STRING_PATTERN: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)(postgres|mysql|mongodb|redis|amqp)://[^@]+@").unwrap()
-});
+static RE_PRIVATE_KEY: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"-----BEGIN[A-Z ]*PRIVATE KEY-----").unwrap());
+
+static RE_AI_API_KEY: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"sk-(?:ant-)?[A-Za-z0-9_-]{20,}").unwrap());
+
+static RE_PASSWORD_ARG: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"--password[=\s]+[^\s]+").unwrap());
+
+static RE_TOKEN_ARG: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"--token[=\s]+[^\s]+").unwrap());
+
+static RE_API_KEY_ARG: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"--api[-_]?key[=\s]+[^\s]+").unwrap());
+
+static RE_CONNECTION_STRING: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)(postgres|mysql|mongodb|redis|amqp)://[^@]+@").unwrap());
 
 /// Secret detector for automatic sensitivity detection.
 #[derive(Clone)]
@@ -194,21 +149,41 @@ impl SecretDetector {
     /// Detect if a value contains a secret.
     pub fn detect(&self, value: &str) -> Option<SecretType> {
         // Check explicit patterns first (most specific)
-        for pattern in PATTERNS {
-            if pattern.pattern.is_match(value) {
-                return Some(pattern.secret_type);
-            }
+        if RE_AWS_ACCESS_KEY.is_match(value) {
+            return Some(SecretType::AwsAccessKey);
+        }
+        if RE_GITHUB_TOKEN.is_match(value) {
+            return Some(SecretType::GitHubToken);
+        }
+        if RE_GITLAB_TOKEN.is_match(value) {
+            return Some(SecretType::GitLabToken);
+        }
+        if RE_SLACK_TOKEN.is_match(value) {
+            return Some(SecretType::SlackToken);
+        }
+        if RE_JWT.is_match(value) {
+            return Some(SecretType::Jwt);
+        }
+        if RE_PRIVATE_KEY.is_match(value) {
+            return Some(SecretType::PrivateKey);
+        }
+        if RE_AI_API_KEY.is_match(value) {
+            return Some(SecretType::AiApiKey);
         }
 
         // Check argument patterns
-        for pattern in ARG_PATTERNS {
-            if pattern.pattern.is_match(value) {
-                return Some(pattern.secret_type);
-            }
+        if RE_PASSWORD_ARG.is_match(value) {
+            return Some(SecretType::PasswordArg);
+        }
+        if RE_TOKEN_ARG.is_match(value) {
+            return Some(SecretType::TokenArg);
+        }
+        if RE_API_KEY_ARG.is_match(value) {
+            return Some(SecretType::ApiKeyArg);
         }
 
         // Check connection strings
-        if CONNECTION_STRING_PATTERN.is_match(value) {
+        if RE_CONNECTION_STRING.is_match(value) {
             return Some(SecretType::ConnectionString);
         }
 
@@ -347,37 +322,29 @@ pub fn find_all_secrets(value: &str) -> Vec<Detection> {
     let mut detections = Vec::new();
 
     // Check each pattern
-    for pattern in PATTERNS {
-        for m in pattern.pattern.find_iter(value) {
+    let patterns: &[(&Lazy<Regex>, SecretType)] = &[
+        (&RE_AWS_ACCESS_KEY, SecretType::AwsAccessKey),
+        (&RE_GITHUB_TOKEN, SecretType::GitHubToken),
+        (&RE_GITLAB_TOKEN, SecretType::GitLabToken),
+        (&RE_SLACK_TOKEN, SecretType::SlackToken),
+        (&RE_JWT, SecretType::Jwt),
+        (&RE_PRIVATE_KEY, SecretType::PrivateKey),
+        (&RE_AI_API_KEY, SecretType::AiApiKey),
+        (&RE_PASSWORD_ARG, SecretType::PasswordArg),
+        (&RE_TOKEN_ARG, SecretType::TokenArg),
+        (&RE_API_KEY_ARG, SecretType::ApiKeyArg),
+        (&RE_CONNECTION_STRING, SecretType::ConnectionString),
+    ];
+
+    for (pattern, secret_type) in patterns {
+        for m in pattern.find_iter(value) {
             detections.push(Detection {
-                secret_type: pattern.secret_type,
+                secret_type: *secret_type,
                 start: m.start(),
                 end: m.end(),
                 matched: m.as_str().to_string(),
             });
         }
-    }
-
-    // Check argument patterns
-    for pattern in ARG_PATTERNS {
-        for m in pattern.pattern.find_iter(value) {
-            detections.push(Detection {
-                secret_type: pattern.secret_type,
-                start: m.start(),
-                end: m.end(),
-                matched: m.as_str().to_string(),
-            });
-        }
-    }
-
-    // Check connection strings
-    for m in CONNECTION_STRING_PATTERN.find_iter(value) {
-        detections.push(Detection {
-            secret_type: SecretType::ConnectionString,
-            start: m.start(),
-            end: m.end(),
-            matched: m.as_str().to_string(),
-        });
     }
 
     // Sort by position
