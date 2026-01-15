@@ -99,6 +99,9 @@ fn make_test_plan(pid: u32, uid: u32, pre_checks: Vec<PreCheck>) -> Plan {
             decision,
             blocked_reasons: vec![],
             stage_pause_before_kill: false,
+            process_state: None,
+            parent_identity: None,
+            d_state_diagnostics: None,
         }],
         generated_at: Some("2026-01-15T12:00:00Z".to_string()),
     };

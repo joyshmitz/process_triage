@@ -10,6 +10,7 @@
 
 use crate::collect::protected::ProtectedFilter;
 use crate::collect::systemd::{collect_systemd_unit, SystemdUnit, SystemdUnitType};
+use crate::collect::ProcessState;
 use crate::config::policy::{DataLossGates, Guardrails};
 use crate::supervision::session::{SessionAnalyzer, SessionConfig, SessionProtectionType};
 use std::fmt;
@@ -198,6 +199,15 @@ pub trait PreCheckProvider {
         None
     }
 
+    /// Check if process state is valid for the planned action.
+    ///
+    /// Verifies that the process is not in an unkillable state (zombie/D-state)
+    /// if we're planning a kill action.
+    fn check_process_state(&self, _pid: u32) -> PreCheckResult {
+        // Default implementation - can be overridden by live implementations
+        PreCheckResult::Passed
+    }
+
     /// Run all applicable pre-checks for an action.
     fn run_checks(&self, checks: &[PreCheck], pid: u32, sid: Option<u32>) -> Vec<PreCheckResult> {
         checks
@@ -208,6 +218,7 @@ pub trait PreCheckProvider {
                 PreCheck::CheckDataLossGate => Some(self.check_data_loss(pid)),
                 PreCheck::CheckSupervisor => Some(self.check_supervisor(pid)),
                 PreCheck::CheckSessionSafety => Some(self.check_session_safety(pid, sid)),
+                PreCheck::VerifyProcessState => Some(self.check_process_state(pid)),
             })
             .collect()
     }
@@ -461,6 +472,37 @@ impl LivePreCheckProvider {
         None
     }
 
+    /// Read process state from /proc/[pid]/stat.
+    ///
+    /// Parses the state field (field 3 in stat) and returns the ProcessState.
+    fn read_process_state(&self, pid: u32) -> Option<ProcessState> {
+        let stat_path = format!("/proc/{pid}/stat");
+        let content = std::fs::read_to_string(&stat_path).ok()?;
+
+        // Parse state from stat: pid (comm) state ...
+        // State is the first character after the closing paren
+        let comm_end = content.rfind(')')?;
+        let after_comm = content.get(comm_end + 2..)?;
+        let state_char = after_comm.chars().next()?;
+
+        Some(ProcessState::from_char(state_char))
+    }
+
+    /// Read kernel wait channel from /proc/[pid]/wchan.
+    ///
+    /// Returns the kernel function name where the process is blocked (if in sleep state).
+    fn read_wchan(&self, pid: u32) -> Option<String> {
+        let wchan_path = format!("/proc/{pid}/wchan");
+        let wchan = std::fs::read_to_string(&wchan_path).ok()?.trim().to_string();
+
+        // "0" means not blocked, return None in that case
+        if wchan == "0" || wchan.is_empty() {
+            None
+        } else {
+            Some(wchan)
+        }
+    }
+
     /// Get parent process comm name.
     fn get_ppid_comm(&self, pid: u32) -> Option<String> {
         let stat_path = format!("/proc/{pid}/stat");
@@ -533,6 +575,7 @@ impl LivePreCheckProvider {
 
         None
     }
+
 }
 
 #[cfg(target_os = "linux")]
@@ -723,6 +766,54 @@ impl PreCheckProvider for LivePreCheckProvider {
                     trace!(pid, error = %e, "session analyzer error, skipping enhanced checks");
                 }
             }
+        }
+
+        PreCheckResult::Passed
+    }
+
+    fn check_process_state(&self, pid: u32) -> PreCheckResult {
+        trace!(pid, "checking process state for kill viability");
+
+        // Read current process state from /proc
+        let state = match self.read_process_state(pid) {
+            Some(s) => s,
+            None => {
+                // Process may have exited - treat as passed (nothing to check)
+                trace!(pid, "could not read process state, assuming gone");
+                return PreCheckResult::Passed;
+            }
+        };
+
+        // Check for zombie state - cannot be killed
+        if state.is_zombie() {
+            debug!(pid, "process is a zombie (Z state)");
+            return PreCheckResult::Blocked {
+                check: PreCheck::VerifyProcessState,
+                reason: format!(
+                    "process is a zombie (Z state): already dead, cannot be killed. \
+                     The parent process must reap it."
+                ),
+            };
+        }
+
+        // Check for D-state (uninterruptible sleep) - kill may not work
+        if state.is_disksleep() {
+            let wchan = self.read_wchan(pid);
+            let wchan_info = wchan
+                .as_ref()
+                .map(|w| format!(" (blocked in: {})", w))
+                .unwrap_or_default();
+
+            debug!(pid, ?wchan, "process is in D-state (uninterruptible sleep)");
+            return PreCheckResult::Blocked {
+                check: PreCheck::VerifyProcessState,
+                reason: format!(
+                    "process is in uninterruptible sleep (D state){}: \
+                     kill action may not succeed. Consider investigating the \
+                     underlying I/O issue instead.",
+                    wchan_info
+                ),
+            };
         }
 
         PreCheckResult::Passed
