@@ -1,0 +1,372 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://process-triage.dev/schemas/session-manifest/1.0.0",
+  "title": "Session Manifest",
+  "description": "Schema for pt session manifest.json files",
+  "type": "object",
+  "required": ["schema_version", "session_id", "state", "mode", "timing", "artifacts"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "description": "Schema version for forward compatibility",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "examples": ["1.0.0"]
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Unique session identifier",
+      "pattern": "^pt-[0-9]{8}-[0-9]{6}-[a-z2-7]{4}$",
+      "examples": ["pt-20260115-143022-a7xq"]
+    },
+    "parent_session_id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^pt-[0-9]{8}-[0-9]{6}-[a-z2-7]{4}$"
+        },
+        { "type": "null" }
+      ],
+      "description": "Parent session ID if this is a resume/continuation"
+    },
+    "state": {
+      "type": "string",
+      "enum": ["created", "scanning", "planned", "executing", "completed", "cancelled", "failed", "archived"],
+      "description": "Current session state"
+    },
+    "state_history": {
+      "type": "array",
+      "description": "Append-only history of state transitions",
+      "items": {
+        "type": "object",
+        "required": ["state", "ts"],
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["created", "scanning", "planned", "executing", "completed", "cancelled", "failed", "archived"]
+          },
+          "ts": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Timestamp of state transition (UTC ISO 8601)"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Optional reason for transition"
+          }
+        }
+      }
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["interactive", "robot_plan", "robot_apply", "daemon_alert", "scan_only", "export"],
+      "description": "Session operation mode"
+    },
+    "deep_scan": {
+      "type": "boolean",
+      "description": "Whether deep scan was performed"
+    },
+    "initiated_by": {
+      "type": "object",
+      "description": "Who/what initiated this session",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["user", "daemon", "agent", "schedule"],
+          "description": "Initiator type"
+        },
+        "uid": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unix user ID"
+        },
+        "username": {
+          "type": "string",
+          "description": "Username"
+        },
+        "daemon_session": {
+          "type": "string",
+          "description": "Daemon session ID (if type=daemon)"
+        },
+        "trigger": {
+          "type": "string",
+          "description": "What triggered this session"
+        },
+        "agent_name": {
+          "type": "string",
+          "description": "Agent identifier (if type=agent)"
+        }
+      }
+    },
+    "timing": {
+      "type": "object",
+      "description": "Session timing information",
+      "required": ["created_at"],
+      "properties": {
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Session creation timestamp (UTC)"
+        },
+        "completed_at": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ],
+          "description": "Session completion timestamp (UTC)"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total session duration in milliseconds"
+        },
+        "scan_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time spent in scanning phase"
+        },
+        "inference_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time spent in inference phase"
+        },
+        "action_duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Time spent in action phase"
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "description": "Session outcome summary",
+      "properties": {
+        "processes_scanned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total processes examined"
+        },
+        "candidates_found": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Processes flagged as candidates"
+        },
+        "actions_planned": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Actions in the plan"
+        },
+        "actions_executed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Actions actually executed"
+        },
+        "kills_successful": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Successful kill operations"
+        },
+        "kills_failed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Failed kill operations"
+        },
+        "spares": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Processes explicitly spared"
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "description": "Which artifacts are present in this session",
+      "properties": {
+        "scan_quick": { "type": "boolean" },
+        "scan_deep": { "type": "boolean" },
+        "features": { "type": "boolean" },
+        "posteriors": { "type": "boolean" },
+        "ledger": { "type": "boolean" },
+        "plan": { "type": "boolean" },
+        "outcomes": { "type": "boolean" },
+        "report": { "type": "boolean" },
+        "bundle": { "type": "boolean" }
+      }
+    },
+    "error": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "message", "timestamp"],
+          "properties": {
+            "type": {
+              "type": "string",
+              "description": "Error type identifier",
+              "examples": ["scan_timeout", "permission_denied", "inference_error"]
+            },
+            "message": {
+              "type": "string",
+              "description": "Human-readable error message"
+            },
+            "timestamp": {
+              "type": "string",
+              "format": "date-time",
+              "description": "When the error occurred"
+            },
+            "recoverable": {
+              "type": "boolean",
+              "description": "Whether the error is recoverable"
+            },
+            "context": {
+              "type": "object",
+              "description": "Additional error context",
+              "additionalProperties": true
+            }
+          }
+        },
+        { "type": "null" }
+      ],
+      "description": "Error information if session failed"
+    },
+    "retention": {
+      "type": "object",
+      "description": "Retention policy for this session",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "enum": ["default", "extended", "permanent", "minimal"],
+          "description": "Retention policy name"
+        },
+        "expires_at": {
+          "oneOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ],
+          "description": "When this session expires (null = never)"
+        },
+        "preserve_for_priors": {
+          "type": "boolean",
+          "description": "Whether to extract decision patterns before cleanup"
+        },
+        "preserve_reason": {
+          "type": "string",
+          "description": "Why this session is preserved (if permanent)"
+        }
+      }
+    },
+    "checksums": {
+      "type": "object",
+      "description": "SHA-256 checksums of critical artifacts",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[a-f0-9]{64}$"
+      }
+    },
+    "pt_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+",
+      "description": "Version of pt (bash wrapper)"
+    },
+    "pt_core_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+",
+      "description": "Version of pt-core (Rust binary)"
+    },
+    "capabilities_hash": {
+      "type": "string",
+      "description": "Hash of capabilities manifest for reproducibility"
+    },
+    "resume_info": {
+      "type": "object",
+      "description": "Information for session resume",
+      "properties": {
+        "resume_reason": {
+          "type": "string",
+          "description": "Why the session was resumed"
+        },
+        "checkpoint": {
+          "type": "object",
+          "description": "Last checkpoint state",
+          "properties": {
+            "phase": {
+              "type": "string",
+              "enum": ["scan", "inference", "decision", "action"]
+            },
+            "progress": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Progress within phase (0-1)"
+            },
+            "last_pid": {
+              "type": "integer",
+              "description": "Last processed PID"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "session_id": "pt-20260115-143022-a7xq",
+      "parent_session_id": null,
+      "state": "completed",
+      "state_history": [
+        {"state": "created", "ts": "2026-01-15T14:30:22Z"},
+        {"state": "scanning", "ts": "2026-01-15T14:30:23Z"},
+        {"state": "planned", "ts": "2026-01-15T14:30:45Z"},
+        {"state": "executing", "ts": "2026-01-15T14:31:02Z"},
+        {"state": "completed", "ts": "2026-01-15T14:31:15Z"}
+      ],
+      "mode": "interactive",
+      "deep_scan": true,
+      "initiated_by": {
+        "type": "user",
+        "uid": 1000,
+        "username": "developer"
+      },
+      "timing": {
+        "created_at": "2026-01-15T14:30:22Z",
+        "completed_at": "2026-01-15T14:31:15Z",
+        "duration_ms": 53000,
+        "scan_duration_ms": 22000,
+        "inference_duration_ms": 17000,
+        "action_duration_ms": 13000
+      },
+      "summary": {
+        "processes_scanned": 412,
+        "candidates_found": 7,
+        "actions_planned": 3,
+        "actions_executed": 3,
+        "kills_successful": 2,
+        "kills_failed": 0,
+        "spares": 4
+      },
+      "artifacts": {
+        "scan_quick": true,
+        "scan_deep": true,
+        "features": true,
+        "posteriors": true,
+        "ledger": true,
+        "plan": true,
+        "outcomes": true,
+        "report": false,
+        "bundle": false
+      },
+      "error": null,
+      "retention": {
+        "policy": "default",
+        "expires_at": "2026-01-22T14:30:22Z",
+        "preserve_for_priors": true
+      },
+      "checksums": {
+        "plan.json": "sha256:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab",
+        "outcomes.jsonl": "sha256:efgh5678901234567890abcdef1234567890abcdef1234567890abcdef123456"
+      },
+      "pt_version": "2.0.0",
+      "pt_core_version": "2.0.0"
+    }
+  ]
+}
