@@ -765,4 +765,356 @@ nice                                         :                    0
         let env = parse_environ_content(content).unwrap();
         assert!(env.is_empty());
     }
+
+    // =========================================================================
+    // No-Mock Tests Using Real Processes
+    // =========================================================================
+    // These tests use the ProcessHarness to spawn real processes and parse
+    // their actual /proc files, validating parsers against real data.
+
+    #[test]
+    fn test_nomock_parse_io_real_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            return; // Skip on non-Linux
+        }
+
+        let harness = ProcessHarness::default();
+        // Spawn a process that does some I/O
+        let proc = harness
+            .spawn_shell("echo test > /dev/null && sleep 1")
+            .expect("spawn process");
+
+        // Give it a moment to do I/O
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        // Parse real /proc/<pid>/io
+        let result = parse_io(proc.pid());
+
+        // Log result for JSONL output
+        crate::test_log!(
+            INFO,
+            "parse_io real result",
+            pid = proc.pid(),
+            has_result = result.is_some()
+        );
+
+        // May be None if we don't have permission, but should not panic
+        if let Some(stats) = result {
+            // Real process should have some I/O activity
+            crate::test_log!(
+                DEBUG,
+                "I/O stats",
+                pid = proc.pid(),
+                rchar = stats.rchar,
+                wchar = stats.wchar,
+                syscr = stats.syscr,
+                syscw = stats.syscw
+            );
+            // Basic sanity: at least one syscall should have happened
+            assert!(stats.syscr > 0 || stats.syscw > 0 || stats.rchar > 0);
+        }
+    }
+
+    #[test]
+    fn test_nomock_parse_statm_real_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness.spawn_sleep(5).expect("spawn sleep");
+
+        // Parse real /proc/<pid>/statm
+        let result = parse_statm(proc.pid());
+
+        crate::test_log!(
+            INFO,
+            "parse_statm real result",
+            pid = proc.pid(),
+            has_result = result.is_some()
+        );
+
+        // statm should always be readable for our own processes
+        let stats = result.expect("statm should be readable");
+
+        // Real process must have non-zero memory stats
+        assert!(stats.size > 0, "process should have non-zero size");
+        assert!(stats.resident > 0, "process should have non-zero resident pages");
+
+        crate::test_log!(
+            DEBUG,
+            "Memory stats",
+            pid = proc.pid(),
+            size_pages = stats.size,
+            resident_pages = stats.resident,
+            shared_pages = stats.shared
+        );
+    }
+
+    #[test]
+    fn test_nomock_parse_schedstat_real_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        // Use a busy process to ensure scheduler stats are populated
+        let proc = harness.spawn_busy().expect("spawn busy");
+
+        // Let it run briefly
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Parse real /proc/<pid>/schedstat
+        let result = parse_schedstat(proc.pid());
+
+        crate::test_log!(
+            INFO,
+            "parse_schedstat real result",
+            pid = proc.pid(),
+            has_result = result.is_some()
+        );
+
+        if let Some(stats) = result {
+            // Busy process should have accumulated some CPU time
+            assert!(stats.cpu_time_ns > 0, "busy process should have CPU time");
+            crate::test_log!(
+                DEBUG,
+                "Sched stats",
+                pid = proc.pid(),
+                cpu_time_ns = stats.cpu_time_ns,
+                wait_time_ns = stats.wait_time_ns,
+                timeslices = stats.timeslices
+            );
+        }
+    }
+
+    #[test]
+    fn test_nomock_parse_sched_real_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness.spawn_sleep(5).expect("spawn sleep");
+
+        // Parse real /proc/<pid>/sched
+        let result = parse_sched(proc.pid());
+
+        crate::test_log!(
+            INFO,
+            "parse_sched real result",
+            pid = proc.pid(),
+            has_result = result.is_some()
+        );
+
+        if let Some(info) = result {
+            // Every process has a priority
+            assert!(info.prio.is_some(), "process should have priority");
+            crate::test_log!(
+                DEBUG,
+                "Sched info",
+                pid = proc.pid(),
+                prio = info.prio,
+                nice = info.nice,
+                vol_switches = info.nr_voluntary_switches,
+                invol_switches = info.nr_involuntary_switches
+            );
+        }
+    }
+
+    #[test]
+    fn test_nomock_parse_fd_real_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        // Spawn a shell that has standard FDs open
+        let proc = harness.spawn_sleep(5).expect("spawn sleep");
+
+        // Parse real /proc/<pid>/fd
+        let result = parse_fd(proc.pid());
+
+        crate::test_log!(
+            INFO,
+            "parse_fd real result",
+            pid = proc.pid(),
+            has_result = result.is_some()
+        );
+
+        if let Some(info) = result {
+            // Every process has at least stdin/stdout/stderr (0, 1, 2)
+            assert!(info.count >= 3, "process should have at least 3 FDs");
+            crate::test_log!(
+                DEBUG,
+                "FD info",
+                pid = proc.pid(),
+                count = info.count,
+                sockets = info.sockets,
+                pipes = info.pipes,
+                files = info.files
+            );
+        }
+    }
+
+    #[test]
+    fn test_nomock_parse_cgroup_real_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness.spawn_sleep(5).expect("spawn sleep");
+
+        // Parse real /proc/<pid>/cgroup
+        let result = parse_cgroup(proc.pid());
+
+        crate::test_log!(
+            INFO,
+            "parse_cgroup real result",
+            pid = proc.pid(),
+            has_result = result.is_some()
+        );
+
+        // Cgroup info should be available on any modern Linux
+        let info = result.expect("cgroup should be readable");
+
+        // Should have either v1 or v2 cgroup info
+        let has_cgroup_info = info.unified.is_some() || !info.v1_paths.is_empty();
+        assert!(has_cgroup_info, "process should have cgroup membership");
+
+        crate::test_log!(
+            DEBUG,
+            "Cgroup info",
+            pid = proc.pid(),
+            unified = info.unified,
+            v1_count = info.v1_paths.len(),
+            in_container = info.in_container
+        );
+    }
+
+    #[test]
+    fn test_nomock_parse_wchan_real_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        // Sleeping process should have a wait channel
+        let proc = harness.spawn_sleep(5).expect("spawn sleep");
+
+        // Give it time to enter sleep
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        // Parse real /proc/<pid>/wchan
+        let result = parse_wchan(proc.pid());
+
+        crate::test_log!(
+            INFO,
+            "parse_wchan real result",
+            pid = proc.pid(),
+            wchan = result.clone()
+        );
+
+        // Sleeping process typically has a wait channel
+        // (though it may briefly wake for signals)
+        if let Some(wchan) = result {
+            assert!(!wchan.is_empty(), "wchan should not be empty when waiting");
+            crate::test_log!(DEBUG, "Wait channel", pid = proc.pid(), wchan = wchan);
+        }
+    }
+
+    #[test]
+    fn test_nomock_parse_environ_real_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        // Shell inherits our environment
+        let proc = harness.spawn_sleep(5).expect("spawn sleep");
+
+        // Parse real /proc/<pid>/environ
+        let result = parse_environ(proc.pid());
+
+        crate::test_log!(
+            INFO,
+            "parse_environ real result",
+            pid = proc.pid(),
+            has_result = result.is_some()
+        );
+
+        if let Some(env) = result {
+            // Shell should have inherited PATH at minimum
+            assert!(!env.is_empty(), "environment should not be empty");
+            // PATH is almost always set
+            let has_path = env.contains_key("PATH");
+            crate::test_log!(
+                DEBUG,
+                "Environment",
+                pid = proc.pid(),
+                count = env.len(),
+                has_path = has_path
+            );
+        }
+    }
+
+    #[test]
+    fn test_nomock_proc_snapshot_integration() {
+        use crate::test_utils::{ProcessHarness, ProcSnapshot};
+
+        if !ProcessHarness::is_available() {
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness.spawn_sleep(5).expect("spawn sleep");
+
+        // Capture snapshot using the harness
+        let snapshot = ProcSnapshot::capture(proc.pid()).expect("capture snapshot");
+
+        crate::test_log!(
+            INFO,
+            "Snapshot integration test",
+            pid = proc.pid(),
+            has_stat = snapshot.stat.is_some(),
+            has_comm = snapshot.comm.is_some(),
+            status_fields = snapshot.status.len()
+        );
+
+        // Verify snapshot fields align with parser outputs
+        if let Some(ref stat) = snapshot.stat {
+            assert!(stat.contains(&proc.pid().to_string()));
+        }
+
+        // Comm should match what's in /proc/<pid>/comm
+        if let Some(ref comm) = snapshot.comm {
+            // Shell spawns sh or sleep, comm should be one of those
+            assert!(
+                comm == "sh" || comm == "sleep",
+                "expected sh or sleep, got {}",
+                comm
+            );
+        }
+
+        // Status should have basic fields
+        assert!(snapshot.status.contains_key("Pid"));
+        assert!(snapshot.status.contains_key("State"));
+    }
 }

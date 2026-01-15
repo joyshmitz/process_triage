@@ -499,4 +499,162 @@ ActiveState=inactive
         assert_eq!(props.get("Key2"), Some(&"value2".to_string()));
         assert_eq!(props.get("Key3"), Some(&"".to_string()));
     }
+
+    // =====================================================
+    // No-mock tests using real systemd commands
+    // =====================================================
+
+    #[test]
+    fn test_nomock_is_systemd_available() {
+        // This test just checks if is_systemd_available works without panicking
+        crate::test_log!(INFO, "systemd availability test starting");
+
+        let available = is_systemd_available();
+
+        crate::test_log!(
+            INFO,
+            "systemd availability result",
+            available = available
+        );
+
+        // The result depends on the system, but the function should not panic
+        // On most modern Linux systems with systemd, this should be true
+    }
+
+    #[test]
+    fn test_nomock_is_systemd_managed_self() {
+        // Test if our own process is systemd-managed
+        if !is_systemd_available() {
+            crate::test_log!(INFO, "Skipping test: systemd not available");
+            return;
+        }
+
+        let my_pid = std::process::id();
+        crate::test_log!(INFO, "systemd managed check for self", pid = my_pid);
+
+        let managed = is_systemd_managed(my_pid);
+
+        crate::test_log!(
+            INFO,
+            "systemd managed result",
+            pid = my_pid,
+            managed = managed
+        );
+
+        // On a systemd system, most processes should be managed
+        // (but don't fail the test if not - depends on system config)
+    }
+
+    #[test]
+    fn test_nomock_collect_systemd_unit_self() {
+        // Test collecting systemd unit info for our own process
+        if !is_systemd_available() {
+            crate::test_log!(INFO, "Skipping test: systemd not available");
+            return;
+        }
+
+        let my_pid = std::process::id();
+        crate::test_log!(INFO, "systemd unit collection for self", pid = my_pid);
+
+        let unit = collect_systemd_unit(my_pid, None);
+
+        crate::test_log!(
+            INFO,
+            "systemd unit result",
+            pid = my_pid,
+            has_unit = unit.is_some()
+        );
+
+        if let Some(unit) = unit {
+            crate::test_log!(
+                INFO,
+                "systemd unit details",
+                name = unit.name.as_str(),
+                unit_type = format!("{:?}", unit.unit_type).as_str(),
+                active_state = format!("{:?}", unit.active_state).as_str(),
+                is_main_process = unit.is_main_process
+            );
+
+            // Verify the data is reasonable
+            assert!(!unit.name.is_empty());
+            assert_ne!(unit.provenance.source, SystemdDataSource::None);
+        }
+    }
+
+    #[test]
+    fn test_nomock_collect_systemd_unit_spawned() {
+        use crate::test_utils::ProcessHarness;
+
+        if !is_systemd_available() {
+            crate::test_log!(INFO, "Skipping test: systemd not available");
+            return;
+        }
+
+        if !ProcessHarness::is_available() {
+            crate::test_log!(INFO, "Skipping test: ProcessHarness not available");
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness
+            .spawn_shell("sleep 30")
+            .expect("spawn sleep process");
+
+        crate::test_log!(INFO, "systemd unit collection for spawned process", pid = proc.pid());
+
+        let unit = collect_systemd_unit(proc.pid(), None);
+
+        crate::test_log!(
+            INFO,
+            "systemd unit result for spawned",
+            pid = proc.pid(),
+            has_unit = unit.is_some()
+        );
+
+        if let Some(unit) = unit {
+            crate::test_log!(
+                INFO,
+                "systemd unit details for spawned",
+                name = unit.name.as_str(),
+                unit_type = format!("{:?}", unit.unit_type).as_str(),
+                active_state = format!("{:?}", unit.active_state).as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn test_nomock_collect_systemd_unit_with_fallback() {
+        // Test the fallback path using cgroup_unit parameter
+        crate::test_log!(INFO, "systemd unit fallback test");
+
+        // Simulate fallback case where systemctl fails but we have cgroup info
+        let unit = unit_from_cgroup_path("test-session.scope", 99999);
+
+        crate::test_log!(
+            INFO,
+            "systemd unit fallback result",
+            name = unit.name.as_str(),
+            unit_type = format!("{:?}", unit.unit_type).as_str(),
+            source = format!("{:?}", unit.provenance.source).as_str()
+        );
+
+        assert_eq!(unit.name, "test-session.scope");
+        assert_eq!(unit.unit_type, SystemdUnitType::Scope);
+        assert_eq!(unit.provenance.source, SystemdDataSource::CgroupPath);
+        assert!(!unit.provenance.warnings.is_empty()); // Should have warning about systemctl
+    }
+
+    #[test]
+    fn test_nomock_systemd_active_state_running() {
+        // Test active state running detection
+        assert!(SystemdActiveState::Active.is_running());
+        assert!(SystemdActiveState::Reloading.is_running());
+        assert!(!SystemdActiveState::Inactive.is_running());
+        assert!(!SystemdActiveState::Failed.is_running());
+        assert!(!SystemdActiveState::Activating.is_running());
+        assert!(!SystemdActiveState::Deactivating.is_running());
+        assert!(!SystemdActiveState::Unknown.is_running());
+
+        crate::test_log!(INFO, "systemd active state is_running tests passed");
+    }
 }

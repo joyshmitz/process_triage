@@ -540,4 +540,185 @@ mod tests {
         assert!(record.cmd.contains("/bin/bash"));
         assert_eq!(record.elapsed.as_secs(), 3600);
     }
+
+    // =====================================================
+    // No-mock tests using real processes
+    // =====================================================
+
+    #[test]
+    fn test_nomock_quick_scan_all_processes() {
+        // This test doesn't need ProcessHarness - just verifies quick_scan works
+        let platform = detect_platform();
+        if platform != "linux" && platform != "macos" {
+            crate::test_log!(INFO, "Skipping no-mock test: unsupported platform", platform = platform.as_str());
+            return;
+        }
+
+        crate::test_log!(INFO, "quick_scan no-mock test starting", platform = platform.as_str());
+
+        let options = QuickScanOptions::default();
+        let result = quick_scan(&options);
+
+        crate::test_log!(
+            INFO,
+            "quick_scan result",
+            is_ok = result.is_ok()
+        );
+
+        assert!(result.is_ok(), "quick_scan failed: {:?}", result.err());
+        let scan = result.unwrap();
+
+        // Should have at least a few processes
+        assert!(scan.processes.len() > 0, "quick_scan should return at least one process");
+
+        // Our own process should be in the list
+        let my_pid = std::process::id();
+        let has_self = scan.processes.iter().any(|p| p.pid.0 == my_pid);
+
+        crate::test_log!(
+            INFO,
+            "quick_scan completed",
+            process_count = scan.processes.len(),
+            includes_self = has_self,
+            scan_type = scan.metadata.scan_type.as_str()
+        );
+
+        assert!(has_self, "quick_scan should include our own process");
+        assert_eq!(scan.metadata.scan_type, "quick");
+    }
+
+    #[test]
+    fn test_nomock_quick_scan_specific_pid() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            crate::test_log!(INFO, "Skipping no-mock test: ProcessHarness not available");
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness
+            .spawn_shell("sleep 30")
+            .expect("spawn sleep process");
+
+        crate::test_log!(INFO, "quick_scan specific PID test", pid = proc.pid());
+
+        // Run a full scan and filter results manually
+        // (ps -p doesn't work reliably with -e on all systems)
+        let options = QuickScanOptions::default();
+
+        let result = quick_scan(&options);
+        crate::test_log!(
+            INFO,
+            "quick_scan result",
+            pid = proc.pid(),
+            is_ok = result.is_ok()
+        );
+
+        assert!(result.is_ok(), "quick_scan failed: {:?}", result.err());
+        let scan = result.unwrap();
+
+        // Find our specific process in the results
+        let target_record = scan.processes.iter().find(|p| p.pid.0 == proc.pid());
+        assert!(target_record.is_some(), "Should find our spawned process");
+        let record = target_record.unwrap();
+
+        assert_eq!(record.pid.0, proc.pid());
+        assert!(record.ppid.0 > 0);
+        assert!(!record.comm.is_empty());
+
+        crate::test_log!(
+            INFO,
+            "quick_scan specific PID completed",
+            pid = proc.pid(),
+            comm = record.comm.as_str(),
+            state = format!("{:?}", record.state).as_str(),
+            cpu_percent = record.cpu_percent
+        );
+    }
+
+    #[test]
+    fn test_nomock_quick_scan_metadata() {
+        let platform = detect_platform();
+        if platform != "linux" && platform != "macos" {
+            crate::test_log!(INFO, "Skipping no-mock test: unsupported platform");
+            return;
+        }
+
+        crate::test_log!(INFO, "quick_scan metadata test starting");
+
+        let options = QuickScanOptions::default();
+        let result = quick_scan(&options).expect("quick_scan should succeed");
+
+        // Verify metadata fields
+        assert_eq!(result.metadata.scan_type, "quick");
+        assert!(!result.metadata.platform.is_empty());
+        assert!(result.metadata.process_count > 0);
+        assert!(result.metadata.duration_ms < 30000); // Should complete within 30s
+
+        // On Linux, boot_id should be present
+        if platform == "linux" {
+            assert!(result.metadata.boot_id.is_some(), "Linux should have boot_id");
+        }
+
+        crate::test_log!(
+            INFO,
+            "quick_scan metadata test completed",
+            platform = result.metadata.platform.as_str(),
+            process_count = result.metadata.process_count,
+            duration_ms = result.metadata.duration_ms,
+            has_boot_id = result.metadata.boot_id.is_some()
+        );
+    }
+
+    #[test]
+    fn test_nomock_quick_scan_process_fields() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            crate::test_log!(INFO, "Skipping no-mock test: ProcessHarness not available");
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness
+            .spawn_shell("sleep 30")
+            .expect("spawn sleep process");
+
+        // Give the process a moment to settle
+        std::thread::sleep(std::time::Duration::from_millis(100));
+
+        crate::test_log!(INFO, "quick_scan process fields test", pid = proc.pid());
+
+        // Run a full scan and filter results manually
+        // (ps -p doesn't work reliably with -e on all systems)
+        let options = QuickScanOptions::default();
+
+        let scan = quick_scan(&options).expect("quick_scan should succeed");
+
+        // Find our specific process in the results
+        let record = scan.processes.iter().find(|p| p.pid.0 == proc.pid())
+            .expect("Should find our spawned process");
+
+        // Verify all fields are populated correctly
+        assert_eq!(record.pid.0, proc.pid());
+        assert!(record.ppid.0 > 0);
+        assert!(record.uid < u32::MAX); // Should be a valid UID
+        assert!(!record.user.is_empty());
+        assert!(record.pgid.is_some());
+        assert!(record.sid.is_some());
+        assert!(!record.start_id.0.is_empty());
+        assert!(record.rss_bytes > 0 || record.vsz_bytes > 0); // At least one memory stat
+        assert_eq!(record.source, "quick_scan");
+
+        crate::test_log!(
+            INFO,
+            "quick_scan process fields completed",
+            pid = proc.pid(),
+            uid = record.uid,
+            user = record.user.as_str(),
+            rss_bytes = record.rss_bytes,
+            vsz_bytes = record.vsz_bytes
+        );
+    }
 }

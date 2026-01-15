@@ -598,4 +598,146 @@ mod tests {
 
         assert_eq!(info.container_id_short, Some("abc123def456".to_string()));
     }
+
+    // =====================================================
+    // No-mock tests using real system detection
+    // =====================================================
+
+    #[test]
+    fn test_nomock_detect_container_from_markers_no_panic() {
+        // This test just verifies detect_container_from_markers doesn't panic
+        // and returns a reasonable result on any system
+        crate::test_log!(INFO, "container marker detection test starting");
+
+        let result = detect_container_from_markers();
+
+        crate::test_log!(
+            INFO,
+            "container marker detection result",
+            detected = result.is_some(),
+            runtime = format!("{:?}", result.as_ref().map(|r| &r.runtime)).as_str()
+        );
+
+        // If we're in a container, we should have detected it
+        // If not, the result should be None
+        if let Some(info) = result {
+            assert!(info.in_container);
+            crate::test_log!(
+                INFO,
+                "container detected from markers",
+                runtime = format!("{:?}", info.runtime).as_str(),
+                source = format!("{:?}", info.provenance.source).as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn test_nomock_detect_container_from_real_cgroup() {
+        // Test container detection using our actual cgroup path
+        if !std::path::Path::new("/proc/self/cgroup").exists() {
+            crate::test_log!(INFO, "Skipping no-mock test: /proc/self/cgroup not available");
+            return;
+        }
+
+        let content = match std::fs::read_to_string("/proc/self/cgroup") {
+            Ok(c) => c,
+            Err(e) => {
+                crate::test_log!(INFO, "Skipping test: cannot read cgroup", error = format!("{}", e).as_str());
+                return;
+            }
+        };
+
+        crate::test_log!(INFO, "container detection from real cgroup test");
+
+        // Try to find a cgroup path to test with
+        for line in content.lines() {
+            let parts: Vec<&str> = line.splitn(3, ':').collect();
+            if parts.len() >= 3 {
+                let path = parts[2];
+                let info = detect_container_from_cgroup(path);
+
+                crate::test_log!(
+                    INFO,
+                    "container detection result",
+                    cgroup_path = path,
+                    in_container = info.in_container,
+                    runtime = format!("{:?}", info.runtime).as_str()
+                );
+
+                // The detection should not panic and should return consistent results
+                if info.in_container {
+                    assert_ne!(info.runtime, ContainerRuntime::None);
+                } else {
+                    assert_eq!(info.runtime, ContainerRuntime::None);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_nomock_detect_kubernetes_from_env_real() {
+        // Test K8s detection using real environment (won't detect K8s in most test envs)
+        let env: HashMap<String, String> = std::env::vars().collect();
+
+        crate::test_log!(
+            INFO,
+            "kubernetes env detection test",
+            env_count = env.len()
+        );
+
+        let result = detect_kubernetes_from_env(&env);
+
+        crate::test_log!(
+            INFO,
+            "kubernetes env detection result",
+            is_k8s = result.is_some()
+        );
+
+        // If K8s is detected, verify the info is reasonable
+        if let Some(k8s) = result {
+            crate::test_log!(
+                INFO,
+                "kubernetes detected",
+                pod_name = k8s.pod_name.as_deref().unwrap_or("none"),
+                namespace = k8s.namespace.as_deref().unwrap_or("none")
+            );
+        }
+    }
+
+    #[test]
+    fn test_nomock_container_detection_spawned_process() {
+        use crate::test_utils::ProcessHarness;
+        use crate::collect::cgroup::collect_cgroup_details;
+
+        if !ProcessHarness::is_available() {
+            crate::test_log!(INFO, "Skipping no-mock test: ProcessHarness not available");
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness
+            .spawn_shell("sleep 30")
+            .expect("spawn sleep process");
+
+        crate::test_log!(INFO, "container detection for spawned process", pid = proc.pid());
+
+        // Get cgroup details first
+        if let Some(cgroup_details) = collect_cgroup_details(proc.pid()) {
+            // Try container detection on the unified path if available
+            if let Some(ref unified_path) = cgroup_details.unified_path {
+                let container_info = detect_container_from_cgroup(unified_path);
+
+                crate::test_log!(
+                    INFO,
+                    "container detection from spawned process cgroup",
+                    pid = proc.pid(),
+                    cgroup_path = unified_path.as_str(),
+                    in_container = container_info.in_container,
+                    runtime = format!("{:?}", container_info.runtime).as_str()
+                );
+            }
+        } else {
+            crate::test_log!(INFO, "No cgroup details available for spawned process", pid = proc.pid());
+        }
+    }
 }

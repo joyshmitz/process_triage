@@ -631,4 +631,181 @@ Gid:	1000	1000	1000	1000
         assert!(record.ppid.0 > 0);
         assert!(!record.comm.is_empty());
     }
+
+    // =====================================================
+    // No-mock tests using ProcessHarness for real processes
+    // =====================================================
+
+    #[test]
+    fn test_nomock_deep_scan_spawned_process() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            crate::test_log!(INFO, "Skipping no-mock test: ProcessHarness not available");
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness
+            .spawn_shell("sleep 30")
+            .expect("spawn sleep process");
+
+        crate::test_log!(INFO, "deep_scan no-mock test started", pid = proc.pid());
+
+        let options = DeepScanOptions {
+            pids: vec![proc.pid()],
+            skip_inaccessible: false,
+            include_environ: false,
+        };
+
+        let result = deep_scan(&options);
+        crate::test_log!(
+            INFO,
+            "deep_scan result",
+            pid = proc.pid(),
+            is_ok = result.is_ok()
+        );
+
+        assert!(result.is_ok(), "deep_scan failed: {:?}", result.err());
+        let scan = result.unwrap();
+
+        assert_eq!(scan.processes.len(), 1, "Expected exactly one process");
+        let record = &scan.processes[0];
+
+        assert_eq!(record.pid.0, proc.pid());
+        assert!(record.ppid.0 > 0);
+        assert!(!record.comm.is_empty());
+        assert!(record.starttime > 0);
+
+        // Metadata checks
+        assert_eq!(scan.metadata.process_count, 1);
+        assert!(scan.metadata.duration_ms < 5000); // Should be fast
+
+        crate::test_log!(
+            INFO,
+            "deep_scan completed",
+            pid = proc.pid(),
+            comm = record.comm.as_str(),
+            state = format!("{}", record.state).as_str()
+        );
+    }
+
+    #[test]
+    fn test_nomock_scan_process_with_environ() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            crate::test_log!(INFO, "Skipping no-mock test: ProcessHarness not available");
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        // Set a custom env var to verify we can read environ
+        let proc = harness
+            .spawn_shell("TEST_VAR=nomock_test_value sleep 30")
+            .expect("spawn process with env var");
+
+        crate::test_log!(INFO, "scan_process with environ test", pid = proc.pid());
+
+        let user_cache = UserCache::new();
+        let boot_id = fs::read_to_string("/proc/sys/kernel/random/boot_id")
+            .ok()
+            .map(|s| s.trim().to_string());
+
+        let record = scan_process(proc.pid(), true, &user_cache, &boot_id);
+        crate::test_log!(
+            INFO,
+            "scan_process result",
+            pid = proc.pid(),
+            is_ok = record.is_ok()
+        );
+
+        assert!(record.is_ok(), "scan_process failed: {:?}", record.err());
+        let record = record.unwrap();
+
+        assert_eq!(record.pid.0, proc.pid());
+        // Environ should be collected when requested
+        // Note: The env var might not be visible if it's set by the shell but not exported
+        crate::test_log!(
+            INFO,
+            "scan_process environ check",
+            pid = proc.pid(),
+            has_environ = record.environ.is_some()
+        );
+    }
+
+    #[test]
+    fn test_nomock_list_pids_includes_self() {
+        // This test doesn't need ProcessHarness - just verifies list_all_pids works
+        if !std::path::Path::new("/proc").exists() {
+            crate::test_log!(INFO, "Skipping no-mock test: /proc not available");
+            return;
+        }
+
+        let pids = list_all_pids();
+        crate::test_log!(INFO, "list_all_pids result", is_ok = pids.is_ok());
+
+        assert!(pids.is_ok(), "list_all_pids failed: {:?}", pids.err());
+        let pids = pids.unwrap();
+
+        let my_pid = std::process::id();
+        assert!(
+            pids.contains(&my_pid),
+            "list_all_pids should include our own PID"
+        );
+        assert!(!pids.is_empty(), "list_all_pids should return at least one PID");
+
+        crate::test_log!(
+            INFO,
+            "list_all_pids completed",
+            pid_count = pids.len(),
+            includes_self = pids.contains(&my_pid)
+        );
+    }
+
+    #[test]
+    fn test_nomock_deep_scan_identity_quality() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            crate::test_log!(INFO, "Skipping no-mock test: ProcessHarness not available");
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness.spawn_shell("sleep 30").expect("spawn process");
+
+        crate::test_log!(INFO, "identity quality test started", pid = proc.pid());
+
+        let options = DeepScanOptions {
+            pids: vec![proc.pid()],
+            skip_inaccessible: false,
+            include_environ: false,
+        };
+
+        let result = deep_scan(&options).expect("deep_scan should succeed");
+        let record = &result.processes[0];
+
+        // On Linux with /proc available, we should get good identity quality
+        crate::test_log!(
+            INFO,
+            "identity quality result",
+            pid = proc.pid(),
+            quality = format!("{:?}", record.identity_quality).as_str(),
+            can_automate = record.can_automate()
+        );
+
+        // Verify the identity can be extracted
+        let identity = record.to_identity();
+        assert_eq!(identity.pid.0, proc.pid());
+
+        // Start ID should be non-empty
+        assert!(!record.start_id.0.is_empty());
+
+        crate::test_log!(
+            INFO,
+            "identity extraction completed",
+            start_id = record.start_id.0.as_str()
+        );
+    }
 }

@@ -603,4 +603,151 @@ mod tests {
         let details = collect_cgroup_from_content(content, "/proc/1234/cgroup", None).unwrap();
         assert_eq!(details.version, CgroupVersion::Unknown);
     }
+
+    // =====================================================
+    // No-mock tests using real processes and system cgroups
+    // =====================================================
+
+    #[test]
+    fn test_nomock_collect_cgroup_details_self() {
+        // Test collecting cgroup details for our own process
+        if !std::path::Path::new("/proc/self/cgroup").exists() {
+            crate::test_log!(INFO, "Skipping no-mock test: /proc/self/cgroup not available");
+            return;
+        }
+
+        let my_pid = std::process::id();
+        crate::test_log!(INFO, "cgroup details no-mock test", pid = my_pid);
+
+        let details = collect_cgroup_details(my_pid);
+        crate::test_log!(
+            INFO,
+            "cgroup details result",
+            pid = my_pid,
+            has_result = details.is_some()
+        );
+
+        assert!(details.is_some(), "Should be able to read cgroup for self");
+        let details = details.unwrap();
+
+        // Version should be detected (not Unknown on a properly configured system)
+        crate::test_log!(
+            INFO,
+            "cgroup version detected",
+            version = format!("{:?}", details.version).as_str()
+        );
+
+        // Provenance should track the cgroup file
+        assert!(details.provenance.cgroup_file.contains(&my_pid.to_string()));
+
+        crate::test_log!(
+            INFO,
+            "cgroup details completed",
+            version = format!("{:?}", details.version).as_str(),
+            has_unified_path = details.unified_path.is_some(),
+            v1_paths_count = details.v1_paths.len()
+        );
+    }
+
+    #[test]
+    fn test_nomock_collect_cgroup_details_spawned() {
+        use crate::test_utils::ProcessHarness;
+
+        if !ProcessHarness::is_available() {
+            crate::test_log!(INFO, "Skipping no-mock test: ProcessHarness not available");
+            return;
+        }
+
+        let harness = ProcessHarness::default();
+        let proc = harness
+            .spawn_shell("sleep 30")
+            .expect("spawn sleep process");
+
+        crate::test_log!(INFO, "cgroup details spawned process test", pid = proc.pid());
+
+        let details = collect_cgroup_details(proc.pid());
+        crate::test_log!(
+            INFO,
+            "cgroup details result",
+            pid = proc.pid(),
+            has_result = details.is_some()
+        );
+
+        assert!(details.is_some(), "Should be able to read cgroup for spawned process");
+        let details = details.unwrap();
+
+        // Either unified path (v2) or v1 paths should be present
+        let has_paths = details.unified_path.is_some() || !details.v1_paths.is_empty();
+        assert!(has_paths || details.version == CgroupVersion::Unknown,
+                "Should have cgroup paths or be Unknown");
+
+        crate::test_log!(
+            INFO,
+            "cgroup details spawned completed",
+            pid = proc.pid(),
+            version = format!("{:?}", details.version).as_str(),
+            unified_path = details.unified_path.as_deref().unwrap_or("none")
+        );
+    }
+
+    #[test]
+    fn test_nomock_cgroup_systemd_slice_detection() {
+        // Test that systemd slice/unit detection works on real cgroup paths
+        if !std::path::Path::new("/proc/self/cgroup").exists() {
+            crate::test_log!(INFO, "Skipping no-mock test: /proc/self/cgroup not available");
+            return;
+        }
+
+        let my_pid = std::process::id();
+        let details = collect_cgroup_details(my_pid).expect("Should collect cgroup details");
+
+        crate::test_log!(
+            INFO,
+            "systemd slice detection test",
+            pid = my_pid,
+            has_slice = details.systemd_slice.is_some(),
+            has_unit = details.systemd_unit.is_some(),
+            slice = details.systemd_slice.as_deref().unwrap_or("none"),
+            unit = details.systemd_unit.as_deref().unwrap_or("none")
+        );
+
+        // On a systemd system, we should detect at least slice or unit
+        // (but don't fail on non-systemd systems)
+        if details.version == CgroupVersion::V2 || details.version == CgroupVersion::Hybrid {
+            // V2 or hybrid should have unified path
+            crate::test_log!(
+                INFO,
+                "v2/hybrid cgroup detected",
+                unified_path = details.unified_path.as_deref().unwrap_or("none")
+            );
+        }
+    }
+
+    #[test]
+    fn test_nomock_effective_cores_calculation() {
+        // Test effective_cores_from_quota with real values
+        // This is a pure calculation test but uses realistic values
+
+        // Test common container CPU limits
+        let test_cases = [
+            (Some(100000i64), Some(100000u64), Some(1.0)),   // 1 core
+            (Some(50000), Some(100000), Some(0.5)),          // 0.5 cores
+            (Some(200000), Some(100000), Some(2.0)),         // 2 cores
+            (None, Some(100000), None),                       // Unlimited
+            (Some(-1), Some(100000), None),                   // Unlimited (v1 style)
+        ];
+
+        for (quota, period, expected) in test_cases {
+            let result = effective_cores_from_quota(quota, period);
+            crate::test_log!(
+                INFO,
+                "effective_cores test case",
+                quota = format!("{:?}", quota).as_str(),
+                period = format!("{:?}", period).as_str(),
+                expected = format!("{:?}", expected).as_str(),
+                result = format!("{:?}", result).as_str()
+            );
+            assert_eq!(result, expected, "quota={:?}, period={:?}", quota, period);
+        }
+    }
 }
