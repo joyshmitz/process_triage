@@ -15,6 +15,8 @@ mod quick_scan;
 mod types;
 
 #[cfg(target_os = "linux")]
-pub use deep_scan::{deep_scan, DeepScanError, DeepScanOptions, DeepScanRecord};
+pub use deep_scan::{
+    deep_scan, DeepScanError, DeepScanMetadata, DeepScanOptions, DeepScanRecord, DeepScanResult,
+};
 pub use quick_scan::{quick_scan, QuickScanError, QuickScanOptions};
 pub use types::{ProcessRecord, ProcessState, ScanResult, ScanMetadata};

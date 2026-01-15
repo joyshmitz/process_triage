@@ -184,9 +184,13 @@ pub fn parse_sched_content(content: &str) -> Option<SchedInfo> {
 
     for line in content.lines() {
         // Format: "key                     : value"
-        let mut parts = line.split(':');
-        let key = parts.next()?.trim();
-        let value_str = parts.next()?.trim();
+        // Skip lines that don't contain a colon or are headers
+        let Some(colon_pos) = line.find(':') else {
+            continue;
+        };
+
+        let key = line[..colon_pos].trim();
+        let value_str = line[colon_pos + 1..].trim();
 
         match key {
             "nr_voluntary_switches" => {

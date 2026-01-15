@@ -258,7 +258,7 @@ struct CheckArgs {
     policy: bool,
 
     /// Check system capabilities
-    #[arg(long = "capabilities", alias = "caps")]
+    #[arg(long = "caps", alias = "check-capabilities")]
     check_capabilities: bool,
 
     /// Check all configuration
