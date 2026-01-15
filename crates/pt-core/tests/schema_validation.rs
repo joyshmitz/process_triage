@@ -3,12 +3,13 @@
 //! These tests verify that JSON outputs conform to their schemas and
 //! that mandatory fields are present and correctly formatted.
 
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
 
 /// Get a Command for pt-core binary.
 #[allow(deprecated)]
 fn pt_core() -> Command {
-    Command::cargo_bin("pt-core").expect("pt-core binary should exist")
+    cargo_bin_cmd!("pt-core")
 }
 
 // ============================================================================

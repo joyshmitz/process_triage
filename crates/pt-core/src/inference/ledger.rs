@@ -8,7 +8,7 @@
 //!
 //! This supports galaxy-brain mode visualization and debugging of classifications.
 
-use pt_math::bayes_factor::{EvidenceDirection, EvidenceStrength, EvidenceSummary};
+use pt_math::bayes_factor::{EvidenceStrength, EvidenceSummary};
 use serde::Serialize;
 use std::collections::HashMap;
 

@@ -3,12 +3,13 @@
 //! These tests verify that output formats work correctly and produce
 //! valid, parseable output.
 
+use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
 use predicates::prelude::*;
 
 /// Get a Command for pt-core binary.
 fn pt_core() -> Command {
-    Command::cargo_bin("pt-core").expect("pt-core binary should exist")
+    cargo_bin_cmd!("pt-core")
 }
 
 // ============================================================================

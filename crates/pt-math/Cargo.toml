@@ -10,6 +10,7 @@ name = "pt_math"
 path = "src/lib.rs"
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
 proptest = "1"

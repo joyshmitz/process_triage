@@ -11,8 +11,8 @@ pub use enforcer::{
     ViolationKind,
 };
 pub use expected_loss::{
-    decide_action, Action, ActionFeasibility, DecisionError, DecisionOutcome, DecisionRationale,
-    DisabledAction, ExpectedLoss, SprtBoundary,
+    decide_action, decide_action_with_recovery, Action, ActionFeasibility, DecisionError,
+    DecisionOutcome, DecisionRationale, DisabledAction, ExpectedLoss, SprtBoundary,
 };
 pub use alpha_investing::{AlphaInvestingPolicy, AlphaInvestingStore, AlphaUpdate, AlphaWealthState};
 pub use fdr_selection::{

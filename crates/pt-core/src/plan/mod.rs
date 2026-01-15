@@ -324,6 +324,7 @@ mod tests {
             optimal_action: action,
             sprt_boundary: None,
             posterior_odds_abandoned_vs_useful: None,
+            recovery_expectations: None,
             rationale: crate::decision::DecisionRationale {
                 chosen_action: action,
                 tie_break: false,

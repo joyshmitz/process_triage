@@ -14,6 +14,8 @@
 //! The Bayes factor can serve as an e-value for sequential testing:
 //! under H0, E[BF] = 1, enabling optional stopping and FDR control.
 
+use serde::Serialize;
+
 /// Maximum log Bayes factor before clamping to avoid overflow.
 /// exp(709) ≈ 8.2e307 is near f64::MAX.
 pub const LOG_BF_MAX: f64 = 700.0;
@@ -93,7 +95,8 @@ pub fn delta_bits(log_bf: f64) -> f64 {
 /// Provides a human-readable interpretation of |log_bf|.
 /// Note: The raw log_bf is always preserved for computations;
 /// labels are for presentation only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EvidenceStrength {
     /// |log_bf| < ln(1) = 0: No evidence
     None,
@@ -164,7 +167,8 @@ impl std::fmt::Display for EvidenceStrength {
 }
 
 /// Direction of evidence (which hypothesis is favored).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum EvidenceDirection {
     /// log_bf > 0: Evidence favors H1
     FavorsH1,
@@ -191,7 +195,7 @@ impl EvidenceDirection {
 ///
 /// This struct packages all the information needed for evidence ledger
 /// attribution and galaxy-brain explainability.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct EvidenceSummary {
     /// Log Bayes factor in nats (raw value, always preserved).
     pub log_bf: f64,

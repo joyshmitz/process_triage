@@ -1380,6 +1380,7 @@ name = "pt-math"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "serde",
 ]
 
 [[package]]

@@ -231,7 +231,7 @@ pub fn decide_action_with_recovery(
 
 fn validate_posterior(posterior: &ClassScores) -> Result<(), DecisionError> {
     let values = [posterior.useful, posterior.useful_bad, posterior.abandoned, posterior.zombie];
-    if values.iter().any(|v| v.is_nan() || v.is_infinite() || *v < 0.0) {
+    if values.iter().any(|v: &f64| v.is_nan() || v.is_infinite() || *v < 0.0) {
         return Err(DecisionError::InvalidPosterior {
             message: "posterior contains NaN/Inf or negative values".to_string(),
         });

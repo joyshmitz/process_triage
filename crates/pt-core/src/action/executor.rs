@@ -299,6 +299,7 @@ mod tests {
             optimal_action: Action::Pause,
             sprt_boundary: None,
             posterior_odds_abandoned_vs_useful: None,
+            recovery_expectations: None,
             rationale: crate::decision::DecisionRationale {
                 chosen_action: Action::Pause,
                 tie_break: false,
