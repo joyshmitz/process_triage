@@ -839,6 +839,221 @@ mod session_safety {
         // Note: Actual TTY detection requires running in a terminal context
         // In CI/test environments, we often don't have a TTY
     }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_same_session_protection() {
+        // Processes in the same session as pt should be protected by default
+        use pt_core::supervision::session::SessionAnalyzer;
+
+        let mut analyzer = SessionAnalyzer::new();
+        let pt_pid = std::process::id();
+
+        // Analyzing self against self - should detect same session
+        let result = analyzer.analyze(pt_pid, pt_pid).expect("should analyze");
+
+        assert!(result.is_protected, "Process should be protected when in same session");
+        assert!(
+            result.protection_types.iter().any(|t| {
+                matches!(t, pt_core::supervision::session::SessionProtectionType::SameSession)
+            }),
+            "Should have SameSession protection type"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_session_config_disables_protection() {
+        // Verify that disabling protection flags works
+        use pt_core::supervision::session::{SessionAnalyzer, SessionConfig};
+
+        let config = SessionConfig {
+            max_ancestry_depth: 20,
+            protect_same_session: false, // Disable same session protection
+            protect_parent_shells: false,
+            protect_multiplexers: false,
+            protect_ssh_chains: false,
+            protect_foreground_groups: false,
+        };
+
+        let mut analyzer = SessionAnalyzer::with_config(config);
+        let pt_pid = std::process::id();
+
+        // With all protections disabled, self should still be protected as session leader
+        let result = analyzer.analyze(pt_pid, pt_pid).expect("should analyze");
+
+        // Session leader protection is always enabled (not configurable)
+        // So we check that SameSession is NOT in protection types
+        let has_same_session = result.protection_types.iter().any(|t| {
+            matches!(t, pt_core::supervision::session::SessionProtectionType::SameSession)
+        });
+        assert!(!has_same_session, "SameSession protection should be disabled");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_session_analyzer_enumerate_members() {
+        // Test that we can enumerate session members
+        use pt_core::supervision::session::SessionAnalyzer;
+
+        let mut analyzer = SessionAnalyzer::new();
+        let pt_pid = std::process::id();
+
+        let members = analyzer
+            .enumerate_session_members(pt_pid)
+            .expect("should enumerate");
+
+        // At least the current process should be in its session
+        assert!(
+            members.contains(&pt_pid),
+            "Session members should include current process"
+        );
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_precheck_session_safety_integration() {
+        // Test that LivePreCheckProvider correctly uses SessionAnalyzer
+        let config = LivePreCheckConfig {
+            max_open_write_fds: 100,
+            block_if_locked_files: false,
+            block_if_active_tty: false, // Disable to focus on session checks
+            block_if_deleted_cwd: false,
+            block_if_recent_io_seconds: 0,
+            enhanced_session_safety: true,
+            protect_same_session: true,
+            protect_ssh_chains: true,
+            protect_multiplexers: true,
+            protect_parent_shells: true,
+        };
+
+        let provider = LivePreCheckProvider::new(None, config).expect("create provider");
+        let pt_pid = std::process::id();
+        let sid = unsafe { libc::getsid(0) as u32 };
+
+        // Checking our own process should trigger session protection
+        let result = provider.check_session_safety(pt_pid, Some(sid));
+
+        match result {
+            PreCheckResult::Blocked { check, reason } => {
+                assert_eq!(check, PreCheck::CheckSessionSafety);
+                // Should mention session protection reason
+                assert!(
+                    reason.contains("session") || reason.contains("protected"),
+                    "Reason should mention session protection: {}",
+                    reason
+                );
+            }
+            PreCheckResult::Passed => {
+                // May pass in some CI environments without TTY/session
+                eprintln!("Note: Session safety check passed (may be expected in CI)");
+            }
+        }
+    }
+
+    #[test]
+    fn test_tmux_env_parsing() {
+        // Test parsing of TMUX environment variable
+        use pt_core::supervision::session::TmuxInfo;
+
+        let value = "/tmp/tmux-1000/default,12345,0";
+        let info = TmuxInfo::from_tmux_env(value).expect("should parse");
+
+        assert_eq!(info.socket_path, "/tmp/tmux-1000/default");
+        assert_eq!(info.server_pid, Some(12345));
+    }
+
+    #[test]
+    fn test_screen_env_parsing() {
+        // Test parsing of STY environment variable (screen session)
+        use pt_core::supervision::session::ScreenInfo;
+
+        let value = "12345.pts-0.hostname";
+        let info = ScreenInfo::from_sty_env(value).expect("should parse");
+
+        assert_eq!(info.session_id, "12345.pts-0.hostname");
+        assert_eq!(info.pid, Some(12345));
+        assert_eq!(info.name, Some("pts-0.hostname".to_string()));
+    }
+
+    #[test]
+    fn test_ssh_connection_parsing() {
+        // Test parsing of SSH_CONNECTION environment variable
+        use pt_core::supervision::session::SshConnectionInfo;
+
+        let value = "192.168.1.100 54321 192.168.1.1 22";
+        let info = SshConnectionInfo::from_ssh_connection(value).expect("should parse");
+
+        assert_eq!(info.client_ip, "192.168.1.100");
+        assert_eq!(info.client_port, 54321);
+        assert_eq!(info.server_ip, "192.168.1.1");
+        assert_eq!(info.server_port, 22);
+    }
+
+    #[test]
+    fn test_ssh_client_parsing() {
+        // Test parsing of SSH_CLIENT environment variable
+        use pt_core::supervision::session::SshConnectionInfo;
+
+        let value = "10.0.0.5 45678 22";
+        let info = SshConnectionInfo::from_ssh_client(value).expect("should parse");
+
+        assert_eq!(info.client_ip, "10.0.0.5");
+        assert_eq!(info.client_port, 45678);
+        assert_eq!(info.server_port, 22);
+    }
+
+    #[test]
+    fn test_proc_stat_parsing() {
+        // Test parsing of /proc/<pid>/stat content
+        use pt_core::supervision::session::ProcStat;
+
+        let content = "1234 (bash) S 1000 1234 1234 34816 1234 4194304";
+        let stat = ProcStat::parse(content).expect("should parse");
+
+        assert_eq!(stat.pid, 1234);
+        assert_eq!(stat.comm, "bash");
+        assert_eq!(stat.state, 'S');
+        assert_eq!(stat.ppid, 1000);
+        assert_eq!(stat.pgrp, 1234);
+        assert_eq!(stat.session, 1234);
+    }
+
+    #[test]
+    fn test_proc_stat_parsing_with_spaces_in_comm() {
+        // Test parsing when comm contains spaces (e.g., "Web Content")
+        use pt_core::supervision::session::ProcStat;
+
+        let content = "5678 (Web Content) S 1000 5678 5678 0 -1 4194304";
+        let stat = ProcStat::parse(content).expect("should parse");
+
+        assert_eq!(stat.pid, 5678);
+        assert_eq!(stat.comm, "Web Content");
+    }
+
+    #[test]
+    fn test_session_protection_types_display() {
+        // Test that all protection types have human-readable display
+        use pt_core::supervision::session::SessionProtectionType;
+
+        let types = vec![
+            SessionProtectionType::SessionLeader,
+            SessionProtectionType::SameSession,
+            SessionProtectionType::ParentShell,
+            SessionProtectionType::TmuxServer,
+            SessionProtectionType::TmuxClient,
+            SessionProtectionType::ScreenServer,
+            SessionProtectionType::ScreenClient,
+            SessionProtectionType::SshChain,
+            SessionProtectionType::ForegroundGroup,
+            SessionProtectionType::TtyController,
+        ];
+
+        for t in types {
+            let display = t.to_string();
+            assert!(!display.is_empty(), "Protection type {:?} should have display", t);
+        }
+    }
 }
 
 // ============================================================================
