@@ -351,9 +351,15 @@ All of these are integrated in the system design below.
   - `--robot`: skip TUI and execute the policy-approved action plan automatically (still subject to safety gates).
   - `--shadow`: run full-auto but never execute actions; log everything for calibration.
   - `--dry-run`: compute and print the action plan without executing (even if `--robot` is set).
+- Default privilege/scope rule (very important):
+  - By default, only recommend/execute actions on processes owned by the invoking user (same `uid`), since that is the common safe case and matches default OS permissions.
+  - Non-owned processes (other users, root) can still be *observed* and shown for diagnosis, but are hard-gated from action execution unless explicitly enabled via policy + privileges (e.g., `sudo`) and are never eligible for auto-execution by default.
 - Outputs:
   - Human: TUI + explainability ledger.
   - Machine: `--format json` (or `pt agent ...`) for integrations and unattended runs.
+- Host coordination rule (very important):
+  - Enforce a per-user “pt lock” (file lock) so only one `pt-core` run performs heavy probes and/or applies actions at a time.
+  - Dormant mode (`ptd`) must respect the lock: if a manual/agent run is active, queue/inbox the escalation rather than competing for resources or racing actions.
 - Design rule: all cross-process boundaries are for external system tools only (perf/eBPF/etc.); internal boundaries stay in-process for performance and coherence.
 
 ### 3.1 Data Collection Layer
@@ -490,14 +496,17 @@ Command surface (agent-optimized “session pipeline”; wrapper `pt` forwards t
 - `pt agent plan [--deep] [--min-age 3600] [--limit N] [--only kill|review|all] [--format json|md]`
   - Runs full-auto exploration (quick scan -> targeted deep scan -> infer -> decide).
   - Always returns: `session_id`, `schema_version`, system snapshot, candidates, and a pre-toggled recommended plan (the same items the TUI would preselect).
+  - Each candidate/action must include a stable identity tuple (at minimum: `pid`, `start_id`, `uid`) so later execution can revalidate identity and avoid PID-reuse / TOCTOU footguns.
 2) Explain (drill-down)
 - `pt agent explain --session <id> --pid <pid> [--format json|md] [--include raw] [--include ledger] [--galaxy-brain]`
   - Returns a “why” summary, plus optional full evidence ledger (likelihood terms/Bayes factors) and capped/redacted raw samples.
 3) Apply (execute, no UI)
 - `pt agent apply --session <id> --recommended --yes`
-- `pt agent apply --session <id> --pids 123,456 --yes`
+- `pt agent apply --session <id> --pids 123,456 --yes` (shorthand: must exist in the session plan)
+- `pt agent apply --session <id> --targets 123:<start_id>,456:<start_id> --yes` (preferred when piping across tools)
   - Executes without UI; requires explicit `--yes`.
   - Must always respect `--shadow` and `--dry-run`.
+  - Must revalidate process identity immediately before applying any action: if `(pid,start_id,uid,...)` no longer matches, block execution for that target and require a fresh plan.
 4) Status / sessions (automation primitives)
 - `pt agent sessions [--limit N]`
 - `pt agent show --session <id>`
@@ -521,6 +530,8 @@ Schema invariants (for agents):
 - Avoid breaking changes: prefer additive fields; bump `schema_version` only when unavoidable.
 - “Pre-toggled” semantics are explicit:
   - `recommended.preselected_pids` and/or `recommended.actions[]` (with staged action chains and per-PID safety gates).
+- Identity safety is explicit:
+  - Every process reference includes `pid` plus a stable `start_id` (and `uid` at minimum); action execution uses these to revalidate targets and prevent PID-reuse mistakes.
 - Exit codes are automation-friendly:
   - `0` clean / nothing to do
   - `1` candidates exist (plan produced) but no actions executed
@@ -576,6 +587,7 @@ Dormant mode mechanics:
 - Maintain baselines and detect triggers (sustained load, PSI stall, runaway top-N CPU, orphan spikes).
 - Triggers should be time-aware and noise-robust (e.g., EWMA + change detection + “sustained for N seconds”), so the daemon does not flap.
 - Advanced trigger math (optional but on-theme): use time-uniform concentration / e-process style tests so “spring into action” decisions have explicit sequential error control.
+- Concurrency coordination: dormant escalation must acquire the per-user “pt lock” (section 3.0) before launching any heavier probes; if the lock is held by a manual/agent run, record the trigger and queue a pending inbox item instead of competing for CPU or racing actions.
 - On trigger:
   1) run quick scan
   2) run targeted deep scans on top suspects (budgeted)
@@ -628,7 +640,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - hidden semi-Markov states S_t
 - duration D_S ~ Gamma(k_S, theta_S)
 - competing hazards: lambda_finish, lambda_abandon, lambda_bad
-- survival term: P(still running | t, C) = exp(-lambda_C * t)
+- survival term (constant hazards): P(still running | t, C) = exp(-(lambda_finish+lambda_abandon+lambda_bad) * t)
 - Gamma priors on hazard rates yield closed-form posterior
 - With Gamma(α,β) prior on λ (rate parameterization), the marginal survival is Lomax/Pareto-II: P(T>t) = (β/(β+t))^α
 
@@ -762,6 +774,8 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - Treat “kill-recommended” as multiple hypothesis tests across many PIDs
 - Use local false discovery rate: lfdr_i = P(useful_i | x_i)
 - Select a kill set K that controls expected false-kill proportion (BH-style on lfdr or p-values from Bayes factors)
+- Dependence matters: process hypotheses are not independent (shared PPID tree, shared cgroups/units, shared IO bottlenecks). The default should be conservative under dependence (e.g., Benjamini–Yekutieli) or hierarchical/group FDR (family = process group / systemd unit / container).
+- Modern “anytime” framing (fits pt well): use e-values/e-processes derived from likelihood ratios/Bayes factors so optional stopping and sequential scanning remain valid, then apply an e-FDR control procedure (and connect it directly to online alpha-investing in section 4.40).
 
 ### 4.33 Restless Bandits / Whittle Index Scheduling
 - Each PID is an arm; actions are {quick-scan, deep-scan, instrument, pause, throttle}
@@ -827,7 +841,8 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 5.2 Sequential Probability Ratio Test (SPRT)
 - kill if:
-  log [P(abandoned|x)/P(useful|x)] > log [(L(keep,useful)-L(kill,useful)) / (L(kill,abandoned)-L(keep,abandoned))]
+  log [P(abandoned|x)/P(useful|x)] > log [(L(kill,useful)-L(keep,useful)) / (L(keep,abandoned)-L(kill,abandoned))]
+  (i.e., kill when posterior odds exceed the Bayes-risk threshold implied by the loss matrix; equivalently compare Bayes factors + prior odds to this threshold)
 
 ### 5.3 Value of Information (VOI)
 - VOI = E[Delta loss | new observation] - cost of waiting
@@ -854,6 +869,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - Rank candidate kills by lfdr_i = P(useful_i | x_i) (lower is “safer to kill”)
 - Choose the largest set K such that estimated FDR(K) <= alpha (shadow-mode calibrated)
 - This prevents “scan many processes and inevitably kill one useful one”
+- Under dependence (shared PPID/cgroups), default to conservative or structured FDR control (BY, group/hierarchical FDR by unit/container/process-group) rather than assuming independence.
 
 ### 5.9 Budgeted Instrumentation Policy (Whittle / VOI)
 - Under overhead constraints, allocate expensive probes to the highest expected VOI per unit cost
@@ -896,6 +912,9 @@ Operational realism notes:
 - Uninterruptible sleep (`D`) may not respond to SIGKILL until the kernel unblocks; default to investigation (wchan, IO device, dependency impact) rather than blind killing.
 - Supervised processes often respawn: if a PID is under systemd/launchd/supervisord/nodemon/etc., killing the PID alone may be ineffective or harmful; prefer unit/supervisor actions and log “respawn detected” in after-action outcomes.
 - Process groups matter: many “rogue” workloads are actually a tree; staged actions should be group-aware (pause group → observe → term group → observe → kill group) to avoid leaving orphans.
+- Session safety: protect the active login/session chain by default (current shell, tmux/screen, SSH server/client, controlling TTY) so triage never cuts off the user running it.
+- PID reuse / TOCTOU safety: always revalidate a target immediately before action (at minimum: `(pid,start_id,uid)` from section 3.5). If identity mismatches, block and require a fresh plan; never “best-effort” kill by PID alone.
+- Privilege/UID safety: by default, only execute actions against processes owned by the invoking user. Cross-UID (other users/root) actions require explicit privileges + policy allowlists; do not allow cross-UID auto-execution by default even if `sudo` is available.
 
 Decision engine selects action with minimum expected loss. Destructive actions (especially kill) require explicit confirmation by default via the TUI, but can be executed automatically under an explicit `--robot` flag and only when all safety gates pass (robust Bayes/DRO/FDR/alpha-investing/policy allowlists).
 
@@ -1045,6 +1064,7 @@ Use the model to interpret the observed snapshot:
 - Define telemetry schema + partitioning rules (section 3.3) and redaction/hashing policy (section 3.4); version these in `runs`.
 - Define a capabilities cache schema: tool availability, versions, permissions, and “safe fallbacks” per signal.
 - Define the agent/robot contract: schema versioning, exit codes, pre-toggled plan semantics, and gating behavior.
+- Define target identity + privilege contracts: `(pid,start_id,uid,...)` revalidation rules for apply, default same-UID action scope, and the per-user “pt lock” coordination semantics (manual/agent/daemon).
 - Define the bundle/report contract: `.ptb` contents, export profiles, and the single-file CDN-loaded HTML report spec.
 - Define dormant-mode daemon spec: triggers, escalation policy, cooldowns, and service integration (systemd/launchd).
 - Define “galaxy-brain mode” contract: what math to show, how to render equations + numbers, and how to expose it in TUI/agent/report (section 7.8).
@@ -1206,6 +1226,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - Default: present the plan in a TUI with recommended actions pre-toggled; require confirmation before executing destructive actions.
 - Implement `--robot` to execute the pre-toggled plan without UI (subject to safety gates and `--dry-run`/`--shadow`).
 - Add an execution protocol: pre-flight checks, staged application (pause/throttle -> observe -> kill if still warranted), and post-action verification + logging.
+- Enforce action safety invariants: acquire the per-user “pt lock”, revalidate `(pid,start_id,uid,...)` immediately before each action step, and enforce default same-UID action scope (cross-UID requires explicit policy + privileges).
 - Always end the run with an “After” view + session summary + first-class export/report affordances (so it feels like a complete product, not a script).
 
 ### Phase 7: UX Refinement
@@ -1223,6 +1244,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - Define robot-mode safety gates: minimum posterior odds, FDR/alpha-investing budgets, allowlists/denylists, and maximum blast radius per run.
 - Add “data-loss” safety gates: open write FDs (sqlite WAL/journal, git locks, package manager locks) inflate kill loss and can hard-block `--robot` unless policy explicitly allows.
 - Add “unkillable state” handling: zombies (`Z`) route to parent reaping; uninterruptible sleep (`D`) defaults to investigate/mitigate rather than blind kill.
+- Add “identity/privilege” safety gates: PID reuse/identity mismatch blocks, and default same-UID enforcement (cross-UID requires explicit allowlist + `sudo`/root).
 - Implement dormant mode daemon + service integration (section 3.7), ensuring it never becomes the hog (strict overhead budget, cooldowns, and safe escalation).
 
 ### Phase 9: Shadow Mode and Calibration
@@ -1241,6 +1263,7 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - Redaction tests: confirm sensitive strings never appear in persisted telemetry
 - Automation tests: `--robot`/`--shadow`/`--dry-run` behavior (no prompts; correct gating; no actions in shadow/dry-run)
 - Safety gate tests: data-loss gate (open write handles), zombie handling (`Z`), and uninterruptible sleep (`D`) behavior.
+- Identity/coordination tests: PID reuse protection via `(pid,start_id,uid)` revalidation, default same-UID enforcement, and per-user “pt lock” behavior (manual vs daemon vs agent runs).
 - Agent CLI contract tests: schema invariants + exit codes + token-efficiency flags (`--compact`, `--fields`, `--only`) + JSONL progress stream.
 - Bundle/report tests: `.ptb` manifest/checksums, profile redaction guarantees, and report generator outputs (single HTML file with pinned CDN assets + SRI).
 - Offline report tests: `--embed-assets` produces a self-contained HTML file with no network fetch requirements.
