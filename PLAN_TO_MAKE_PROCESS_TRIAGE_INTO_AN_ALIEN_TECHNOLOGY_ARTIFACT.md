@@ -404,6 +404,7 @@ D) Change-point detection (closed-form)
 - k_t ~ Binomial(n_t, p_1) before τ, and k_t ~ Binomial(n_t, p_2) after τ
 - p_1 ~ Beta(alpha_1, beta_1), p_2 ~ Beta(alpha_2, beta_2)
 - Geometric prior on τ; posterior computed via Beta-binomial
+- Optional universal-sequence complement (CTW / prequential): for discretized activity states z_t (CPU busy/idle, IO burst/no-burst, scheduler-state bins), run a Context Tree Weighting (CTW) predictor to get p(z_t|z_{<t}) online, then treat the running prequential log-loss Σ -log p(z_t|z_{<t}) (or its regret vs a baseline) as a regime-shift / “something changed” signal feeding BOCPD and the closed-form core.
 
 E) Hierarchical priors by command category
 - Shrinkage by category (for CPU occupancy): p_{u,C,g} ~ Beta(alpha_{u,C,g}, beta_{u,C,g}), with empirical-Bayes shrinkage pulling (alpha_{u,C,g}, beta_{u,C,g}) toward a global class prior (alpha_C, beta_C).
@@ -422,6 +423,13 @@ G) CPU model as Markov-modulated Poisson / Levy subordinator
 H) Bayes factors for model selection
 - BF_{H1,H0} = [integral P(x|theta,H1)P(theta|H1) dtheta] / [integral P(x|theta,H0)P(theta|H0) dtheta]
 - log posterior odds = log BF + log prior odds
+- **Universal coding / MDL bridge (Rissanen/Shtarkov; prequential)**:
+  - Evidence-as-code-length: L_Bayes(x|H) = -log ∫ p(x|θ,H) π(θ|H) dθ
+  - Prequential (online) code length: L_pre(x_{1:T}|H) = Σ_{t=1..T} -log p(x_t | x_{<t}, H)
+  - Regret / anomaly evidence as compression gap: ΔL = L_pre(x|H_useful) - min_{H∈Alt} L_pre(x|H)
+  - Practical pt use: treat ΔL (and its time-uniform e-process form) as an interpretable, numerically stable “surprisal budget” that feeds the inference ledger, drift/misspecification gates (PPC/DRO), and selection control (FDR/e-FDR) without inventing new ad-hoc scores.
+  - Safe Bayes connection: pick the generalized-Bayes learning rate η by minimizing prequential log-loss (MDL-optimal tempering) so misspecified likelihood terms don’t create fake certainty.
+  - NML note (offline / baseline-building): where feasible, use normalized maximum likelihood / minimax-regret codes for command-category sequence models; when infeasible, approximate with mixture/Jeffreys codes or CTW-style mixtures.
 
 I) Optimal stopping + SPRT
 - Kill if log odds cross a boundary:
@@ -438,6 +446,10 @@ K) Value of Information
 L) Robust Bayes (imprecise priors)
 - P(C) in [lower P(C), upper P(C)]
 - only kill if even optimistic posterior favors abandoned
+- **Safe / generalized Bayes for misspecification (learning-rate Bayes)**:
+  - Temper updates: posterior_η(θ|x) ∝ π(θ) · p(x|θ)^η with η ∈ (0,1]
+  - In conjugate-exponential families this becomes “fractional sufficient statistics” (e.g., Beta-Binomial: α←α+ηk, β←β+η(n−k)), keeping runtime updates closed-form and log-domain stable.
+  - Choose η by prequential predictive performance (minimize cumulative log-loss / MDL regret), and/or clamp η down when PPC/drift gates trigger; this yields a principled “slow down learning under mismatch” mechanism that is explainable and conservative by default.
 
 M) Information-theoretic abnormality
 - KL divergence: D_KL(p_hat || p_useful)
@@ -538,10 +550,13 @@ AJ) Copula models for dependence (Archimedean/vine)
 AK) Risk-sensitive control / coherent risk measures
 - CVaR and entropic risk to penalize tail-risk kills
 - Closed-form for discrete outcome models
+- Extend to **spectral risk measures** (weighted tail averages) when you want a smooth knob between expectation and worst-case.
+- For sequential settings, use **time-consistent dynamic risk** (e.g., g-expectations / BSDE formulations) so “safe now, unsafe later” cannot appear via inconsistent aggregation; implement CVaR/entropic first, and reserve BSDE-level machinery for the always-on daemon / fleet policies where time-consistency matters.
 
 AL) Bayesian model averaging (BMA)
 - Weight multiple models by marginal likelihood
 - Avoids single-model brittleness; closed-form weights
+- Universal prediction view: BMA corresponds to a mixture code; **CTW** is a concrete, efficient BMA over context-tree models for discrete sequences, giving near-minimax redundancy bounds and producing an immediately usable prequential log-loss feature for anomaly/change detection.
 
 AM) Composite-hypothesis testing (mixture SPRT / GLR)
 - Generalized likelihood ratio for composite alternatives
@@ -568,6 +583,7 @@ AS) Conformal prediction (distribution-free coverage)
 AT) False Discovery Rate (FDR) control across many processes
 - Multiple-testing correction (Benjamini-Hochberg, local fdr) for kill recommendations
 - Prevents “1 false-kill in a thousand processes” during large scans
+- Post-selection caveat: pt selects/ranks candidates before acting/reporting; when reporting uncertainty *after selection* (top-K drilldowns, “most suspicious” dashboards), either (a) use selection-safe e-values/e-FDR rules (preferred under optional stopping), or (b) condition on the selection event (selective inference) so “top-K” reporting doesn’t silently inflate error guarantees.
 
 AU) Restless bandits / Whittle index policies
 - Schedule deep scans/instrumentation under overhead budgets
@@ -584,6 +600,7 @@ AW) Extreme value theory (POT/GPD)
 AX) Streaming sketches / heavy-hitter theory
 - Count-Min sketch / Space-Saving to summarize high-rate events (syscalls, bytes) at scale
 - Allows “collect everything” while staying low-overhead
+- Ultra-low-overhead localization when you can’t even keep per-PID counters: treat “culprit processes” as a sparse vector and use **compressed sensing / sparse recovery** on linear sketches (plus optional group-testing style probes) to identify a small suspect set for follow-up deep scans; never kill based on sparse recovery alone—use it only to spend probe budget where it matters.
 
 AY) Belief propagation / message passing on process tree
 - Exact sum-product on PPID trees for coupled state models (when tree-structured)
@@ -600,6 +617,7 @@ BA) Switching linear dynamical systems (IMM filter)
 BB) Online FDR / alpha-investing for sequential operations
 - Control false-kill risk over time as decisions accumulate
 - Complements batch BH FDR in 4.32
+- When candidate sets are adaptively chosen (delta mode, “only investigate changes”, top-K focus), treat the selection itself as part of the protocol: e-values/e-processes remain valid under optional stopping and adaptive selection; if you also publish post-selection intervals/claims, apply selective-inference adjustments rather than reusing naive marginal intervals.
 
 BC) Posterior predictive checks / Bayesian model criticism
 - Detect model misspecification by comparing observed traces to posterior predictive distributions
@@ -643,6 +661,8 @@ BK) Dormant mode (always-on guardian)
 BL) Anytime-valid inference (e-values / e-processes) for 24/7 monitoring
 - Use nonnegative supermartingales / “betting” style tests to get time-uniform validity under optional stopping
 - Natural fit for dormant mode: continuous monitoring without inflating false-alarm/false-kill risk over time
+- Game-theoretic probability lens (Shafer/Vovk): e-processes are literal capital processes of a bettor challenging a hypothesis; mixture betting (combining multiple betting strategies) gives robustness to misspecification and changing regimes with no loss of time-uniform validity.
+- Defensive forecasting / expert aggregation: combine multiple “alien sensors” (signatures, Bayes core, CTW code-length anomalies, drift gates) into a single calibrated forecast with provable regret/calibration guarantees, while still emitting a decomposable evidence ledger per component.
 
 BM) Time-uniform concentration inequalities (modern martingale bounds)
 - Always-valid confidence sequences for rates/drift (e.g., Freedman/Bernstein-style time-uniform bounds)
@@ -695,6 +715,7 @@ BU) Trajectory/predictive analysis
 - Predict: time until OOM, time until reclassification threshold crossed
 - Surface early warnings: "likely problematic in ~N hours"
 - Enables proactive intervention during maintenance windows
+- Optional pathwise feature extractor (rough paths / signature transforms): compute truncated path signatures of multivariate telemetry (CPU, IO, scheduler latency, RSS) over rolling windows; signatures capture nonlinear order/interactions beyond simple trends and can be logged as deterministic features feeding the closed-form decision core and trajectory warnings (no black-box ML required).
 
 BV) Blast radius / dependency graph visualization
 - ASCII/text process tree with annotations
@@ -864,6 +885,7 @@ All of the above ideas (A through CD) are integrated in the system design below.
 - wait channel: waiting_io/sleeping/waiting_child/running
 - child activity: active_children/idle_children/no_children
 - change-point statistics for CPU and IO
+- CTW prequential log-loss/regret on discretized activity sequences (universal sequence prediction; feeds change-point + anomaly evidence without ML)
 - survival term for runtime vs expected lifetime
 - dependency impact score: live sockets, client count, open files, service bindings
 - user intent signal: active TTY + recent shell + editor focus + project activity window
@@ -881,7 +903,9 @@ All of the above ideas (A through CD) are integrated in the system design below.
 - GPU utilization per PID (if present)
 - copula dependence parameters across CPU/IO/net
 - Kalman-smoothed CPU/load trend estimates
+- rough-path / signature-transform features of multivariate telemetry windows (pathwise interaction summaries)
 - martingale deviation bounds for sustained anomalies
+- MDL/code-length summaries (evidence-as-codelength, compression gaps) as first-class, explainable anomaly terms and calibration signals
 
 ### 3.3 Telemetry & Analytics Layer (Parquet-first, DuckDB query engine)
 Telemetry is a first-class system component, not an afterthought. It is the substrate for shadow-mode calibration, PAC-Bayes guarantees, FDR tuning, empirical Bayes hyperparameters, and manual “why did it do that?” debugging.
@@ -902,8 +926,8 @@ What gets logged (raw + derived + outcomes):
 - `runs`: `session_id`, host fingerprint, git commit, priors/policy snapshot hash, tool availability/capabilities, pt-core version.
 - `system_samples`: timestamped loadavg, PSI, memory pressure, swap, CPU frequency/residency, queueing proxies.
 - `proc_samples`: pid/ppid/pgid/sid/uid/state, cpu/rss/threads, tty/cwd/cmd categories, socket/client counts, cgroup identifiers, unit/container attribution (when available), and a stable start identifier (to guard against PID reuse).
-- `proc_features`: Hawkes/BOCPD/Kalman/IMM state, copula params, EVT tail stats, periodicity features, sketches/heavy-hitter summaries.
-- `proc_inference`: per-class log-likelihood terms, Bayes factors, posterior, lfdr, VOI, PPC flags, DRO drift scores.
+- `proc_features`: Hawkes/BOCPD/Kalman/IMM state, copula params, EVT tail stats, periodicity features, sketches/heavy-hitter summaries, CTW prequential log-loss/regret features, and (optional) rough-path signature features.
+- `proc_inference`: per-class log-likelihood terms, Bayes factors, posterior, lfdr, VOI, PPC flags, DRO drift scores, e-values/e-process evidence (when used), MDL/code-length anomaly terms, and Safe-Bayes learning-rate (η) state when tempering is active.
 - `decisions`: recommended action, expected loss, thresholds, FDR/alpha-investing state, safety gates triggered.
 - `math_ledger`: optional “galaxy-brain” cards (equations + values + intuition) tied to `(session_id, pid, card_id)`; stored only when `--galaxy-brain` is requested.
 - `actions` + `outcomes`: what was actually done (if anything), and what happened next (recovery, regressions, user override).
@@ -1332,6 +1356,7 @@ Two operating modes:
 
 Dormant mode mechanics:
 - Collect minimal signals at low frequency (loadavg, PSI, memory pressure, process count, top-N CPU by PID).
+- If per-PID attribution is unavailable or too expensive at daemon cadence, use sketches + sparse localization (compressed sensing / group-testing style probes) to propose a tiny suspect set, then spend the deep-scan budget only on those candidates (never take destructive actions on sketch-only evidence).
 - Maintain baselines and detect triggers (sustained load, PSI stall, runaway top-N CPU, orphan spikes).
 - Triggers should be time-aware and noise-robust (e.g., EWMA + change detection + “sustained for N seconds”), so the daemon does not flap.
 - Advanced trigger math (optional but on-theme): use time-uniform concentration / e-process style tests so “spring into action” decisions have explicit sequential error control.
@@ -1586,6 +1611,11 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 4.4 Bayes Factors for Model Selection
 - BF_{H1,H0} = [integral P(x|theta,H1)P(theta|H1) dtheta] / [integral P(x|theta,H0)P(theta|H0) dtheta]
 - log odds = log BF + log prior odds
+- MDL / universal coding interpretation (ties directly to explainability):
+  - -log marginal likelihood is a code length: L_Bayes(x|H) = -log ∫ p(x|θ,H) π(θ|H) dθ
+  - Online/prequential form: L_pre(x_{1:T}|H) = Σ_{t=1..T} -log p(x_t | x_{<t}, H)
+  - Comparing hypotheses by Bayes factor is comparing compression lengths: log BF_{H1,H0} = L_Bayes(x|H0) - L_Bayes(x|H1)
+  - Practical pt use: emit both “Bayes factor” and “bits of surprise” (code-length gap) in the ledger; this makes model choice and anomaly evidence legible while remaining numerically stable in log-domain.
 
 ### 4.5 Semi-Markov and Competing Hazards
 - hidden semi-Markov states S_t
@@ -1607,10 +1637,12 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - k_t ~ Binomial(n_t, p_1) before τ, and k_t ~ Binomial(n_t, p_2) after τ
 - p_1 ~ Beta(alpha_1, beta_1), p_2 ~ Beta(alpha_2, beta_2)
 - geometric prior on τ; posterior via Beta-binomial
+- Universal-sequence complement (CTW): for discretized activity sequences z_t, compute the CTW prequential log-loss ℓ_t = -log p_CTW(z_t|z_{<t}); sustained shifts in ℓ_t (or regret vs a baseline) are treated as regime-change evidence and logged as explainable features feeding the closed-form core.
 
 ### 4.7b Bayesian Online Change-Point Detection (BOCPD)
 - Run-length recursion with conjugate updates for CPU/IO event rates
 - Maintains posterior over change points for regime shifts
+- Optional emission upgrade for discrete activity states: use CTW as the online predictive distribution for z_t (variable-memory Markov structure) and run BOCPD on the resulting predictive stream (either directly on z_t with CTW likelihood, or on ℓ_t as a derived observation).
 
 ### 4.8 Information-Theoretic Abnormality
 - compute D_KL(p_hat || p_useful) for event-rate / Bernoulli-style features
@@ -1628,6 +1660,9 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 4.9 Robust Bayes (Imprecise Priors)
 - P(C) in [lower, upper]
 - compute lower and upper posteriors; kill only if even optimistic posterior favors abandoned
+- Safe Bayes / generalized Bayes tempering (misspecification guard):
+  - posterior_η(θ|x) ∝ π(θ) · p(x|θ)^η, η∈(0,1]
+  - choose η by minimizing prequential log-loss (MDL-optimal learning rate) and/or by policy when PPC/drift checks fail; keep η and its effect on log-likelihood contributions explicit in the evidence ledger.
 
 ### 4.10 Causal Intervention Models (do-calculus)
 - For each action a in {pause, throttle, kill}, define outcome O in {recover, no_recover}
@@ -1781,6 +1816,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
   - Space-Saving / Misra-Gries for heavy hitters
   - Reservoir sampling for representative stack traces / syscalls
 - Feed sketch summaries into Hawkes/marked-point-process layers without storing raw events
+- Optional sparse localization (compressed sensing / group testing): if per-PID counters are unavailable (or too expensive at daemon cadence), maintain linear sketches of per-PID activity and recover a small suspect set assuming sparsity; use this only to prioritize deep scans, never as direct kill evidence.
 
 ### 4.37 Belief Propagation on PPID Trees
 - For tree-structured coupling graphs, compute exact marginals via sum-product message passing
@@ -1805,10 +1841,15 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - e-process integration:
   - Use e-values as sequential evidence and update wealth with e-FDR control to ensure optional stopping validity
   - Emit current wealth, spend, and reward in the audit ledger so the safety budget is transparent
+- Adaptive selection / post-selection reporting:
+  - Delta mode and “top-K focus” are adaptive selection procedures; prefer e-values/e-processes (and e-FDR) because they retain validity under optional stopping and adaptive selection.
+  - If you publish post-selection uncertainty claims (intervals/credible bounds) about the selected set, apply selective-inference adjustments (conditioning on the selection event) rather than reusing naive marginal intervals.
+- Game-theoretic probability note: e-processes are betting strategies; mixture betting across multiple evidence components (Bayes core, CTW code-length anomalies, drift checks) yields robustness without sacrificing time-uniform validity.
 
 ### 4.41 Posterior Predictive Checks
 - Compare observed traces to posterior predictive distributions to detect misspecification
 - If PPC fails, widen priors / switch to more robust layers (Huberization, DRO, robust Bayes)
+- MDL/prequential adjunct: monitor predictive log-loss / code-length gaps (e.g., CTW prequential regret or -log posterior-predictive under the “useful” model). Sustained surprise is treated as a misspecification/drift trigger that automatically tightens safety gates and can reduce the Safe-Bayes learning rate η.
 
 ### 4.42 Distributionally Robust Optimization (DRO)
 - Replace expected loss with worst-case expected loss over an ambiguity set (e.g., Wasserstein ball)
@@ -1828,6 +1869,9 @@ For each resource metric (CPU, memory, IO rate), fit a trend model:
 - **Plateau detection**: identify if metric is stabilizing or continuing to grow
 
 Use Kalman filtering (4.23) to smooth noisy observations before trend fitting.
+
+#### Optional: Rough-Path / Signature Features
+In addition to low-dimensional trends, compute truncated path signatures of the multivariate telemetry stream (CPU, IO, scheduler latency, RSS) on rolling windows. Signatures capture nonlinear order/interactions (“what happened first, and how strongly did it couple?”) that linear/exponential trends can miss. Treat signatures strictly as deterministic feature extractors; downstream inference/decisioning remains closed-form and fully ledgered.
 
 #### Time-to-Threshold Prediction
 Given current value y_0, trend parameters, and a threshold θ (e.g., OOM limit, CPU saturation):
@@ -1857,6 +1901,7 @@ Track "normal" for each host over time:
 - Baseline CPU/memory utilization
 - Expected resource usage by time of day (diurnal patterns)
 - Command category distributions (what processes normally run)
+- Prequential code-length baselines for discretized activity sequences (e.g., CTW/mixture-code log-loss); “unexpected” behavior is a persistent regret spike rather than a single threshold exceedance.
 
 Use exponentially weighted moving averages with seasonal adjustments.
 
@@ -1909,6 +1954,9 @@ Goal: integrate pattern library matches (section 3.9) with Bayesian inference.
   - abandoned: keep=30, kill=1
   - zombie: keep=50, kill=1
   (note: zombies can’t be killed directly; interpret “kill” here as “resolve via parent reaping / restart parent”, see section 6)
+- Risk-sensitive variant (strongly recommended for `--robot`): replace E[L] with a coherent risk measure over posterior predictive loss (CVaR/spectral/entropic) so rare catastrophic false-kills dominate decisions.
+  - One canonical closed-form-friendly definition: CVaR_α(L) = min_η { η + (1/(1-α)) E[(L-η)_+] }.
+  - For sequential settings, prefer time-consistent dynamic risk (e.g., g-expectations / BSDE formulations) for policy-level guarantees; keep the implementation staged (CVaR/entropic first, BSDE-level machinery only if needed).
 
 ### 5.2 Sequential Probability Ratio Test (SPRT)
 - kill if:
@@ -1944,6 +1992,7 @@ Goal: integrate pattern library matches (section 3.9) with Bayesian inference.
 - If using e-values (anytime-valid), replace lfdr ranking with e-value ranking:
   - Sort e_i descending; choose largest k such that (1/k) * Σ_{i=1..k} (1 / e_(i)) ≤ α
   - Kill only that top-k set; this keeps the batch decision valid under optional stopping and repeated scans
+- Post-selection inference note: “top-K drilldowns” and delta-mode shortlists are adaptive selections. Prefer e-values/e-FDR for automation, and if you also publish uncertainty statements for the selected set, apply selective-inference adjustments (conditioning on the selection event) instead of reusing naive marginal intervals.
 
 ### 5.9 Budgeted Instrumentation Policy (Whittle / VOI)
 - Under overhead constraints, allocate expensive probes to the highest expected VOI per unit cost
