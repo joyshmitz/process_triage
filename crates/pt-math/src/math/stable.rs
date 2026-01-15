@@ -230,4 +230,34 @@ mod tests {
         let lbin = log_binomial(5, 2);
         assert!(approx_eq(lbin, 10.0f64.ln(), 1e-12));
     }
+
+    #[test]
+    fn log_sum_exp_nan_propagates() {
+        let out = log_sum_exp(&[0.0, f64::NAN]);
+        assert!(out.is_nan());
+    }
+
+    #[test]
+    fn log_add_exp_infinity_rules() {
+        let out = log_add_exp(f64::INFINITY, 1.0);
+        assert!(out.is_infinite() && out.is_sign_positive());
+
+        let out2 = log_add_exp(f64::NEG_INFINITY, 2.0);
+        assert!(approx_eq(out2, 2.0, 1e-12));
+    }
+
+    #[test]
+    fn log_sub_exp_invalid_cases() {
+        let out = log_sub_exp(1.0, 2.0);
+        assert!(out.is_nan());
+
+        let out2 = log_sub_exp(2.0, 2.0);
+        assert!(out2.is_infinite() && out2.is_sign_negative());
+    }
+
+    #[test]
+    fn log_gamma_negative_integer_is_nan() {
+        let out = log_gamma(-2.0);
+        assert!(out.is_nan());
+    }
 }
