@@ -19,7 +19,7 @@ use super::proc_parsers::{
     parse_cgroup, parse_environ, parse_fd, parse_io, parse_sched, parse_schedstat, parse_statm,
     parse_wchan, CgroupInfo, FdInfo, IoStats, MemStats, SchedInfo, SchedStats,
 };
-use pt_common::{ProcessId, StartId};
+use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -137,6 +137,33 @@ pub struct DeepScanRecord {
     // === Provenance ===
     /// Source of this record.
     pub source: String,
+
+    /// Identity quality indicator (provenance tracking).
+    pub identity_quality: IdentityQuality,
+}
+
+impl DeepScanRecord {
+    /// Extract a ProcessIdentity for revalidation during action execution.
+    ///
+    /// The ProcessIdentity captures the essential fields needed to verify
+    /// that a process is still the same incarnation before taking action.
+    pub fn to_identity(&self) -> ProcessIdentity {
+        ProcessIdentity::full(
+            self.pid.0,
+            self.start_id.clone(),
+            self.uid,
+            self.pgid,
+            self.sid,
+            self.identity_quality,
+        )
+    }
+
+    /// Check if this process can be safely targeted for automated actions.
+    ///
+    /// Returns false if identity quality is too weak for safe automation.
+    pub fn can_automate(&self) -> bool {
+        self.identity_quality.is_automatable()
+    }
 }
 
 /// Result of a deep scan operation.
@@ -284,6 +311,13 @@ fn scan_process(pid: u32, include_environ: bool) -> Result<DeepScanRecord, DeepS
         .ok()
         .map(|s| s.trim().to_string());
 
+    // Compute identity quality based on available data
+    let identity_quality = match (&boot_id, stat_info.starttime) {
+        (Some(_), starttime) if starttime > 0 => IdentityQuality::Full,
+        (None, starttime) if starttime > 0 => IdentityQuality::NoBootId,
+        _ => IdentityQuality::PidOnly,
+    };
+
     let start_id = compute_start_id(&boot_id, stat_info.starttime, pid);
 
     // Collect optional detailed stats (may fail due to permissions)
@@ -324,6 +358,7 @@ fn scan_process(pid: u32, include_environ: bool) -> Result<DeepScanRecord, DeepS
         environ,
         starttime: stat_info.starttime,
         source: "deep_scan".to_string(),
+        identity_quality,
     })
 }
 

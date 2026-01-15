@@ -23,6 +23,6 @@ pub use capabilities::{
 };
 pub use config::{Config, ConfigPaths, ConfigResolver, ConfigSnapshot, Policy, Priors};
 pub use error::{Error, Result};
-pub use id::{ProcessId, SessionId, StartId};
+pub use id::{IdentityQuality, ProcessId, ProcessIdentity, SessionId, StartId};
 pub use output::OutputFormat;
 pub use schema::SCHEMA_VERSION;
