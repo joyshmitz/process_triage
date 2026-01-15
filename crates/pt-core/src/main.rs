@@ -439,9 +439,9 @@ struct AgentListPriorsArgs {
     #[arg(long)]
     class: Option<String>,
 
-    /// Include all hyperparameters (verbose output)
-    #[arg(long, short = 'v')]
-    verbose: bool,
+    /// Include all hyperparameters (extended output)
+    #[arg(long)]
+    extended: bool,
 }
 
 #[derive(Args, Debug)]
@@ -2274,8 +2274,8 @@ fn run_agent_list_priors(global: &GlobalOpts, args: &AgentListPriorsArgs) -> Exi
         "classes": classes_data,
     });
 
-    // Add extended sections in verbose mode
-    if args.verbose {
+    // Add extended sections in extended mode
+    if args.extended {
         if !priors.hazard_regimes.is_empty() {
             response["hazard_regimes"] = serde_json::to_value(&priors.hazard_regimes).unwrap_or_default();
         }

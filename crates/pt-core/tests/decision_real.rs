@@ -80,8 +80,11 @@ fn test_policy_load_and_enforce_real() {
         has_active_tty: None,
         seconds_since_io: None,
         cwd_deleted: None,
+        process_state: None,
+        wchan: None,
+        critical_files: Vec::new(),
     };
-    
+
     let result = enforcer.check_action(&candidate, Action::Kill, true); // robot_mode=true
     
     assert!(!result.allowed, "Should be blocked by protected pattern");
