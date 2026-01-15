@@ -519,7 +519,7 @@ impl LivePreCheckProvider {
         let content = std::fs::read_to_string(&cgroup_path).ok()?;
 
         for line in content.lines() {
-            // Look for lines with .service, .scope, or .slice
+            // Look for lines with .service or .scope (not .slice - those aren't real supervision)
             if line.contains(".service") || line.contains(".scope") {
                 // Extract unit name from path like "0::/system.slice/nginx.service"
                 if let Some(start) = line.rfind('/') {
