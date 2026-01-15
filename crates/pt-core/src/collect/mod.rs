@@ -4,17 +4,26 @@
 //! - Quick scan via ps parsing (fast, universal)
 //! - Deep scan via /proc inspection (detailed, Linux-only)
 //! - Network connection collection
+//! - Cgroup and resource limit collection
+//! - Systemd unit detection
+//! - Container detection (Docker, K8s, etc.)
 //! - Tool runner for safe external command execution
 //!
 //! The collection layer produces structured records that feed into the
 //! inference engine for classification.
 
 #[cfg(target_os = "linux")]
+pub mod cgroup;
+#[cfg(target_os = "linux")]
+pub mod container;
+#[cfg(target_os = "linux")]
 mod deep_scan;
 #[cfg(target_os = "linux")]
 mod network;
 #[cfg(target_os = "linux")]
 mod proc_parsers;
+#[cfg(target_os = "linux")]
+pub mod systemd;
 mod quick_scan;
 pub mod tool_runner;
 mod types;
@@ -40,3 +49,24 @@ pub use tool_runner::{
     DEFAULT_MAX_PARALLEL, DEFAULT_TIMEOUT_SECS,
 };
 pub use types::{ProcessRecord, ProcessState, ScanResult, ScanMetadata};
+
+// Re-export cgroup types
+#[cfg(target_os = "linux")]
+pub use cgroup::{
+    collect_cgroup_details, collect_cgroup_from_content, effective_cores_from_quota, CgroupDetails,
+    CgroupProvenance, CgroupVersion, CpuLimitSource, CpuLimits, MemoryLimitSource, MemoryLimits,
+};
+
+// Re-export systemd types
+#[cfg(target_os = "linux")]
+pub use systemd::{
+    collect_systemd_unit, is_systemd_available, is_systemd_managed, parse_systemctl_output,
+    SystemdActiveState, SystemdDataSource, SystemdProvenance, SystemdUnit, SystemdUnitType,
+};
+
+// Re-export container types
+#[cfg(target_os = "linux")]
+pub use container::{
+    detect_container_from_cgroup, detect_container_from_markers, detect_kubernetes_from_env,
+    ContainerDetectionSource, ContainerInfo, ContainerProvenance, ContainerRuntime, KubernetesInfo,
+};
