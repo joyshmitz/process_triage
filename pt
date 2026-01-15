@@ -409,6 +409,78 @@ validate_script() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Atomic file replacement (prevents corruption on interruption)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Get file permissions (cross-platform: Linux stat vs BSD stat)
+get_file_permissions() {
+    local file="$1"
+
+    # Linux (GNU coreutils)
+    stat -c '%a' "$file" 2>/dev/null && return 0
+
+    # macOS/BSD
+    stat -f '%Lp' "$file" 2>/dev/null && return 0
+
+    # Fallback
+    echo "755"
+}
+
+# Atomically replace target file with source
+# mv is atomic on POSIX filesystems when on same filesystem
+atomic_replace() {
+    local source="$1"
+    local target="$2"
+
+    # Preserve permissions from original if it exists
+    local perms
+    if [[ -f "$target" ]]; then
+        perms=$(get_file_permissions "$target")
+    else
+        perms="755"
+    fi
+
+    # Set permissions on new file
+    chmod "$perms" "$source"
+
+    # Atomic move (only atomic if on same filesystem)
+    if ! mv "$source" "$target"; then
+        log_error "Failed to replace $target"
+        log_error "The original file is unchanged."
+        return 1
+    fi
+
+    log_success "Replaced $target"
+    return 0
+}
+
+# Get path to currently running script (resolving symlinks)
+get_script_path() {
+    # Try readlink -f first (Linux)
+    readlink -f "${BASH_SOURCE[0]}" 2>/dev/null && return 0
+
+    # Try realpath (macOS with coreutils, or built-in on newer versions)
+    realpath "${BASH_SOURCE[0]}" 2>/dev/null && return 0
+
+    # Fallback: use BASH_SOURCE directly (may not resolve symlinks)
+    echo "${BASH_SOURCE[0]}"
+}
+
+# Check if we can write to target directory
+check_write_permission() {
+    local target="$1"
+    local target_dir="${target%/*}"
+
+    if [[ ! -w "$target_dir" ]]; then
+        log_error "Cannot write to $target_dir"
+        log_error "Try running with sudo, or move pt to a writable location."
+        return 1
+    fi
+
+    return 0
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Gum wrapper functions with ANSI fallback
 # ──────────────────────────────────────────────────────────────────────────────
 
