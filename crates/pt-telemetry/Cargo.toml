@@ -16,6 +16,8 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "1"
 
+dirs = "5"
+
 # Internal crates
 pt-common = { path = "../pt-common" }
 
