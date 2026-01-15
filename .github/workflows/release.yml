@@ -1,0 +1,261 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (no actual release)'
+        required: false
+        default: 'true'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ==========================================================================
+  # Validate version consistency before building
+  # ==========================================================================
+  validate-version:
+    name: Validate Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: extract
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF#refs/tags/v}"
+          else
+            # For workflow_dispatch, use VERSION file
+            version=$(cat VERSION | tr -d '\n')
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Extracted version: $version"
+
+      - name: Validate VERSION file matches
+        run: |
+          file_version=$(cat VERSION | tr -d '\n')
+          tag_version="${{ steps.extract.outputs.version }}"
+
+          echo "VERSION file: $file_version"
+          echo "Tag version:  $tag_version"
+
+          if [[ "$file_version" != "$tag_version" ]]; then
+            echo "::error::Version mismatch!"
+            echo "VERSION file contains: $file_version"
+            echo "Tag version is:        $tag_version"
+            exit 1
+          fi
+
+          echo "✓ Versions match: $tag_version"
+
+      - name: Validate pt script version
+        run: |
+          script_version=$(grep 'readonly VERSION=' pt | head -1 | sed 's/.*VERSION="\([^"]*\)".*/\1/')
+          tag_version="${{ steps.extract.outputs.version }}"
+
+          echo "pt script version: $script_version"
+          echo "Tag version:       $tag_version"
+
+          if [[ "$script_version" != "$tag_version" ]]; then
+            echo "::error::pt script version mismatch!"
+            exit 1
+          fi
+
+          echo "✓ pt script version matches"
+
+  # ==========================================================================
+  # Build pt-core for all platforms
+  # ==========================================================================
+  build-pt-core:
+    name: Build pt-core (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    needs: validate-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: pt-core-linux-x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact_name: pt-core-linux-aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: pt-core-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact_name: pt-core-macos-aarch64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "crates -> target"
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: |
+          cargo build --release -p pt-core --target ${{ matrix.target }}
+
+      - name: Verify binary version
+        if: matrix.target != 'aarch64-apple-darwin' && matrix.target != 'aarch64-unknown-linux-gnu'
+        run: |
+          binary_version=$(./target/${{ matrix.target }}/release/pt-core --version | awk '{print $2}')
+          expected_version="${{ needs.validate-version.outputs.version }}"
+
+          echo "Binary version:   $binary_version"
+          echo "Expected version: $expected_version"
+
+          if [[ "$binary_version" != "$expected_version" ]]; then
+            echo "::error::Binary version mismatch!"
+            exit 1
+          fi
+
+          echo "✓ Binary version matches"
+
+      - name: Package binary
+        run: |
+          version="${{ needs.validate-version.outputs.version }}"
+          mkdir -p dist
+
+          # Copy binary
+          cp target/${{ matrix.target }}/release/pt-core dist/
+
+          # Create tarball
+          cd dist
+          tar -czvf ${{ matrix.artifact_name }}-${version}.tar.gz pt-core
+          rm pt-core
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/*.tar.gz
+          retention-days: 7
+
+  # ==========================================================================
+  # Assemble release
+  # ==========================================================================
+  assemble-release:
+    name: Assemble Release
+    runs-on: ubuntu-latest
+    needs: [validate-version, build-pt-core]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          version="${{ needs.validate-version.outputs.version }}"
+          mkdir -p release
+
+          # Copy wrapper and installer
+          cp pt release/
+          cp install.sh release/
+
+          # Move all built binaries
+          for dir in artifacts/*/; do
+            if [ -d "$dir" ]; then
+              mv "$dir"/*.tar.gz release/ || true
+            fi
+          done
+
+          # List release contents
+          echo "Release contents:"
+          ls -la release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum * > checksums.sha256
+          echo ""
+          echo "Checksums:"
+          cat checksums.sha256
+
+      - name: Generate release notes
+        run: |
+          version="${{ needs.validate-version.outputs.version }}"
+          cat > release-notes.md << 'EOF'
+          ## Installation
+
+          ### Quick Install (recommended)
+          ```bash
+          curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+          ```
+
+          ### Verify Installation
+          ```bash
+          VERIFY=1 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+          ```
+
+          ### Manual Installation
+          1. Download the appropriate `pt-core-*` archive for your platform
+          2. Extract: `tar -xzf pt-core-*.tar.gz`
+          3. Move to PATH: `mv pt-core ~/.local/bin/`
+          4. Download `pt` wrapper and `install.sh`
+          5. Verify checksums: `sha256sum -c checksums.sha256`
+
+          ## Checksums
+          All release artifacts include SHA-256 checksums in `checksums.sha256`.
+
+          ## What's Included
+          - `pt` - Main bash wrapper for interactive use
+          - `install.sh` - Self-updating installer script
+          - `pt-core-*` - Platform-specific Rust binaries
+          - `checksums.sha256` - SHA-256 checksums for verification
+
+          ## Supported Platforms
+          - Linux x86_64 (Intel/AMD 64-bit)
+          - Linux aarch64 (ARM 64-bit)
+          - macOS x86_64 (Intel Macs)
+          - macOS aarch64 (Apple Silicon)
+          EOF
+
+          echo ""
+          echo "Release notes generated"
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' || github.event.inputs.dry_run != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: v${{ needs.validate-version.outputs.version }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release artifacts (dry run)
+        if: github.event.inputs.dry_run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dry-run
+          path: release/
+          retention-days: 7
