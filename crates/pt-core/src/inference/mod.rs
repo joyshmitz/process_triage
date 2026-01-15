@@ -2,6 +2,7 @@
 
 pub mod belief_prop;
 pub mod bocpd;
+pub mod conformal;
 pub mod evt;
 pub mod hawkes;
 pub mod hazard;
@@ -21,6 +22,11 @@ pub use belief_prop::{
 pub use bocpd::{
     BatchResult, BocpdConfig, BocpdDetector, BocpdError, BocpdEvidence, BocpdUpdateResult,
     ChangePoint, EmissionModel,
+};
+pub use conformal::{
+    AdaptiveConformalRegressor, BlockedConformalRegressor, ConformalClassifier, ConformalConfig,
+    ConformalError, ConformalEvidence, ConformalInterval, ConformalPredictionSet,
+    ConformalRegressor,
 };
 pub use evt::{
     BatchEvtAnalyzer, EstimationMethod, EvtError, EvtEvidence, GpdConfig, GpdFitter, GpdResult,
