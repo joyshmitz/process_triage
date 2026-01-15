@@ -10,7 +10,8 @@
 use clap::{Args, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
 use pt_core::config::{load_config, ConfigError, ConfigOptions};
-use pt_core::events::{JsonlWriter, ProgressEmitter};
+use pt_core::capabilities::{get_capabilities, ToolCapability};
+use pt_core::events::{JsonlWriter, Phase, ProgressEmitter, ProgressEvent};
 use pt_core::exit_codes::ExitCode;
 use pt_core::session::{SessionContext, SessionManifest, SessionMode, SessionState, SessionStore};
 use std::path::PathBuf;
@@ -547,6 +548,15 @@ fn run_interactive(global: &GlobalOpts, _args: &RunArgs) -> ExitCode {
 
 use pt_core::collect::{quick_scan, QuickScanOptions};
 
+fn progress_emitter(global: &GlobalOpts) -> Option<Arc<dyn ProgressEmitter>> {
+    match global.format {
+        OutputFormat::Json | OutputFormat::Jsonl => {
+            Some(Arc::new(JsonlWriter::new(std::io::stderr())))
+        }
+        _ => None,
+    }
+}
+
 fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
     let ctx = LogContext::new(
         pt_core::logging::generate_run_id(),
@@ -571,12 +581,7 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
         );
     }
 
-    let progress: Option<Arc<dyn ProgressEmitter>> = match global.format {
-        OutputFormat::Json | OutputFormat::Jsonl => {
-            Some(Arc::new(JsonlWriter::new(std::io::stderr())))
-        }
-        _ => None,
-    };
+    let progress = progress_emitter(global);
 
     // Configure scan options
     let options = QuickScanOptions {
@@ -1187,31 +1192,162 @@ fn output_stub_with_session(global: &GlobalOpts, session_id: &SessionId, command
 fn output_capabilities(global: &GlobalOpts) {
     let session_id = SessionId::new();
 
-    // Minimal capabilities stub - will be populated from manifest
-    let capabilities = serde_json::json!({
+    // Detect actual system capabilities (get_capabilities handles cache internally)
+    let caps = get_capabilities();
+
+    // Build tools map for output
+    let mut tools_output = serde_json::Map::new();
+    let tool_list: [(&str, &ToolCapability); 14] = [
+        ("ps", &caps.tools.ps),
+        ("lsof", &caps.tools.lsof),
+        ("ss", &caps.tools.ss),
+        ("netstat", &caps.tools.netstat),
+        ("perf", &caps.tools.perf),
+        ("strace", &caps.tools.strace),
+        ("dtrace", &caps.tools.dtrace),
+        ("bpftrace", &caps.tools.bpftrace),
+        ("systemctl", &caps.tools.systemctl),
+        ("docker", &caps.tools.docker),
+        ("podman", &caps.tools.podman),
+        ("nice", &caps.tools.nice),
+        ("renice", &caps.tools.renice),
+        ("ionice", &caps.tools.ionice),
+    ];
+    for (name, tool) in tool_list {
+        let mut tool_info = serde_json::Map::new();
+        tool_info.insert("available".to_string(), serde_json::Value::Bool(tool.available));
+        if let Some(ref v) = tool.version {
+            tool_info.insert("version".to_string(), serde_json::Value::String(v.clone()));
+        }
+        if let Some(ref p) = tool.path {
+            tool_info.insert("path".to_string(), serde_json::Value::String(p.clone()));
+        }
+        tool_info.insert("works".to_string(), serde_json::Value::Bool(tool.works));
+        if !tool.available {
+            tool_info.insert(
+                "reason".to_string(),
+                serde_json::Value::String(
+                    tool.error.clone().unwrap_or_else(|| "not installed".into()),
+                ),
+            );
+        }
+        tools_output.insert(name.to_string(), serde_json::Value::Object(tool_info));
+    }
+
+    let capabilities_json = serde_json::json!({
         "schema_version": SCHEMA_VERSION,
         "session_id": session_id.0,
         "generated_at": chrono::Utc::now().to_rfc3339(),
         "os": {
-            "family": std::env::consts::OS,
-            "arch": std::env::consts::ARCH,
+            "family": caps.platform.os,
+            "arch": caps.platform.arch,
+            "kernel": caps.platform.kernel_release,
+            "in_container": caps.platform.in_container,
+            "container_runtime": caps.platform.container_runtime,
         },
-        "tools": {},
-        "message": "Full capabilities manifest not loaded (use --capabilities or PT_CAPABILITIES_MANIFEST)"
+        "tools": tools_output,
+        "permissions": {
+            "effective_uid": caps.permissions.effective_uid,
+            "is_root": caps.permissions.is_root,
+            "can_sudo": caps.permissions.can_sudo,
+            "can_read_others_procs": caps.permissions.can_read_others_procs,
+            "can_signal_others": caps.permissions.can_signal_others,
+            "linux_capabilities": caps.permissions.linux_capabilities,
+        },
+        "data_sources": {
+            "procfs": caps.data_sources.procfs,
+            "sysfs": caps.data_sources.sysfs,
+            "perf_events": caps.data_sources.perf_events,
+            "ebpf": caps.data_sources.ebpf,
+            "schedstat": caps.data_sources.schedstat,
+            "cgroup_v1": caps.data_sources.cgroup_v1,
+            "cgroup_v2": caps.data_sources.cgroup_v2,
+        },
+        "supervisors": {
+            "systemd": caps.supervisors.systemd,
+            "launchd": caps.supervisors.launchd,
+            "pm2": caps.supervisors.pm2,
+            "supervisord": caps.supervisors.supervisord,
+            "docker_daemon": caps.supervisors.docker_daemon,
+            "podman": caps.supervisors.podman_available,
+            "kubernetes": caps.supervisors.kubernetes,
+        },
+        "actions": {
+            "kill": caps.actions.kill,
+            "pause": caps.actions.pause,
+            "renice": caps.actions.renice,
+            "ionice": caps.actions.ionice,
+            "cgroup_freeze": caps.actions.cgroup_freeze,
+            "cgroup_throttle": caps.actions.cgroup_throttle,
+            "cpuset_quarantine": caps.actions.cpuset_quarantine,
+        },
+        "features": {
+            "deep_scan": caps.can_deep_scan(),
+            "maximal_scan": caps.can_maximal_scan(),
+        },
+        "detected_at": caps.detected_at,
     });
 
     match global.format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&capabilities).unwrap());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&capabilities_json).unwrap()
+            );
         }
         OutputFormat::Exitcode => {}
         _ => {
             println!("# Capabilities");
             println!();
-            println!("OS: {} ({})", std::env::consts::OS, std::env::consts::ARCH);
+            println!("## Platform");
+            println!(
+                "OS: {} ({}) kernel: {}",
+                caps.platform.os,
+                caps.platform.arch,
+                caps.platform.kernel_release.as_deref().unwrap_or("unknown")
+            );
+            if caps.platform.in_container {
+                println!(
+                    "Container: {} ({})",
+                    caps.platform.in_container,
+                    caps.platform
+                        .container_runtime
+                        .as_deref()
+                        .unwrap_or("unknown")
+                );
+            }
             println!();
-            println!("Note: Full capabilities manifest not loaded.");
-            println!("Use --capabilities <path> or set PT_CAPABILITIES_MANIFEST");
+            println!("## Permissions");
+            println!("UID: {} (root: {})", caps.permissions.effective_uid, caps.permissions.is_root);
+            println!("Sudo: {}", caps.permissions.can_sudo);
+            println!("Read others: {}", caps.permissions.can_read_others_procs);
+            println!("Signal others: {}", caps.permissions.can_signal_others);
+            println!();
+            println!("## Tools ({}/{} available)", caps.tools.available_count(), caps.tools.total_count());
+            for (name, tool) in [
+                ("ps", &caps.tools.ps),
+                ("lsof", &caps.tools.lsof),
+                ("perf", &caps.tools.perf),
+                ("strace", &caps.tools.strace),
+                ("bpftrace", &caps.tools.bpftrace),
+            ] {
+                let status = if tool.works {
+                    format!("ok ({})", tool.version.as_deref().unwrap_or("?"))
+                } else if tool.available {
+                    "broken".to_string()
+                } else {
+                    "not found".to_string()
+                };
+                println!("  {}: {}", name, status);
+            }
+            println!();
+            println!("## Actions ({}/{} available)", caps.actions.available_count(), caps.actions.total_count());
+            println!("  kill: {}, pause: {}, renice: {}", caps.actions.kill, caps.actions.pause, caps.actions.renice);
+            println!("  cgroup_freeze: {}, cgroup_throttle: {}", caps.actions.cgroup_freeze, caps.actions.cgroup_throttle);
+            println!();
+            println!("## Features");
+            println!("  deep_scan: {}", caps.can_deep_scan());
+            println!("  maximal_scan: {}", caps.can_maximal_scan());
         }
     }
 }
@@ -1378,6 +1514,15 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
 
     // Update manifest state (best-effort; do not fail the whole command for manifest update).
     let _ = handle.update_state(SessionState::Planned);
+
+    if let Some(emitter) = progress_emitter(global) {
+        emitter.emit(
+            ProgressEvent::new(pt_core::events::event_names::PLAN_READY, Phase::Plan)
+                .with_session_id(session_id.to_string())
+                .with_detail("plan_path", plan_path.display().to_string())
+                .with_detail("status", "stub"),
+        );
+    }
 
     match global.format {
         OutputFormat::Json => {
