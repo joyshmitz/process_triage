@@ -294,7 +294,11 @@ impl ToolRunner {
         // Check budget before running
         if self.budget_exhausted() {
             let used = self.used_ms.load(Ordering::SeqCst);
-            warn!(used_ms = used, budget_ms = self.config.budget_ms, "budget exhausted");
+            warn!(
+                used_ms = used,
+                budget_ms = self.config.budget_ms,
+                "budget exhausted"
+            );
             return Err(ToolError::BudgetExhausted {
                 used_ms: used,
                 budget_ms: self.config.budget_ms,
@@ -382,8 +386,7 @@ impl ToolRunner {
         let max_parallel = self.config.max_parallel;
         info!(
             count = specs.len(),
-            max_parallel,
-            "running tools in parallel"
+            max_parallel, "running tools in parallel"
         );
 
         // Use scoped threads to run in parallel with limited concurrency
@@ -396,7 +399,10 @@ impl ToolRunner {
                         .map(|spec| s.spawn(|| self.run(spec)))
                         .collect();
 
-                    handles.into_iter().map(|h| h.join().unwrap()).collect::<Vec<_>>()
+                    handles
+                        .into_iter()
+                        .map(|h| h.join().unwrap())
+                        .collect::<Vec<_>>()
                 })
             })
             .collect();
@@ -550,10 +556,12 @@ impl ToolRunner {
                 Ok(Some(status)) => {
                     // Process exited, drain remaining output
                     if let Some(ref mut out) = stdout {
-                        let _ = Self::drain_to_limit(out, &mut stdout_buf, max_output, &mut truncated);
+                        let _ =
+                            Self::drain_to_limit(out, &mut stdout_buf, max_output, &mut truncated);
                     }
                     if let Some(ref mut err) = stderr {
-                        let _ = Self::drain_to_limit(err, &mut stderr_buf, max_output, &mut truncated);
+                        let _ =
+                            Self::drain_to_limit(err, &mut stderr_buf, max_output, &mut truncated);
                     }
 
                     let exit_code = status.code();
@@ -869,11 +877,7 @@ mod tests {
     #[test]
     fn test_command_not_found() {
         let runner = test_runner();
-        let result = runner.run_tool(
-            "/nonexistent/command/that/does/not/exist",
-            &[],
-            None,
-        );
+        let result = runner.run_tool("/nonexistent/command/that/does/not/exist", &[], None);
 
         assert!(result.is_err());
         matches!(result.unwrap_err(), ToolError::CommandNotFound(_));
@@ -903,7 +907,11 @@ mod tests {
 
         assert!(result.is_ok(), "result: {:?}", result);
         let output = result.unwrap();
-        assert!(output.timed_out, "Expected timed_out=true, got: {:?}", output);
+        assert!(
+            output.timed_out,
+            "Expected timed_out=true, got: {:?}",
+            output
+        );
         // Process should have been killed
         assert!(output.duration < Duration::from_secs(2));
     }

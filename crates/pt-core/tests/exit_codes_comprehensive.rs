@@ -294,7 +294,10 @@ mod code_name {
         assert_eq!(ExitCode::ActionsOk.code_name(), "OK_APPLIED");
         assert_eq!(ExitCode::PartialFail.code_name(), "ERR_PARTIAL");
         assert_eq!(ExitCode::PolicyBlocked.code_name(), "ERR_BLOCKED");
-        assert_eq!(ExitCode::GoalUnreachable.code_name(), "ERR_GOAL_UNREACHABLE");
+        assert_eq!(
+            ExitCode::GoalUnreachable.code_name(),
+            "ERR_GOAL_UNREACHABLE"
+        );
         assert_eq!(ExitCode::Interrupted.code_name(), "ERR_INTERRUPTED");
     }
 
@@ -369,7 +372,12 @@ mod display {
         ];
 
         for (code, expected) in codes_and_expected {
-            assert_eq!(format!("{}", code), expected, "Display mismatch for {:?}", code);
+            assert_eq!(
+                format!("{}", code),
+                expected,
+                "Display mismatch for {:?}",
+                code
+            );
         }
     }
 }
@@ -536,23 +544,59 @@ mod stability {
         assert_eq!(ExitCode::PlanReady.as_i32(), 1, "PlanReady must be 1");
         assert_eq!(ExitCode::ActionsOk.as_i32(), 2, "ActionsOk must be 2");
         assert_eq!(ExitCode::PartialFail.as_i32(), 3, "PartialFail must be 3");
-        assert_eq!(ExitCode::PolicyBlocked.as_i32(), 4, "PolicyBlocked must be 4");
-        assert_eq!(ExitCode::GoalUnreachable.as_i32(), 5, "GoalUnreachable must be 5");
+        assert_eq!(
+            ExitCode::PolicyBlocked.as_i32(),
+            4,
+            "PolicyBlocked must be 4"
+        );
+        assert_eq!(
+            ExitCode::GoalUnreachable.as_i32(),
+            5,
+            "GoalUnreachable must be 5"
+        );
         assert_eq!(ExitCode::Interrupted.as_i32(), 6, "Interrupted must be 6");
 
         // User / Environment Errors (10-19)
         assert_eq!(ExitCode::ArgsError.as_i32(), 10, "ArgsError must be 10");
-        assert_eq!(ExitCode::CapabilityError.as_i32(), 11, "CapabilityError must be 11");
-        assert_eq!(ExitCode::PermissionError.as_i32(), 12, "PermissionError must be 12");
-        assert_eq!(ExitCode::VersionError.as_i32(), 13, "VersionError must be 13");
+        assert_eq!(
+            ExitCode::CapabilityError.as_i32(),
+            11,
+            "CapabilityError must be 11"
+        );
+        assert_eq!(
+            ExitCode::PermissionError.as_i32(),
+            12,
+            "PermissionError must be 12"
+        );
+        assert_eq!(
+            ExitCode::VersionError.as_i32(),
+            13,
+            "VersionError must be 13"
+        );
         assert_eq!(ExitCode::LockError.as_i32(), 14, "LockError must be 14");
-        assert_eq!(ExitCode::SessionError.as_i32(), 15, "SessionError must be 15");
-        assert_eq!(ExitCode::IdentityError.as_i32(), 16, "IdentityError must be 16");
+        assert_eq!(
+            ExitCode::SessionError.as_i32(),
+            15,
+            "SessionError must be 15"
+        );
+        assert_eq!(
+            ExitCode::IdentityError.as_i32(),
+            16,
+            "IdentityError must be 16"
+        );
 
         // Internal Errors (20-29)
-        assert_eq!(ExitCode::InternalError.as_i32(), 20, "InternalError must be 20");
+        assert_eq!(
+            ExitCode::InternalError.as_i32(),
+            20,
+            "InternalError must be 20"
+        );
         assert_eq!(ExitCode::IoError.as_i32(), 21, "IoError must be 21");
-        assert_eq!(ExitCode::TimeoutError.as_i32(), 22, "TimeoutError must be 22");
+        assert_eq!(
+            ExitCode::TimeoutError.as_i32(),
+            22,
+            "TimeoutError must be 22"
+        );
     }
 
     /// Code names are used in JSON output and must remain stable.
@@ -563,7 +607,10 @@ mod stability {
         assert_eq!(ExitCode::ActionsOk.code_name(), "OK_APPLIED");
         assert_eq!(ExitCode::PartialFail.code_name(), "ERR_PARTIAL");
         assert_eq!(ExitCode::PolicyBlocked.code_name(), "ERR_BLOCKED");
-        assert_eq!(ExitCode::GoalUnreachable.code_name(), "ERR_GOAL_UNREACHABLE");
+        assert_eq!(
+            ExitCode::GoalUnreachable.code_name(),
+            "ERR_GOAL_UNREACHABLE"
+        );
         assert_eq!(ExitCode::Interrupted.code_name(), "ERR_INTERRUPTED");
         assert_eq!(ExitCode::ArgsError.code_name(), "ERR_ARGS");
         assert_eq!(ExitCode::CapabilityError.code_name(), "ERR_CAPABILITY");

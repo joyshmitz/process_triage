@@ -47,9 +47,8 @@ use tracing_subscriber::{fmt, EnvFilter};
 /// Must be called once at startup before any logging occurs.
 /// Respects environment variables PT_LOG, RUST_LOG, and PT_LOG_FORMAT.
 pub fn init_logging(config: &LogConfig) {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        EnvFilter::new(format!("pt_core={}", config.level))
-    });
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(format!("pt_core={}", config.level)));
 
     match config.format {
         LogFormat::Human => {
@@ -250,14 +249,8 @@ mod tests {
 
     #[test]
     fn test_stage_serialization() {
-        assert_eq!(
-            serde_json::to_string(&Stage::Scan).unwrap(),
-            "\"scan\""
-        );
-        assert_eq!(
-            serde_json::to_string(&Stage::Infer).unwrap(),
-            "\"infer\""
-        );
+        assert_eq!(serde_json::to_string(&Stage::Scan).unwrap(), "\"scan\"");
+        assert_eq!(serde_json::to_string(&Stage::Infer).unwrap(), "\"infer\"");
     }
 
     #[test]

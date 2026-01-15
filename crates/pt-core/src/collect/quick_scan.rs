@@ -82,9 +82,10 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
         .spawn()
         .map_err(|e| QuickScanError::CommandFailed(e.to_string()))?;
 
-    let stdout = child.stdout.take().ok_or_else(|| {
-        QuickScanError::CommandFailed("Failed to capture stdout".to_string())
-    })?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| QuickScanError::CommandFailed("Failed to capture stdout".to_string()))?;
 
     let reader = BufReader::new(stdout);
     let mut processes = Vec::new();
@@ -169,10 +170,7 @@ fn read_boot_id() -> Option<String> {
 }
 
 /// Build the ps command with platform-specific format string.
-fn build_ps_command(
-    platform: &str,
-    options: &QuickScanOptions,
-) -> Result<Command, QuickScanError> {
+fn build_ps_command(platform: &str, options: &QuickScanOptions) -> Result<Command, QuickScanError> {
     let mut cmd = Command::new("ps");
 
     match platform {
@@ -296,10 +294,7 @@ fn parse_ps_line(
 }
 
 /// Parse timing fields from ps output.
-fn parse_timing_fields(
-    platform: &str,
-    fields: &[&str],
-) -> Result<(i64, Duration), String> {
+fn parse_timing_fields(platform: &str, fields: &[&str]) -> Result<(i64, Duration), String> {
     // lstart is fields 11-15 (day month date time year) for Linux
     // etimes is field after that (seconds since start)
 
@@ -493,7 +488,10 @@ mod tests {
     #[test]
     fn test_parse_etime_days() {
         assert_eq!(parse_etime_format("1-00:00:00"), Some(86400));
-        assert_eq!(parse_etime_format("2-12:30:15"), Some(2 * 86400 + 12 * 3600 + 30 * 60 + 15));
+        assert_eq!(
+            parse_etime_format("2-12:30:15"),
+            Some(2 * 86400 + 12 * 3600 + 30 * 60 + 15)
+        );
     }
 
     #[test]

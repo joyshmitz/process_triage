@@ -206,7 +206,9 @@ pub fn collect_cgroup_from_content(
             // Cgroup v1
             has_v1 = true;
             for controller in controllers.split(',') {
-                details.v1_paths.insert(controller.to_string(), path.to_string());
+                details
+                    .v1_paths
+                    .insert(controller.to_string(), path.to_string());
             }
         }
     }
@@ -305,10 +307,9 @@ fn collect_cpu_limits(details: &mut CgroupDetails, _pid: u32) {
             provenance.limit_paths_tried.push(quota_path.clone());
             provenance.limit_paths_tried.push(period_path.clone());
 
-            if let (Some(quota), Some(period)) = (
-                read_i64_file(&quota_path),
-                read_u64_file(&period_path),
-            ) {
+            if let (Some(quota), Some(period)) =
+                (read_i64_file(&quota_path), read_u64_file(&period_path))
+            {
                 limits.quota_us = if quota < 0 { None } else { Some(quota) };
                 limits.period_us = Some(period);
                 limits.source = CpuLimitSource::CgroupV1Cfs;
@@ -547,7 +548,11 @@ mod tests {
     fn test_read_cpu_max_unlimited() {
         let content = "max 100000";
         let parts: Vec<&str> = content.trim().split_whitespace().collect();
-        let quota = if parts[0] == "max" { None } else { parts[0].parse::<i64>().ok() };
+        let quota = if parts[0] == "max" {
+            None
+        } else {
+            parts[0].parse::<i64>().ok()
+        };
         let period = parts[1].parse::<u64>().ok();
 
         assert_eq!(quota, None);

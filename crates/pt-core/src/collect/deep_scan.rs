@@ -284,9 +284,8 @@ fn scan_process(pid: u32, include_environ: bool) -> Result<DeepScanRecord, DeepS
     }
 
     // Parse /proc/[pid]/stat for core info
-    let stat_content = fs::read_to_string(format!("{}/stat", proc_path)).map_err(|_| {
-        DeepScanError::PermissionDenied(pid)
-    })?;
+    let stat_content = fs::read_to_string(format!("{}/stat", proc_path))
+        .map_err(|_| DeepScanError::PermissionDenied(pid))?;
     let stat_info = parse_stat(&stat_content, pid)?;
 
     // Parse /proc/[pid]/status for UID and username
@@ -388,18 +387,22 @@ fn parse_stat(content: &str, pid: u32) -> Result<StatInfo, DeepScanError> {
         pid,
         message: "Missing comm start".to_string(),
     })?;
-    let comm_end = content.rfind(')').ok_or_else(|| DeepScanError::ParseError {
-        pid,
-        message: "Missing comm end".to_string(),
-    })?;
+    let comm_end = content
+        .rfind(')')
+        .ok_or_else(|| DeepScanError::ParseError {
+            pid,
+            message: "Missing comm end".to_string(),
+        })?;
 
     let comm = content[comm_start + 1..comm_end].to_string();
 
     // Safely skip ") " after comm - use get() to avoid panic on truncated content
-    let after_comm = content.get(comm_end + 2..).ok_or_else(|| DeepScanError::ParseError {
-        pid,
-        message: "Stat content truncated after comm".to_string(),
-    })?;
+    let after_comm = content
+        .get(comm_end + 2..)
+        .ok_or_else(|| DeepScanError::ParseError {
+            pid,
+            message: "Stat content truncated after comm".to_string(),
+        })?;
 
     let fields: Vec<&str> = after_comm.split_whitespace().collect();
     if fields.len() < 20 {

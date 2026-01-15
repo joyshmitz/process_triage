@@ -139,7 +139,10 @@ impl SystemdActiveState {
 
     /// Whether the unit is in a running/active state.
     pub fn is_running(&self) -> bool {
-        matches!(self, SystemdActiveState::Active | SystemdActiveState::Reloading)
+        matches!(
+            self,
+            SystemdActiveState::Active | SystemdActiveState::Reloading
+        )
     }
 }
 
@@ -241,7 +244,10 @@ pub fn parse_systemctl_output(output: &str, pid: u32) -> Option<SystemdUnit> {
         .map(|s| SystemdActiveState::from_str(s))
         .unwrap_or_default();
 
-    let sub_state = props.get("SubState").cloned().filter(|s| !s.is_empty() && s != "-");
+    let sub_state = props
+        .get("SubState")
+        .cloned()
+        .filter(|s| !s.is_empty() && s != "-");
 
     let main_pid = props
         .get("MainPID")

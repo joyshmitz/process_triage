@@ -200,10 +200,7 @@ struct LockGuard {
 
 impl LockGuard {
     fn acquire(path: &Path) -> Result<Self, AlphaInvestingError> {
-        let file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(path);
+        let file = OpenOptions::new().create_new(true).write(true).open(path);
         match file {
             Ok(mut handle) => {
                 // Write PID to lock file for stale lock detection
@@ -244,7 +241,7 @@ impl LockGuard {
                     return match err.raw_os_error() {
                         Some(code) if code == libc::ESRCH => true,  // Process dead
                         Some(code) if code == libc::EPERM => false, // Process alive
-                        _ => true, // Unknown error, assume stale
+                        _ => true,                                  // Unknown error, assume stale
                     };
                 }
                 #[cfg(not(unix))]

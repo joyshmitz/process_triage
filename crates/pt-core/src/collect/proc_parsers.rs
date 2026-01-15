@@ -418,7 +418,7 @@ pub fn parse_fdinfo_content(content: &str) -> Option<OpenMode> {
                 // Access mode is in the lowest 2 bits
                 let access_mode = flags & 0o3;
                 return Some(OpenMode {
-                    read: access_mode == 0 || access_mode == 2,  // O_RDONLY or O_RDWR
+                    read: access_mode == 0 || access_mode == 2, // O_RDONLY or O_RDWR
                     write: access_mode == 1 || access_mode == 2, // O_WRONLY or O_RDWR
                 });
             }
@@ -571,7 +571,8 @@ pub fn parse_cgroup_content(content: &str) -> Option<CgroupInfo> {
         } else if !controllers.is_empty() {
             // Cgroup v1
             for controller in controllers.split(',') {
-                info.v1_paths.insert(controller.to_string(), path.to_string());
+                info.v1_paths
+                    .insert(controller.to_string(), path.to_string());
             }
         }
 
@@ -718,7 +719,10 @@ nice                                         :                    0
 
         let info = parse_cgroup_content(content).unwrap();
         assert!(info.in_container);
-        assert_eq!(info.v1_paths.get("pids"), Some(&"/docker/abc123def456".to_string()));
+        assert_eq!(
+            info.v1_paths.get("pids"),
+            Some(&"/docker/abc123def456".to_string())
+        );
     }
 
     #[test]

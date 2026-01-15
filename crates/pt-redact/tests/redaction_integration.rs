@@ -168,7 +168,11 @@ fn test_all_export_profiles_block_secrets() {
     let key = KeyMaterial::from_bytes([0u8; 32], "test");
     let engine = RedactionEngine::with_key(policy, key);
 
-    let profiles = [ExportProfile::Minimal, ExportProfile::Safe, ExportProfile::Forensic];
+    let profiles = [
+        ExportProfile::Minimal,
+        ExportProfile::Safe,
+        ExportProfile::Forensic,
+    ];
 
     for profile in profiles {
         for canary in CANARY_SECRETS {
@@ -287,10 +291,7 @@ fn test_policy_version_is_tracked() {
     let engine = RedactionEngine::new(policy).unwrap();
 
     let version = engine.policy_version();
-    assert!(
-        !version.is_empty(),
-        "Policy version should not be empty"
-    );
+    assert!(!version.is_empty(), "Policy version should not be empty");
     assert!(
         version.contains('.'),
         "Policy version should be semver format: {}",
@@ -402,7 +403,10 @@ fn test_detector_finds_slack_tokens() {
     // The xox prefix plus b/p/a/r/s indicates Slack tokens
     let slack_prefixes = ["b", "p", "a", "r", "s"];
     for prefix_char in slack_prefixes {
-        let token = format!("xox{}-123456789012-1234567890123-abcdefghijklmnopqrst", prefix_char);
+        let token = format!(
+            "xox{}-123456789012-1234567890123-abcdefghijklmnopqrst",
+            prefix_char
+        );
         assert!(
             detector.detect(&token).is_some(),
             "Should detect Slack token with prefix: xox{}-",
@@ -478,12 +482,7 @@ fn test_low_entropy_allowed() {
     let detector = SecretDetector::new();
 
     // Low entropy strings should not be flagged
-    let low_entropy = [
-        "aaaaaaaaaa",
-        "1111111111",
-        "hello",
-        "test",
-    ];
+    let low_entropy = ["aaaaaaaaaa", "1111111111", "hello", "test"];
 
     for s in low_entropy {
         assert!(
@@ -503,8 +502,16 @@ fn test_canonicalizer_removes_pids() {
     let canon = Canonicalizer::new();
 
     let result = canon.canonicalize("--pid 12345 --name test");
-    assert!(!result.contains("12345"), "PID should be removed: {}", result);
-    assert!(result.contains("[PID]"), "Should have PID placeholder: {}", result);
+    assert!(
+        !result.contains("12345"),
+        "PID should be removed: {}",
+        result
+    );
+    assert!(
+        result.contains("[PID]"),
+        "Should have PID placeholder: {}",
+        result
+    );
 }
 
 #[test]
@@ -512,8 +519,16 @@ fn test_canonicalizer_removes_ports() {
     let canon = Canonicalizer::new();
 
     let result = canon.canonicalize("--port 8080 server start");
-    assert!(!result.contains("8080"), "Port should be removed: {}", result);
-    assert!(result.contains("[PORT]"), "Should have PORT placeholder: {}", result);
+    assert!(
+        !result.contains("8080"),
+        "Port should be removed: {}",
+        result
+    );
+    assert!(
+        result.contains("[PORT]"),
+        "Should have PORT placeholder: {}",
+        result
+    );
 }
 
 #[test]
@@ -526,7 +541,11 @@ fn test_canonicalizer_removes_uuids() {
         "UUID should be removed: {}",
         result
     );
-    assert!(result.contains("[UUID]"), "Should have UUID placeholder: {}", result);
+    assert!(
+        result.contains("[UUID]"),
+        "Should have UUID placeholder: {}",
+        result
+    );
 }
 
 #[test]
@@ -556,7 +575,11 @@ fn test_canonicalizer_normalizes_home_dir() {
         "Username should be removed: {}",
         result
     );
-    assert!(result.contains("[HOME]"), "Should have HOME placeholder: {}", result);
+    assert!(
+        result.contains("[HOME]"),
+        "Should have HOME placeholder: {}",
+        result
+    );
 }
 
 #[test]
@@ -564,7 +587,11 @@ fn test_canonicalizer_normalizes_tmp() {
     let canon = Canonicalizer::new();
 
     let result = canon.canonicalize("/tmp/pytest-123/test.log");
-    assert!(!result.contains("pytest-123"), "Tmp session should be normalized: {}", result);
+    assert!(
+        !result.contains("pytest-123"),
+        "Tmp session should be normalized: {}",
+        result
+    );
 }
 
 #[test]
@@ -572,8 +599,16 @@ fn test_canonicalizer_removes_url_credentials() {
     let canon = Canonicalizer::new();
 
     let result = canon.canonicalize("https://user:secret@api.example.com/path");
-    assert!(!result.contains("secret"), "URL credential should be removed: {}", result);
-    assert!(result.contains("[CRED]"), "Should have CRED placeholder: {}", result);
+    assert!(
+        !result.contains("secret"),
+        "URL credential should be removed: {}",
+        result
+    );
+    assert!(
+        result.contains("[CRED]"),
+        "Should have CRED placeholder: {}",
+        result
+    );
 }
 
 // ============================================================================
@@ -657,7 +692,11 @@ fn test_full_cmdline_redaction_workflow() {
     let output = redacted_parts.join(" ");
 
     // Verify no sensitive data leaked
-    assert!(!output.contains("secretpass"), "Password leaked: {}", output);
+    assert!(
+        !output.contains("secretpass"),
+        "Password leaked: {}",
+        output
+    );
     assert!(!output.contains("sk-proj"), "API key leaked: {}", output);
     // Note: username in path might be redacted depending on HOME detection
 }

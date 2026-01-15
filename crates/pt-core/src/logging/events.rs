@@ -212,7 +212,10 @@ impl LogEvent {
     /// Serialize to a single JSON line.
     pub fn to_jsonl(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| {
-            format!(r#"{{"error":"serialization_failed","event":"{}"}}"#, self.event)
+            format!(
+                r#"{{"error":"serialization_failed","event":"{}"}}"#,
+                self.event
+            )
         })
     }
 }
@@ -260,22 +263,42 @@ impl LogContext {
     }
 
     /// Shortcut for info-level event.
-    pub fn info(&self, event: impl Into<String>, stage: Stage, message: impl Into<String>) -> LogEvent {
+    pub fn info(
+        &self,
+        event: impl Into<String>,
+        stage: Stage,
+        message: impl Into<String>,
+    ) -> LogEvent {
         self.event(Level::Info, event, stage, message)
     }
 
     /// Shortcut for debug-level event.
-    pub fn debug(&self, event: impl Into<String>, stage: Stage, message: impl Into<String>) -> LogEvent {
+    pub fn debug(
+        &self,
+        event: impl Into<String>,
+        stage: Stage,
+        message: impl Into<String>,
+    ) -> LogEvent {
         self.event(Level::Debug, event, stage, message)
     }
 
     /// Shortcut for warn-level event.
-    pub fn warn(&self, event: impl Into<String>, stage: Stage, message: impl Into<String>) -> LogEvent {
+    pub fn warn(
+        &self,
+        event: impl Into<String>,
+        stage: Stage,
+        message: impl Into<String>,
+    ) -> LogEvent {
         self.event(Level::Warn, event, stage, message)
     }
 
     /// Shortcut for error-level event.
-    pub fn error(&self, event: impl Into<String>, stage: Stage, message: impl Into<String>) -> LogEvent {
+    pub fn error(
+        &self,
+        event: impl Into<String>,
+        stage: Stage,
+        message: impl Into<String>,
+    ) -> LogEvent {
         self.event(Level::Error, event, stage, message)
     }
 }
@@ -329,7 +352,10 @@ mod tests {
         let event = ctx.info("scan.started", Stage::Scan, "Beginning scan");
         assert_eq!(event.run_id, "run-abc");
         assert_eq!(event.host_id, "host-xyz");
-        assert_eq!(event.session_id, Some("pt-20260115-143022-b2c3".to_string()));
+        assert_eq!(
+            event.session_id,
+            Some("pt-20260115-143022-b2c3".to_string())
+        );
         assert_eq!(event.stage, Stage::Scan);
     }
 

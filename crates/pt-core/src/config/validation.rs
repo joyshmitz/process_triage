@@ -428,7 +428,10 @@ mod tests {
         let mut priors = Priors::default();
         priors.classes.useful.prior_prob = 0.9; // Sum will be > 1
         let result = validate_priors(&priors);
-        assert!(matches!(result, Err(ValidationError::PriorProbabilitySum { .. })));
+        assert!(matches!(
+            result,
+            Err(ValidationError::PriorProbabilitySum { .. })
+        ));
     }
 
     #[test]
@@ -436,7 +439,10 @@ mod tests {
         let mut priors = Priors::default();
         priors.classes.useful.cpu_beta.alpha = -1.0;
         let result = validate_priors(&priors);
-        assert!(matches!(result, Err(ValidationError::BetaParamNonPositive { .. })));
+        assert!(matches!(
+            result,
+            Err(ValidationError::BetaParamNonPositive { .. })
+        ));
     }
 
     #[test]
@@ -452,6 +458,9 @@ mod tests {
         let mut policy = Policy::default();
         policy.robot_mode.min_posterior = 0.0;
         let result = validate_policy(&policy);
-        assert!(matches!(result, Err(ValidationError::RobotPosteriorRange { .. })));
+        assert!(matches!(
+            result,
+            Err(ValidationError::RobotPosteriorRange { .. })
+        ));
     }
 }

@@ -22,21 +22,20 @@ pub mod schema;
 pub use capabilities::{
     Capabilities, CapabilitiesError, CgroupInfo, CgroupVersion, ContainerInfo, CpuArch,
     LaunchdInfo, OsFamily, OsInfo, PathsInfo, PrivilegesInfo, ProcField, ProcFsInfo, PsiInfo,
-    SudoInfo, SystemdInfo, SystemInfo, ToolInfo, ToolPermissions, UserInfo,
+    SudoInfo, SystemInfo, SystemdInfo, ToolInfo, ToolPermissions, UserInfo,
     CAPABILITIES_SCHEMA_VERSION, DEFAULT_CACHE_TTL_SECS,
 };
 pub use categories::{
     CategorizationOutput, CategoryMatcher, CategoryTaxonomy, CommandCategory, CommandCategoryDef,
-    CommandPattern, CwdCategory, CwdCategoryDef, CwdPattern, PriorHints,
-    CATEGORIES_SCHEMA_VERSION,
+    CommandPattern, CwdCategory, CwdCategoryDef, CwdPattern, PriorHints, CATEGORIES_SCHEMA_VERSION,
 };
+pub use config::{Config, ConfigPaths, ConfigResolver, ConfigSnapshot, Policy, Priors};
+pub use error::{Error, Result};
 pub use galaxy_brain::{
     CardId, CliHints, CliOutputFormat, CliVerbosity, ComputedValue, Equation, GalaxyBrainData,
     MathCard, MathRenderer, Reference, RenderHints, ReportHints, TuiColorScheme, TuiHints,
     ValueFormat, ValueType, GALAXY_BRAIN_SCHEMA_VERSION,
 };
-pub use config::{Config, ConfigPaths, ConfigResolver, ConfigSnapshot, Policy, Priors};
-pub use error::{Error, Result};
 pub use id::{IdentityQuality, ProcessId, ProcessIdentity, SessionId, StartId};
 pub use output::OutputFormat;
 pub use schema::SCHEMA_VERSION;

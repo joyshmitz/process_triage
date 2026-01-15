@@ -9,7 +9,7 @@
 
 use clap::{Args, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
-use pt_core::config::{load_config, ConfigOptions, ConfigError};
+use pt_core::config::{load_config, ConfigError, ConfigOptions};
 use pt_core::exit_codes::ExitCode;
 use std::path::PathBuf;
 
@@ -457,8 +457,10 @@ enum TelemetryCommands {
     },
 }
 
-use pt_core::logging::{init_logging, LogConfig, LogFormat, LogLevel, LogContext, Stage, event_names};
 use pt_core::log_event;
+use pt_core::logging::{
+    event_names, init_logging, LogConfig, LogContext, LogFormat, LogLevel, Stage,
+};
 
 // ============================================================================
 // Main entry point
@@ -500,12 +502,15 @@ fn main() {
     let exit_code = match cli.command {
         None => {
             // Default: run interactive mode
-            run_interactive(&cli.global, &RunArgs {
-                deep: false,
-                signatures: None,
-                community_signatures: false,
-                min_age: None,
-            })
+            run_interactive(
+                &cli.global,
+                &RunArgs {
+                    deep: false,
+                    signatures: None,
+                    community_signatures: false,
+                    min_age: None,
+                },
+            )
         }
         Some(Commands::Run(args)) => run_interactive(&cli.global, &args),
         Some(Commands::Scan(args)) => run_scan(&cli.global, &args),
@@ -542,18 +547,30 @@ use pt_core::collect::{quick_scan, QuickScanOptions};
 fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
     let ctx = LogContext::new(
         pt_core::logging::generate_run_id(),
-        pt_core::logging::get_host_id()
+        pt_core::logging::get_host_id(),
     );
-    
-    log_event!(ctx, INFO, event_names::RUN_STARTED, Stage::Init, "Starting scan command");
+
+    log_event!(
+        ctx,
+        INFO,
+        event_names::RUN_STARTED,
+        Stage::Init,
+        "Starting scan command"
+    );
 
     if args.deep {
-        return run_deep_scan(global, &DeepScanArgs { pids: vec![], budget: None });
+        return run_deep_scan(
+            global,
+            &DeepScanArgs {
+                pids: vec![],
+                budget: None,
+            },
+        );
     }
 
     // Configure scan options
     let options = QuickScanOptions {
-        pids: vec![], // Empty = all processes
+        pids: vec![],                  // Empty = all processes
         include_kernel_threads: false, // Default to false for quick scan
         timeout: global.timeout.map(std::time::Duration::from_secs),
     };
@@ -561,7 +578,12 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
     // Perform scan
     match quick_scan(&options) {
         Ok(result) => {
-            log_event!(ctx, INFO, event_names::SCAN_FINISHED, Stage::Scan, "Scan finished successfully",
+            log_event!(
+                ctx,
+                INFO,
+                event_names::SCAN_FINISHED,
+                Stage::Scan,
+                "Scan finished successfully",
                 count = result.metadata.process_count,
                 duration_ms = result.metadata.duration_ms
             );
@@ -579,29 +601,32 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
                     println!("{}", serde_json::to_string_pretty(&output).unwrap());
                 }
                 OutputFormat::Summary => {
-                    println!("Scanned {} processes in {}ms", 
-                        result.metadata.process_count, 
-                        result.metadata.duration_ms
+                    println!(
+                        "Scanned {} processes in {}ms",
+                        result.metadata.process_count, result.metadata.duration_ms
                     );
                 }
                 OutputFormat::Exitcode => {} // Silent
                 _ => {
                     // Human readable output
                     println!("# Quick Scan Results");
-                    println!("Scanned {} processes in {}ms", 
-                        result.metadata.process_count, 
-                        result.metadata.duration_ms
+                    println!(
+                        "Scanned {} processes in {}ms",
+                        result.metadata.process_count, result.metadata.duration_ms
                     );
                     println!("Platform: {}", result.metadata.platform);
                     println!();
-                    
-                    println!("{:<8} {:<8} {:<10} {:<6} {:<6} {:<6} {}", 
-                        "PID", "PPID", "USER", "STATE", "%CPU", "RSS", "COMMAND");
-                    
+
+                    println!(
+                        "{:<8} {:<8} {:<10} {:<6} {:<6} {:<6} {}",
+                        "PID", "PPID", "USER", "STATE", "%CPU", "RSS", "COMMAND"
+                    );
+
                     for p in result.processes.iter().take(20) {
-                        println!("{:<8} {:<8} {:<10} {:<6} {:<6.1} {:<6} {}", 
-                            p.pid.0, 
-                            p.ppid.0, 
+                        println!(
+                            "{:<8} {:<8} {:<10} {:<6} {:<6.1} {:<6} {}",
+                            p.pid.0,
+                            p.ppid.0,
                             p.user.chars().take(10).collect::<String>(),
                             p.state,
                             p.cpu_percent,
@@ -617,7 +642,14 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
             ExitCode::Clean
         }
         Err(e) => {
-            log_event!(ctx, ERROR, event_names::INTERNAL_ERROR, Stage::Scan, "Scan failed", error = e.to_string());
+            log_event!(
+                ctx,
+                ERROR,
+                event_names::INTERNAL_ERROR,
+                Stage::Scan,
+                "Scan failed",
+                error = e.to_string()
+            );
             eprintln!("Scan failed: {}", e);
             ExitCode::InternalError
         }
@@ -635,7 +667,6 @@ fn bytes_to_human(bytes: u64) -> String {
         format!("{:.1}G", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
     }
 }
-
 
 fn run_deep_scan(global: &GlobalOpts, _args: &DeepScanArgs) -> ExitCode {
     output_stub(global, "deep-scan", "Deep scan mode not yet implemented");
@@ -790,19 +821,35 @@ fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
             output_stub(global, "agent plan", "Agent plan mode not yet implemented");
         }
         AgentCommands::Explain(_) => {
-            output_stub(global, "agent explain", "Agent explain mode not yet implemented");
+            output_stub(
+                global,
+                "agent explain",
+                "Agent explain mode not yet implemented",
+            );
         }
         AgentCommands::Apply(_) => {
-            output_stub(global, "agent apply", "Agent apply mode not yet implemented");
+            output_stub(
+                global,
+                "agent apply",
+                "Agent apply mode not yet implemented",
+            );
         }
         AgentCommands::Verify(_) => {
-            output_stub(global, "agent verify", "Agent verify mode not yet implemented");
+            output_stub(
+                global,
+                "agent verify",
+                "Agent verify mode not yet implemented",
+            );
         }
         AgentCommands::Diff(_) => {
             output_stub(global, "agent diff", "Agent diff mode not yet implemented");
         }
         AgentCommands::Snapshot(_) => {
-            output_stub(global, "agent snapshot", "Agent snapshot mode not yet implemented");
+            output_stub(
+                global,
+                "agent snapshot",
+                "Agent snapshot mode not yet implemented",
+            );
         }
         AgentCommands::Capabilities => {
             output_capabilities(global);
@@ -813,16 +860,16 @@ fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
 
 fn run_config(global: &GlobalOpts, args: &ConfigArgs) -> ExitCode {
     match &args.command {
-        ConfigCommands::Show { file } => {
-            run_config_show(global, file.as_deref())
-        }
+        ConfigCommands::Show { file } => run_config_show(global, file.as_deref()),
         ConfigCommands::Schema { file } => {
-            output_stub(global, "config schema", &format!("Schema for {} not yet implemented", file));
+            output_stub(
+                global,
+                "config schema",
+                &format!("Schema for {} not yet implemented", file),
+            );
             ExitCode::Clean
         }
-        ConfigCommands::Validate { path } => {
-            run_config_validate(global, path.as_ref())
-        }
+        ConfigCommands::Validate { path } => run_config_validate(global, path.as_ref()),
     }
 }
 
@@ -911,15 +958,20 @@ fn run_config_show(global: &GlobalOpts, file_filter: Option<&str>) -> ExitCode {
             println!("{}", serde_json::to_string_pretty(&response).unwrap());
         }
         OutputFormat::Summary => {
-            let priors_src = snapshot.priors_path
+            let priors_src = snapshot
+                .priors_path
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "built-in defaults".to_string());
-            let policy_src = snapshot.policy_path
+            let policy_src = snapshot
+                .policy_path
                 .as_ref()
                 .map(|p| p.display().to_string())
                 .unwrap_or_else(|| "built-in defaults".to_string());
-            println!("[{}] config: priors={} policy={}", session_id, priors_src, policy_src);
+            println!(
+                "[{}] config: priors={} policy={}",
+                session_id, priors_src, policy_src
+            );
         }
         OutputFormat::Exitcode => {}
         _ => {
@@ -1036,9 +1088,7 @@ fn run_config_validate(global: &GlobalOpts, path: Option<&String>) -> ExitCode {
 
             ExitCode::Clean
         }
-        Err(e) => {
-            output_config_error(global, &e)
-        }
+        Err(e) => output_config_error(global, &e),
     }
 }
 
@@ -1091,7 +1141,11 @@ fn run_daemon(global: &GlobalOpts, _args: &DaemonArgs) -> ExitCode {
 }
 
 fn run_telemetry(global: &GlobalOpts, _args: &TelemetryArgs) -> ExitCode {
-    output_stub(global, "telemetry", "Telemetry management not yet implemented");
+    output_stub(
+        global,
+        "telemetry",
+        "Telemetry management not yet implemented",
+    );
     ExitCode::Clean
 }
 

@@ -594,7 +594,12 @@ mod tests {
         let h2 = gamma_hazard(1.0, alpha, beta);
         let h3 = gamma_hazard(2.0, alpha, beta);
 
-        assert!(h1 > h2, "Hazard should decrease: h(0.5)={} > h(1)={}", h1, h2);
+        assert!(
+            h1 > h2,
+            "Hazard should decrease: h(0.5)={} > h(1)={}",
+            h1,
+            h2
+        );
         assert!(h2 > h3, "Hazard should decrease: h(1)={} > h(2)={}", h2, h3);
     }
 
@@ -661,7 +666,11 @@ mod tests {
         let t = 100.0;
 
         let surv = gamma_survival(t, alpha, beta);
-        assert!(surv < 1e-30, "Survival at t=100 should be tiny, got {}", surv);
+        assert!(
+            surv < 1e-30,
+            "Survival at t=100 should be tiny, got {}",
+            surv
+        );
 
         // log_survival should be very negative but finite
         let log_surv = gamma_log_survival(t, alpha, beta);
@@ -728,11 +737,20 @@ mod tests {
         // P(1, 1) = 1 - e^(-1) ≈ 0.6321
         let p = gamma_p(1.0, 1.0);
         let expected = 1.0 - (-1.0_f64).exp();
-        assert!(rel_eq(p, expected, 1e-6), "P(1,1): got {}, expected {}", p, expected);
+        assert!(
+            rel_eq(p, expected, 1e-6),
+            "P(1,1): got {}, expected {}",
+            p,
+            expected
+        );
 
         // P(2, 2) ≈ 0.594
         let p2 = gamma_p(2.0, 2.0);
-        assert!(p2 > 0.59 && p2 < 0.60, "P(2,2) should be ~0.594, got {}", p2);
+        assert!(
+            p2 > 0.59 && p2 < 0.60,
+            "P(2,2) should be ~0.594, got {}",
+            p2
+        );
     }
 
     #[test]

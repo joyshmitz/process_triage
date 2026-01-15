@@ -240,10 +240,7 @@ mod exit_codes {
 
     #[test]
     fn invalid_args_returns_nonzero() {
-        let output = pt_core()
-            .arg("--invalid-flag")
-            .assert()
-            .failure();
+        let output = pt_core().arg("--invalid-flag").assert().failure();
 
         // Exit code should be non-zero for argument errors
         output.code(predicate::ne(0));
@@ -251,10 +248,7 @@ mod exit_codes {
 
     #[test]
     fn missing_required_arg_returns_nonzero() {
-        let output = pt_core()
-            .args(["agent", "apply"])
-            .assert()
-            .failure();
+        let output = pt_core().args(["agent", "apply"]).assert().failure();
 
         output.code(predicate::ne(0));
     }

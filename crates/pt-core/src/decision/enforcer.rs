@@ -192,10 +192,12 @@ impl CompiledPattern {
                 } else {
                     entry.pattern.clone()
                 };
-                Some(Regex::new(&pattern).map_err(|e| EnforcerError::InvalidPattern {
-                    path: path.to_string(),
-                    message: e.to_string(),
-                })?)
+                Some(
+                    Regex::new(&pattern).map_err(|e| EnforcerError::InvalidPattern {
+                        path: path.to_string(),
+                        message: e.to_string(),
+                    })?,
+                )
             }
             PatternKind::Glob => {
                 // Convert glob to regex with proper handling of:
@@ -266,10 +268,12 @@ impl CompiledPattern {
                 } else {
                     regex_str
                 };
-                Some(Regex::new(&full_pattern).map_err(|e| EnforcerError::InvalidPattern {
-                    path: path.to_string(),
-                    message: e.to_string(),
-                })?)
+                Some(
+                    Regex::new(&full_pattern).map_err(|e| EnforcerError::InvalidPattern {
+                        path: path.to_string(),
+                        message: e.to_string(),
+                    })?,
+                )
             }
             PatternKind::Literal => None, // Use string matching
         };
@@ -285,9 +289,11 @@ impl CompiledPattern {
 
     fn matches(&self, text: &str) -> bool {
         match self.kind {
-            PatternKind::Regex | PatternKind::Glob => {
-                self.regex.as_ref().map(|r| r.is_match(text)).unwrap_or(false)
-            }
+            PatternKind::Regex | PatternKind::Glob => self
+                .regex
+                .as_ref()
+                .map(|r| r.is_match(text))
+                .unwrap_or(false),
             PatternKind::Literal => {
                 if self.case_insensitive {
                     text.to_lowercase().contains(&self.original.to_lowercase())
@@ -400,7 +406,9 @@ impl PolicyEnforcer {
             .protected_patterns
             .iter()
             .enumerate()
-            .map(|(i, p)| CompiledPattern::compile(p, &format!("guardrails.protected_patterns[{i}]")))
+            .map(|(i, p)| {
+                CompiledPattern::compile(p, &format!("guardrails.protected_patterns[{i}]"))
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         // Compile force-review patterns
@@ -436,8 +444,10 @@ impl PolicyEnforcer {
             .map(|c| c.to_lowercase())
             .collect();
 
-        let never_kill_pid: HashSet<i32> = policy.guardrails.never_kill_pid.iter().copied().collect();
-        let never_kill_ppid: HashSet<i32> = policy.guardrails.never_kill_ppid.iter().copied().collect();
+        let never_kill_pid: HashSet<i32> =
+            policy.guardrails.never_kill_pid.iter().copied().collect();
+        let never_kill_ppid: HashSet<i32> =
+            policy.guardrails.never_kill_ppid.iter().copied().collect();
 
         Ok(Self {
             protected_patterns,
@@ -498,10 +508,7 @@ impl PolicyEnforcer {
             if pattern.matches(&candidate.cmdline) {
                 return PolicyCheckResult::blocked(PolicyViolation {
                     kind: ViolationKind::ProtectedPattern,
-                    message: format!(
-                        "command matches protected pattern: {}",
-                        pattern.original
-                    ),
+                    message: format!("command matches protected pattern: {}", pattern.original),
                     rule: "guardrails.protected_patterns".to_string(),
                     context: pattern.notes.clone(),
                 });
@@ -664,7 +671,9 @@ impl PolicyEnforcer {
         if self.robot_mode.require_known_signature && !candidate.has_known_signature {
             return Some(PolicyViolation {
                 kind: ViolationKind::RobotModeGate,
-                message: "robot_mode.require_known_signature is true but process has no known signature".to_string(),
+                message:
+                    "robot_mode.require_known_signature is true but process has no known signature"
+                        .to_string(),
                 rule: "robot_mode.require_known_signature".to_string(),
                 context: None,
             });
@@ -1100,12 +1109,7 @@ mod tests {
 
         let result = enforcer.check_action(&candidate, Action::Kill, false);
         assert!(!result.allowed);
-        assert!(result
-            .violation
-            .as_ref()
-            .unwrap()
-            .message
-            .contains("TTY"));
+        assert!(result.violation.as_ref().unwrap().message.contains("TTY"));
     }
 
     #[test]

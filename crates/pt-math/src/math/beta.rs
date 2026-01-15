@@ -35,7 +35,7 @@ pub fn log_beta_pdf(x: f64, alpha: f64, beta: f64) -> f64 {
     if alpha <= 0.0 || beta <= 0.0 {
         return f64::NAN;
     }
-    if x < 0.0 || x > 1.0 {
+    if !(0.0..=1.0).contains(&x) {
         return f64::NEG_INFINITY;
     }
     if x == 0.0 {

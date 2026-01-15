@@ -186,7 +186,11 @@ pub fn generate_plan(bundle: &DecisionBundle) -> Plan {
         action.order = idx as u32;
     }
 
-    let plan_id = plan_id_for(&bundle.session_id, bundle.policy.policy_id.as_deref(), actions.len());
+    let plan_id = plan_id_for(
+        &bundle.session_id,
+        bundle.policy.policy_id.as_deref(),
+        actions.len(),
+    );
 
     Plan {
         plan_id,
@@ -300,8 +304,18 @@ fn sort_key(bundle: &DecisionBundle, action: &PlanAction) -> (u8, u32, u8, i64, 
         })
         .unwrap_or(0.0);
     let benefit_key = (benefit * 1_000_000.0).round() as i64;
-    let identity_key = format!("{}:{}:{}", action.target.pid.0, action.target.uid, action.target.start_id.0);
-    (tier, group, action.stage, -benefit_key, identity_key, action.action_id.clone())
+    let identity_key = format!(
+        "{}:{}:{}",
+        action.target.pid.0, action.target.uid, action.target.start_id.0
+    );
+    (
+        tier,
+        group,
+        action.stage,
+        -benefit_key,
+        identity_key,
+        action.action_id.clone(),
+    )
 }
 
 fn action_tier(action: Action) -> u8 {
@@ -349,6 +363,7 @@ mod tests {
                 chosen_action: action,
                 tie_break: false,
                 disabled_actions: vec![],
+                used_recovery_preference: false,
             },
         }
     }

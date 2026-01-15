@@ -48,10 +48,7 @@ mod top_level {
 
     #[test]
     fn help_shows_all_commands() {
-        let output = pt_core()
-            .arg("--help")
-            .assert()
-            .success();
+        let output = pt_core().arg("--help").assert().success();
 
         // Verify main commands are listed
         output
@@ -452,9 +449,6 @@ mod version_command {
 
     #[test]
     fn version_command_works() {
-        pt_core()
-            .arg("version")
-            .assert()
-            .success();
+        pt_core().arg("version").assert().success();
     }
 }

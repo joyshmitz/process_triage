@@ -3,12 +3,13 @@
 use serde::{Deserialize, Serialize};
 
 /// Action to apply when redacting a field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
     /// Persist as-is (no modification)
     Allow,
     /// Remove/replace entirely with [REDACTED]
+    #[default]
     Redact,
     /// Replace with keyed hash [HASH:key_id:hex]
     Hash,
@@ -26,7 +27,7 @@ pub enum Action {
 
 impl Action {
     /// Parse an action from a string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "allow" => Some(Action::Allow),
             "redact" => Some(Action::Redact),
@@ -46,10 +47,7 @@ impl Action {
 
     /// Returns whether this action is considered "safe" (redacts or hashes).
     pub fn is_safe(&self) -> bool {
-        matches!(
-            self,
-            Action::Redact | Action::Hash | Action::NormalizeHash
-        )
+        matches!(self, Action::Redact | Action::Hash | Action::NormalizeHash)
     }
 }
 
@@ -68,8 +66,3 @@ impl std::fmt::Display for Action {
     }
 }
 
-impl Default for Action {
-    fn default() -> Self {
-        Action::Redact // Fail-closed default
-    }
-}

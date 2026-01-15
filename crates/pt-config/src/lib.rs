@@ -14,7 +14,7 @@ pub mod validate;
 
 pub use policy::Policy;
 pub use priors::Priors;
-pub use resolve::{ConfigPaths, resolve_config};
+pub use resolve::{resolve_config, ConfigPaths};
 pub use snapshot::ConfigSnapshot;
 pub use validate::{ValidationError, ValidationResult};
 

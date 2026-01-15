@@ -82,7 +82,7 @@ pub enum ExportProfile {
 
 impl ExportProfile {
     /// Parse from string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "minimal" => Some(ExportProfile::Minimal),
             "safe" => Some(ExportProfile::Safe),
@@ -230,10 +230,16 @@ impl Default for RedactionPolicy {
         // Default rules from spec
         field_rules.insert("cmdline".to_string(), FieldRule::new(Action::NormalizeHash));
         field_rules.insert("cmd".to_string(), FieldRule::new(Action::Allow));
-        field_rules.insert("cmdline_arg".to_string(), FieldRule::new(Action::DetectAction));
+        field_rules.insert(
+            "cmdline_arg".to_string(),
+            FieldRule::new(Action::DetectAction),
+        );
         field_rules.insert("env_name".to_string(), FieldRule::new(Action::Allow));
         field_rules.insert("env_value".to_string(), FieldRule::new(Action::Redact));
-        field_rules.insert("path_home".to_string(), FieldRule::new(Action::NormalizeHash));
+        field_rules.insert(
+            "path_home".to_string(),
+            FieldRule::new(Action::NormalizeHash),
+        );
         field_rules.insert("path_tmp".to_string(), FieldRule::new(Action::Normalize));
         field_rules.insert("path_system".to_string(), FieldRule::new(Action::Allow));
         field_rules.insert("path_project".to_string(), FieldRule::new(Action::Hash));
@@ -242,14 +248,20 @@ impl Default for RedactionPolicy {
         field_rules.insert("url".to_string(), FieldRule::new(Action::NormalizeHash));
         field_rules.insert("url_host".to_string(), FieldRule::new(Action::Hash));
         field_rules.insert("url_path".to_string(), FieldRule::new(Action::Normalize));
-        field_rules.insert("url_credentials".to_string(), FieldRule::new(Action::Redact));
+        field_rules.insert(
+            "url_credentials".to_string(),
+            FieldRule::new(Action::Redact),
+        );
         field_rules.insert("username".to_string(), FieldRule::new(Action::Hash));
         field_rules.insert("uid".to_string(), FieldRule::new(Action::Allow));
         field_rules.insert("pid".to_string(), FieldRule::new(Action::Allow));
         field_rules.insert("port".to_string(), FieldRule::new(Action::Allow));
         field_rules.insert("container_id".to_string(), FieldRule::new(Action::Truncate));
         field_rules.insert("systemd_unit".to_string(), FieldRule::new(Action::Allow));
-        field_rules.insert("free_text".to_string(), FieldRule::new(Action::DetectAction));
+        field_rules.insert(
+            "free_text".to_string(),
+            FieldRule::new(Action::DetectAction),
+        );
 
         Self {
             schema_version: POLICY_SCHEMA_VERSION.to_string(),
@@ -283,7 +295,10 @@ mod tests {
 
         assert_eq!(policy.action_for(FieldClass::Cmd), Action::Allow);
         assert_eq!(policy.action_for(FieldClass::EnvValue), Action::Redact);
-        assert_eq!(policy.action_for(FieldClass::Cmdline), Action::NormalizeHash);
+        assert_eq!(
+            policy.action_for(FieldClass::Cmdline),
+            Action::NormalizeHash
+        );
         assert_eq!(policy.action_for(FieldClass::Hostname), Action::Hash);
     }
 
@@ -298,9 +313,15 @@ mod tests {
 
     #[test]
     fn test_export_profile_parsing() {
-        assert_eq!(ExportProfile::from_str("minimal"), Some(ExportProfile::Minimal));
+        assert_eq!(
+            ExportProfile::from_str("minimal"),
+            Some(ExportProfile::Minimal)
+        );
         assert_eq!(ExportProfile::from_str("safe"), Some(ExportProfile::Safe));
-        assert_eq!(ExportProfile::from_str("forensic"), Some(ExportProfile::Forensic));
+        assert_eq!(
+            ExportProfile::from_str("forensic"),
+            Some(ExportProfile::Forensic)
+        );
         assert_eq!(ExportProfile::from_str("SAFE"), Some(ExportProfile::Safe));
         assert_eq!(ExportProfile::from_str("invalid"), None);
     }

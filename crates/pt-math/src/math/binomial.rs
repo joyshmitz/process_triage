@@ -14,8 +14,8 @@
 //! The posterior predictive for a new observation window of size `n2` follows
 //! the Beta-Binomial distribution.
 
-use super::stable::log_beta;
 use super::bernoulli::BetaParams;
+use super::stable::log_beta;
 
 /// Compute posterior parameters after observing k successes in n trials.
 ///
@@ -239,7 +239,14 @@ mod tests {
             let k_f = k as f64;
             let left = log_binom_coef(n, k_f);
             let right = log_binom_coef(n, n - k_f);
-            assert!(approx_eq(left, right, 1e-10), "C({}, {}) != C({}, {})", n, k_f, n, n - k_f);
+            assert!(
+                approx_eq(left, right, 1e-10),
+                "C({}, {}) != C({}, {})",
+                n,
+                k_f,
+                n,
+                n - k_f
+            );
         }
     }
 
@@ -254,8 +261,14 @@ mod tests {
                 let lhs = log_binom_coef(n_f, k_f).exp();
                 let rhs = log_binom_coef(n_f - 1.0, k_f - 1.0).exp()
                     + log_binom_coef(n_f - 1.0, k_f).exp();
-                assert!(approx_eq(lhs, rhs, 1e-8),
-                    "Pascal identity failed: C({},{}) = {} != {}", n, k, lhs, rhs);
+                assert!(
+                    approx_eq(lhs, rhs, 1e-8),
+                    "Pascal identity failed: C({},{}) = {} != {}",
+                    n,
+                    k,
+                    lhs,
+                    rhs
+                );
             }
         }
     }
@@ -354,8 +367,11 @@ mod tests {
             sum += log_p.exp();
         }
 
-        assert!(approx_eq(sum, 1.0, 1e-8),
-            "Predictive PMF doesn't sum to 1: {}", sum);
+        assert!(
+            approx_eq(sum, 1.0, 1e-8),
+            "Predictive PMF doesn't sum to 1: {}",
+            sum
+        );
     }
 
     #[test]
@@ -376,8 +392,12 @@ mod tests {
 
         // Mode should be near the mean
         let mean = predictive_count_mean(&posterior, n2);
-        assert!((mode_k as f64 - mean).abs() < 3.0,
-            "Mode {} too far from mean {}", mode_k, mean);
+        assert!(
+            (mode_k as f64 - mean).abs() < 3.0,
+            "Mode {} too far from mean {}",
+            mode_k,
+            mean
+        );
     }
 
     #[test]
@@ -427,8 +447,12 @@ mod tests {
         let binom_var = n2 * p * (1.0 - p); // npq
 
         // Beta-Binomial variance > Binomial variance
-        assert!(betabinom_var > binom_var,
-            "Beta-Binomial var {} should exceed Binomial var {}", betabinom_var, binom_var);
+        assert!(
+            betabinom_var > binom_var,
+            "Beta-Binomial var {} should exceed Binomial var {}",
+            betabinom_var,
+            binom_var
+        );
     }
 
     // =======================================================================
@@ -505,8 +529,13 @@ mod tests {
         for k in 0..=10 {
             let log_ml = log_marginal_likelihood(&prior, k as f64, n, 1.0);
             let expected = (1.0 / 11.0f64).ln();
-            assert!(approx_eq(log_ml, expected, 1e-8),
-                "k={}: log P = {} != {}", k, log_ml, expected);
+            assert!(
+                approx_eq(log_ml, expected, 1e-8),
+                "k={}: log P = {} != {}",
+                k,
+                log_ml,
+                expected
+            );
         }
     }
 
@@ -543,10 +572,18 @@ mod tests {
         let post_tempered = posterior_params(&prior, 50.0, 100.0, 0.01).unwrap();
 
         // With η ≈ 0, posterior should be close to prior
-        assert!((post_tempered.alpha - prior.alpha).abs() < 1.0,
-            "Tempered alpha {} should be close to prior {}", post_tempered.alpha, prior.alpha);
-        assert!((post_tempered.beta - prior.beta).abs() < 1.0,
-            "Tempered beta {} should be close to prior {}", post_tempered.beta, prior.beta);
+        assert!(
+            (post_tempered.alpha - prior.alpha).abs() < 1.0,
+            "Tempered alpha {} should be close to prior {}",
+            post_tempered.alpha,
+            prior.alpha
+        );
+        assert!(
+            (post_tempered.beta - prior.beta).abs() < 1.0,
+            "Tempered beta {} should be close to prior {}",
+            post_tempered.beta,
+            prior.beta
+        );
 
         // Full update should be more extreme
         assert!((post_full.alpha - prior.alpha).abs() > (post_tempered.alpha - prior.alpha).abs());

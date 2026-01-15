@@ -219,7 +219,9 @@ impl BatchedWriter {
         let now = chrono::Utc::now();
 
         // Partitioning: year=YYYY/month=MM/day=DD/host_id=<hash>/
-        let partition_path = self.config.base_dir
+        let partition_path = self
+            .config
+            .base_dir
             .join(self.table.as_str())
             .join(format!("year={}", now.format("%Y")))
             .join(format!("month={}", now.format("%m")))
@@ -227,16 +229,9 @@ impl BatchedWriter {
             .join(format!("host_id={}", &self.config.host_id));
 
         // File name: <table>_<timestamp>_<session_suffix>.parquet
-        let session_suffix = self.config.session_id
-            .split('-')
-            .last()
-            .unwrap_or("xxxx");
+        let session_suffix = self.config.session_id.split('-').last().unwrap_or("xxxx");
 
-        let filename = format!(
-            "{}_{}.parquet",
-            self.table.as_str(),
-            session_suffix,
-        );
+        let filename = format!("{}_{}.parquet", self.table.as_str(), session_suffix,);
 
         Ok(partition_path.join(filename))
     }
@@ -273,9 +268,8 @@ mod tests {
 
     fn create_test_batch(schema: &Schema) -> RecordBatch {
         // Create a minimal audit batch for testing
-        let audit_ts = TimestampMicrosecondArray::from(vec![
-            chrono::Utc::now().timestamp_micros(),
-        ]).with_timezone("UTC");
+        let audit_ts = TimestampMicrosecondArray::from(vec![chrono::Utc::now().timestamp_micros()])
+            .with_timezone("UTC");
         let session_id = StringArray::from(vec!["pt-20260115-143022-test"]);
         let event_type = StringArray::from(vec!["test_event"]);
         let severity = StringArray::from(vec!["info"]);
@@ -300,7 +294,8 @@ mod tests {
                 Arc::new(details_json),
                 Arc::new(host_id),
             ],
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     #[test]
@@ -320,7 +315,8 @@ mod tests {
             PathBuf::from("/tmp/test"),
             "pt-test".to_string(),
             "host123".to_string(),
-        ).with_snappy();
+        )
+        .with_snappy();
         assert!(matches!(config.compression, Compression::SNAPPY));
     }
 
@@ -332,7 +328,8 @@ mod tests {
             temp_dir.path().to_path_buf(),
             "pt-20260115-143022-test".to_string(),
             "test-host".to_string(),
-        ).with_batch_size(1); // Flush after every row
+        )
+        .with_batch_size(1); // Flush after every row
 
         let mut writer = BatchedWriter::new(TableName::Audit, schema.clone(), config);
 

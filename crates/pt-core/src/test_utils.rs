@@ -92,7 +92,8 @@ pub fn load_fixture(name: &str) -> std::io::Result<String> {
 
 /// Load a fixture file and parse as JSON.
 pub fn load_fixture_json<T: serde::de::DeserializeOwned>(name: &str) -> Result<T, String> {
-    let content = load_fixture(name).map_err(|e| format!("Failed to read fixture {}: {}", name, e))?;
+    let content =
+        load_fixture(name).map_err(|e| format!("Failed to read fixture {}: {}", name, e))?;
     serde_json::from_str(&content).map_err(|e| format!("Failed to parse fixture {}: {}", name, e))
 }
 

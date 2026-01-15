@@ -953,21 +953,22 @@ fn detect_actions(
 
     // renice requires root or CAP_SYS_NICE
     let renice = permissions.is_root
-        || permissions.linux_capabilities.contains(&"CAP_SYS_NICE".to_string())
+        || permissions
+            .linux_capabilities
+            .contains(&"CAP_SYS_NICE".to_string())
         || tools.renice.works;
 
     // ionice similar to renice (Linux only)
-    let ionice = cfg!(target_os = "linux")
-        && (permissions.is_root || tools.ionice.works);
+    let ionice = cfg!(target_os = "linux") && (permissions.is_root || tools.ionice.works);
 
     // cgroup operations require cgroup v2 and appropriate permissions
-    let cgroup_freeze = data_sources.cgroup_v2
-        && (permissions.is_root || check_cgroup_write_access());
+    let cgroup_freeze =
+        data_sources.cgroup_v2 && (permissions.is_root || check_cgroup_write_access());
 
     let cgroup_throttle = cgroup_freeze; // Same requirements
 
-    let cpuset_quarantine = data_sources.cgroup_v2
-        && (permissions.is_root || check_cgroup_write_access());
+    let cpuset_quarantine =
+        data_sources.cgroup_v2 && (permissions.is_root || check_cgroup_write_access());
 
     ActionCapabilities {
         kill,
@@ -1052,7 +1053,10 @@ mod tests {
     fn test_parse_version() {
         assert_eq!(parse_version("ps version 1.2.3"), Some("1.2.3".to_string()));
         assert_eq!(parse_version("v1.0.0"), Some("1.0.0".to_string()));
-        assert_eq!(parse_version("ss utility, v5.15.0"), Some("5.15.0".to_string()));
+        assert_eq!(
+            parse_version("ss utility, v5.15.0"),
+            Some("5.15.0".to_string())
+        );
         assert_eq!(parse_version("no version here"), None);
     }
 

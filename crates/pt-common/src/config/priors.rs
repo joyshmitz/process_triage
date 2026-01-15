@@ -3,8 +3,8 @@
 //! These types correspond to priors.schema.json and encode domain knowledge
 //! about process behavior patterns.
 
-use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 /// Schema version for priors configuration.
 pub const PRIORS_SCHEMA_VERSION: &str = "1.0.0";
@@ -99,7 +99,9 @@ impl Priors {
 
         // Validate hazard regimes
         for regime in &self.hazard_regimes {
-            regime.gamma.validate(&format!("hazard_regime.{}", regime.name))?;
+            regime
+                .gamma
+                .validate(&format!("hazard_regime.{}", regime.name))?;
         }
 
         Ok(())
@@ -141,46 +143,130 @@ impl Default for ClassPriors {
         ClassPriors {
             useful: ClassPrior {
                 prior_prob: 0.70,
-                cpu_beta: BetaParams { alpha: 2.0, beta: 5.0 },
-                runtime_gamma: Some(GammaParams { shape: 2.0, rate: 0.0001 }),
-                orphan_beta: BetaParams { alpha: 1.0, beta: 20.0 },
-                tty_beta: BetaParams { alpha: 5.0, beta: 3.0 },
-                net_beta: BetaParams { alpha: 3.0, beta: 5.0 },
-                io_active_beta: Some(BetaParams { alpha: 5.0, beta: 3.0 }),
-                hazard_gamma: Some(GammaParams { shape: 1.0, rate: 100000.0 }),
+                cpu_beta: BetaParams {
+                    alpha: 2.0,
+                    beta: 5.0,
+                },
+                runtime_gamma: Some(GammaParams {
+                    shape: 2.0,
+                    rate: 0.0001,
+                }),
+                orphan_beta: BetaParams {
+                    alpha: 1.0,
+                    beta: 20.0,
+                },
+                tty_beta: BetaParams {
+                    alpha: 5.0,
+                    beta: 3.0,
+                },
+                net_beta: BetaParams {
+                    alpha: 3.0,
+                    beta: 5.0,
+                },
+                io_active_beta: Some(BetaParams {
+                    alpha: 5.0,
+                    beta: 3.0,
+                }),
+                hazard_gamma: Some(GammaParams {
+                    shape: 1.0,
+                    rate: 100000.0,
+                }),
                 competing_hazards: None,
             },
             useful_bad: ClassPrior {
                 prior_prob: 0.10,
-                cpu_beta: BetaParams { alpha: 8.0, beta: 2.0 },
-                runtime_gamma: Some(GammaParams { shape: 3.0, rate: 0.0002 }),
-                orphan_beta: BetaParams { alpha: 2.0, beta: 8.0 },
-                tty_beta: BetaParams { alpha: 3.0, beta: 5.0 },
-                net_beta: BetaParams { alpha: 4.0, beta: 4.0 },
-                io_active_beta: Some(BetaParams { alpha: 6.0, beta: 2.0 }),
-                hazard_gamma: Some(GammaParams { shape: 2.0, rate: 50000.0 }),
+                cpu_beta: BetaParams {
+                    alpha: 8.0,
+                    beta: 2.0,
+                },
+                runtime_gamma: Some(GammaParams {
+                    shape: 3.0,
+                    rate: 0.0002,
+                }),
+                orphan_beta: BetaParams {
+                    alpha: 2.0,
+                    beta: 8.0,
+                },
+                tty_beta: BetaParams {
+                    alpha: 3.0,
+                    beta: 5.0,
+                },
+                net_beta: BetaParams {
+                    alpha: 4.0,
+                    beta: 4.0,
+                },
+                io_active_beta: Some(BetaParams {
+                    alpha: 6.0,
+                    beta: 2.0,
+                }),
+                hazard_gamma: Some(GammaParams {
+                    shape: 2.0,
+                    rate: 50000.0,
+                }),
                 competing_hazards: None,
             },
             abandoned: ClassPrior {
                 prior_prob: 0.15,
-                cpu_beta: BetaParams { alpha: 1.0, beta: 10.0 },
-                runtime_gamma: Some(GammaParams { shape: 4.0, rate: 0.00005 }),
-                orphan_beta: BetaParams { alpha: 8.0, beta: 2.0 },
-                tty_beta: BetaParams { alpha: 1.0, beta: 10.0 },
-                net_beta: BetaParams { alpha: 1.0, beta: 8.0 },
-                io_active_beta: Some(BetaParams { alpha: 1.0, beta: 12.0 }),
-                hazard_gamma: Some(GammaParams { shape: 1.5, rate: 10000.0 }),
+                cpu_beta: BetaParams {
+                    alpha: 1.0,
+                    beta: 10.0,
+                },
+                runtime_gamma: Some(GammaParams {
+                    shape: 4.0,
+                    rate: 0.00005,
+                }),
+                orphan_beta: BetaParams {
+                    alpha: 8.0,
+                    beta: 2.0,
+                },
+                tty_beta: BetaParams {
+                    alpha: 1.0,
+                    beta: 10.0,
+                },
+                net_beta: BetaParams {
+                    alpha: 1.0,
+                    beta: 8.0,
+                },
+                io_active_beta: Some(BetaParams {
+                    alpha: 1.0,
+                    beta: 12.0,
+                }),
+                hazard_gamma: Some(GammaParams {
+                    shape: 1.5,
+                    rate: 10000.0,
+                }),
                 competing_hazards: None,
             },
             zombie: ClassPrior {
                 prior_prob: 0.05,
-                cpu_beta: BetaParams { alpha: 1.0, beta: 100.0 },
-                runtime_gamma: Some(GammaParams { shape: 2.0, rate: 0.0001 }),
-                orphan_beta: BetaParams { alpha: 15.0, beta: 1.0 },
-                tty_beta: BetaParams { alpha: 1.0, beta: 50.0 },
-                net_beta: BetaParams { alpha: 1.0, beta: 100.0 },
-                io_active_beta: Some(BetaParams { alpha: 1.0, beta: 100.0 }),
-                hazard_gamma: Some(GammaParams { shape: 0.5, rate: 1000.0 }),
+                cpu_beta: BetaParams {
+                    alpha: 1.0,
+                    beta: 100.0,
+                },
+                runtime_gamma: Some(GammaParams {
+                    shape: 2.0,
+                    rate: 0.0001,
+                }),
+                orphan_beta: BetaParams {
+                    alpha: 15.0,
+                    beta: 1.0,
+                },
+                tty_beta: BetaParams {
+                    alpha: 1.0,
+                    beta: 50.0,
+                },
+                net_beta: BetaParams {
+                    alpha: 1.0,
+                    beta: 100.0,
+                },
+                io_active_beta: Some(BetaParams {
+                    alpha: 1.0,
+                    beta: 100.0,
+                }),
+                hazard_gamma: Some(GammaParams {
+                    shape: 0.5,
+                    rate: 1000.0,
+                }),
                 competing_hazards: None,
             },
         }
@@ -234,10 +320,14 @@ impl ClassPrior {
         }
 
         // Validate Beta params
-        self.cpu_beta.validate(&format!("{}.cpu_beta", class_name))?;
-        self.orphan_beta.validate(&format!("{}.orphan_beta", class_name))?;
-        self.tty_beta.validate(&format!("{}.tty_beta", class_name))?;
-        self.net_beta.validate(&format!("{}.net_beta", class_name))?;
+        self.cpu_beta
+            .validate(&format!("{}.cpu_beta", class_name))?;
+        self.orphan_beta
+            .validate(&format!("{}.orphan_beta", class_name))?;
+        self.tty_beta
+            .validate(&format!("{}.tty_beta", class_name))?;
+        self.net_beta
+            .validate(&format!("{}.net_beta", class_name))?;
 
         if let Some(ref io_beta) = self.io_active_beta {
             io_beta.validate(&format!("{}.io_active_beta", class_name))?;
@@ -268,12 +358,14 @@ impl BetaParams {
     pub fn validate(&self, path: &str) -> Result<()> {
         if self.alpha <= 0.0 {
             return Err(Error::InvalidPriors(format!(
-                "{}.alpha must be positive (got {})", path, self.alpha
+                "{}.alpha must be positive (got {})",
+                path, self.alpha
             )));
         }
         if self.beta <= 0.0 {
             return Err(Error::InvalidPriors(format!(
-                "{}.beta must be positive (got {})", path, self.beta
+                "{}.beta must be positive (got {})",
+                path, self.beta
             )));
         }
         Ok(())
@@ -298,12 +390,14 @@ impl GammaParams {
     pub fn validate(&self, path: &str) -> Result<()> {
         if self.shape <= 0.0 {
             return Err(Error::InvalidPriors(format!(
-                "{}.shape must be positive (got {})", path, self.shape
+                "{}.shape must be positive (got {})",
+                path, self.shape
             )));
         }
         if self.rate <= 0.0 {
             return Err(Error::InvalidPriors(format!(
-                "{}.rate must be positive (got {})", path, self.rate
+                "{}.rate must be positive (got {})",
+                path, self.rate
             )));
         }
         Ok(())
@@ -326,13 +420,16 @@ impl DirichletParams {
     pub fn validate(&self, path: &str) -> Result<()> {
         if self.alpha.len() < 2 {
             return Err(Error::InvalidPriors(format!(
-                "{}.alpha must have at least 2 elements (got {})", path, self.alpha.len()
+                "{}.alpha must have at least 2 elements (got {})",
+                path,
+                self.alpha.len()
             )));
         }
         for (i, &a) in self.alpha.iter().enumerate() {
             if a <= 0.0 {
                 return Err(Error::InvalidPriors(format!(
-                    "{}.alpha[{}] must be positive (got {})", path, i, a
+                    "{}.alpha[{}] must be positive (got {})",
+                    path, i, a
                 )));
             }
         }
@@ -481,22 +578,37 @@ mod tests {
 
     #[test]
     fn test_beta_validation() {
-        let valid = BetaParams { alpha: 2.0, beta: 3.0 };
+        let valid = BetaParams {
+            alpha: 2.0,
+            beta: 3.0,
+        };
         assert!(valid.validate("test").is_ok());
 
-        let invalid_alpha = BetaParams { alpha: 0.0, beta: 3.0 };
+        let invalid_alpha = BetaParams {
+            alpha: 0.0,
+            beta: 3.0,
+        };
         assert!(invalid_alpha.validate("test").is_err());
 
-        let invalid_beta = BetaParams { alpha: 2.0, beta: -1.0 };
+        let invalid_beta = BetaParams {
+            alpha: 2.0,
+            beta: -1.0,
+        };
         assert!(invalid_beta.validate("test").is_err());
     }
 
     #[test]
     fn test_gamma_validation() {
-        let valid = GammaParams { shape: 2.0, rate: 0.5 };
+        let valid = GammaParams {
+            shape: 2.0,
+            rate: 0.5,
+        };
         assert!(valid.validate("test").is_ok());
 
-        let invalid_shape = GammaParams { shape: 0.0, rate: 0.5 };
+        let invalid_shape = GammaParams {
+            shape: 0.0,
+            rate: 0.5,
+        };
         assert!(invalid_shape.validate("test").is_err());
     }
 }

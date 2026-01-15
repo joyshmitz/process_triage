@@ -184,9 +184,10 @@ pub fn detect_container_from_cgroup(cgroup_path: &str) -> ContainerInfo {
             ContainerRuntime::Generic
         };
         info.container_id = k8s_info.container_id.clone();
-        info.container_id_short = k8s_info.container_id.as_ref().map(|id| {
-            id[..12.min(id.len())].to_string()
-        });
+        info.container_id_short = k8s_info
+            .container_id
+            .as_ref()
+            .map(|id| id[..12.min(id.len())].to_string());
         info.kubernetes = Some(k8s_info.k8s);
         info.provenance.source = ContainerDetectionSource::CgroupPath;
         return info;
@@ -226,7 +227,10 @@ pub fn detect_container_from_markers() -> Option<ContainerInfo> {
 /// Detect container info from environment variables (for K8s).
 pub fn detect_kubernetes_from_env(env: &HashMap<String, String>) -> Option<KubernetesInfo> {
     let pod_name = env.get("HOSTNAME").or_else(|| env.get("POD_NAME")).cloned();
-    let namespace = env.get("POD_NAMESPACE").or_else(|| env.get("KUBERNETES_NAMESPACE")).cloned();
+    let namespace = env
+        .get("POD_NAMESPACE")
+        .or_else(|| env.get("KUBERNETES_NAMESPACE"))
+        .cloned();
 
     // K8s service account indicates K8s environment
     let is_k8s = env.contains_key("KUBERNETES_SERVICE_HOST")
@@ -365,7 +369,9 @@ fn extract_kubernetes_info(path: &str) -> Option<K8sExtraction> {
         info.qos_class = Some("Burstable".to_string());
     } else if path.contains("besteffort") {
         info.qos_class = Some("BestEffort".to_string());
-    } else if path.contains("guaranteed") || !path.contains("burstable") && !path.contains("besteffort") {
+    } else if path.contains("guaranteed")
+        || !path.contains("burstable") && !path.contains("besteffort")
+    {
         info.qos_class = Some("Guaranteed".to_string());
     }
 
@@ -398,7 +404,8 @@ fn extract_kubernetes_info(path: &str) -> Option<K8sExtraction> {
     if let Some(last) = parts.last() {
         // cri-containerd-<id>.scope
         if last.starts_with("cri-containerd-") {
-            let id = last.strip_prefix("cri-containerd-")
+            let id = last
+                .strip_prefix("cri-containerd-")
                 .and_then(|s| s.strip_suffix(".scope"))
                 .unwrap_or(last);
             if is_container_id(id) {
@@ -407,7 +414,8 @@ fn extract_kubernetes_info(path: &str) -> Option<K8sExtraction> {
         }
         // crio-<id>.scope or crio-<id>
         else if last.starts_with("crio-") {
-            let id = last.strip_prefix("crio-")
+            let id = last
+                .strip_prefix("crio-")
                 .and_then(|s| s.strip_suffix(".scope").or(Some(s)))
                 .unwrap_or(last);
             if is_container_id(id) {
@@ -416,7 +424,8 @@ fn extract_kubernetes_info(path: &str) -> Option<K8sExtraction> {
         }
         // docker-<id>.scope
         else if last.starts_with("docker-") {
-            let id = last.strip_prefix("docker-")
+            let id = last
+                .strip_prefix("docker-")
                 .and_then(|s| s.strip_suffix(".scope"))
                 .unwrap_or(last);
             if is_container_id(id) {
@@ -477,7 +486,8 @@ mod tests {
 
     #[test]
     fn test_detect_containerd() {
-        let path = "/containerd/default/abc123def456789012345678901234567890123456789012345678901234";
+        let path =
+            "/containerd/default/abc123def456789012345678901234567890123456789012345678901234";
         let info = detect_container_from_cgroup(path);
 
         assert!(info.in_container);
@@ -533,7 +543,9 @@ mod tests {
     #[test]
     fn test_is_container_id() {
         assert!(is_container_id("abc123def456"));
-        assert!(is_container_id("abc123def456789012345678901234567890123456789012345678901234"));
+        assert!(is_container_id(
+            "abc123def456789012345678901234567890123456789012345678901234"
+        ));
         assert!(!is_container_id("abc")); // Too short
         assert!(!is_container_id("not-hex-chars!")); // Invalid chars
     }
@@ -541,7 +553,10 @@ mod tests {
     #[test]
     fn test_detect_k8s_from_env() {
         let mut env = HashMap::new();
-        env.insert("KUBERNETES_SERVICE_HOST".to_string(), "10.0.0.1".to_string());
+        env.insert(
+            "KUBERNETES_SERVICE_HOST".to_string(),
+            "10.0.0.1".to_string(),
+        );
         env.insert("HOSTNAME".to_string(), "my-pod-abc123".to_string());
         env.insert("POD_NAMESPACE".to_string(), "default".to_string());
 

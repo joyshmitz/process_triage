@@ -372,12 +372,10 @@ impl EvidenceLedger {
 
     /// Check if classification has strong evidence support.
     pub fn has_strong_support(&self) -> bool {
-        self.bayes_factors
-            .iter()
-            .any(|bf| {
-                bf.direction == Direction::TowardPredicted
-                    && bf.strength as u8 >= EvidenceStrength::Strong as u8
-            })
+        self.bayes_factors.iter().any(|bf| {
+            bf.direction == Direction::TowardPredicted
+                && bf.strength as u8 >= EvidenceStrength::Strong as u8
+        })
     }
 }
 
@@ -602,8 +600,7 @@ mod tests {
         // Check that factors are sorted by absolute log_bf
         for i in 1..ledger.bayes_factors.len() {
             assert!(
-                ledger.bayes_factors[i - 1].log_bf.abs()
-                    >= ledger.bayes_factors[i].log_bf.abs(),
+                ledger.bayes_factors[i - 1].log_bf.abs() >= ledger.bayes_factors[i].log_bf.abs(),
                 "Bayes factors should be sorted by magnitude"
             );
         }

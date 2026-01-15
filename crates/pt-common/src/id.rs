@@ -85,7 +85,12 @@ impl SessionId {
     pub fn new() -> Self {
         let now = chrono::Utc::now();
         let suffix = generate_base32_suffix();
-        SessionId(format!("pt-{}-{}-{}", now.format("%Y%m%d"), now.format("%H%M%S"), suffix))
+        SessionId(format!(
+            "pt-{}-{}-{}",
+            now.format("%Y%m%d"),
+            now.format("%H%M%S"),
+            suffix
+        ))
     }
 
     /// Parse an existing session ID string.
@@ -259,19 +264,13 @@ mod tests {
     #[test]
     fn test_start_id_linux() {
         let sid = StartId::from_linux("9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f", 123456789, 4242);
-        assert_eq!(
-            sid.0,
-            "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:123456789:4242"
-        );
+        assert_eq!(sid.0, "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:123456789:4242");
     }
 
     #[test]
     fn test_start_id_macos() {
         let sid = StartId::from_macos("9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f", 987654321, 1234);
-        assert_eq!(
-            sid.0,
-            "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:987654321:1234"
-        );
+        assert_eq!(sid.0, "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:987654321:1234");
     }
 
     #[test]
@@ -341,13 +340,28 @@ mod tests {
     fn test_process_identity_can_safely_revalidate() {
         let start_id = StartId::from_linux("boot-id", 12345, 100);
 
-        let full = ProcessIdentity::full(100, start_id.clone(), 1000, None, None, IdentityQuality::Full);
+        let full = ProcessIdentity::full(
+            100,
+            start_id.clone(),
+            1000,
+            None,
+            None,
+            IdentityQuality::Full,
+        );
         assert!(full.can_safely_revalidate());
 
-        let no_boot = ProcessIdentity::full(100, start_id.clone(), 1000, None, None, IdentityQuality::NoBootId);
+        let no_boot = ProcessIdentity::full(
+            100,
+            start_id.clone(),
+            1000,
+            None,
+            None,
+            IdentityQuality::NoBootId,
+        );
         assert!(no_boot.can_safely_revalidate());
 
-        let pid_only = ProcessIdentity::full(100, start_id, 1000, None, None, IdentityQuality::PidOnly);
+        let pid_only =
+            ProcessIdentity::full(100, start_id, 1000, None, None, IdentityQuality::PidOnly);
         assert!(!pid_only.can_safely_revalidate());
     }
 }

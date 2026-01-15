@@ -447,10 +447,7 @@ impl Capabilities {
 
     /// Check if a tool is available.
     pub fn has_tool(&self, name: &str) -> bool {
-        self.tools
-            .get(name)
-            .map(|t| t.available)
-            .unwrap_or(false)
+        self.tools.get(name).map(|t| t.available).unwrap_or(false)
     }
 
     /// Check if a tool is functional (available and passed functionality check).
@@ -481,10 +478,7 @@ impl Capabilities {
 
     /// Check if /proc is available.
     pub fn has_procfs(&self) -> bool {
-        self.proc_fs
-            .as_ref()
-            .map(|p| p.available)
-            .unwrap_or(false)
+        self.proc_fs.as_ref().map(|p| p.available).unwrap_or(false)
     }
 
     /// Check if a specific /proc field is readable.
@@ -506,18 +500,12 @@ impl Capabilities {
 
     /// Check if systemd is available.
     pub fn has_systemd(&self) -> bool {
-        self.systemd
-            .as_ref()
-            .map(|s| s.available)
-            .unwrap_or(false)
+        self.systemd.as_ref().map(|s| s.available).unwrap_or(false)
     }
 
     /// Check if PSI (Pressure Stall Information) is available.
     pub fn has_psi(&self) -> bool {
-        self.psi
-            .as_ref()
-            .map(|p| p.available)
-            .unwrap_or(false)
+        self.psi.as_ref().map(|p| p.available).unwrap_or(false)
     }
 
     /// Check if non-interactive sudo is available.
@@ -526,7 +514,8 @@ impl Capabilities {
             .as_ref()
             .map(|s| s.available && s.passwordless.unwrap_or(false))
             .unwrap_or(false)
-            || self.privileges
+            || self
+                .privileges
                 .as_ref()
                 .and_then(|p| p.can_sudo)
                 .unwrap_or(false)
@@ -543,11 +532,10 @@ impl Capabilities {
     /// Load capabilities from cache file.
     pub fn load_from_cache() -> Result<Self, CapabilitiesError> {
         let path = Self::cache_path();
-        let contents = std::fs::read_to_string(&path)
-            .map_err(|e| CapabilitiesError::IoError {
-                path: path.clone(),
-                reason: e.to_string(),
-            })?;
+        let contents = std::fs::read_to_string(&path).map_err(|e| CapabilitiesError::IoError {
+            path: path.clone(),
+            reason: e.to_string(),
+        })?;
 
         serde_json::from_str(&contents).map_err(|e| CapabilitiesError::ParseError {
             path,
@@ -567,11 +555,10 @@ impl Capabilities {
             })?;
         }
 
-        let contents = serde_json::to_string_pretty(self).map_err(|e| {
-            CapabilitiesError::SerializeError {
+        let contents =
+            serde_json::to_string_pretty(self).map_err(|e| CapabilitiesError::SerializeError {
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
 
         std::fs::write(&path, contents).map_err(|e| CapabilitiesError::IoError {
             path,

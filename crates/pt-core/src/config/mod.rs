@@ -221,11 +221,10 @@ fn load_priors_from_file(path: &PathBuf) -> Result<(Priors, String), ConfigError
 
     let hash = compute_hash(&content);
 
-    let priors: Priors =
-        serde_json::from_str(&content).map_err(|e| ConfigError::ParseError {
-            path: path.clone(),
-            source: e,
-        })?;
+    let priors: Priors = serde_json::from_str(&content).map_err(|e| ConfigError::ParseError {
+        path: path.clone(),
+        source: e,
+    })?;
 
     // Check schema version
     if priors.schema_version != CONFIG_SCHEMA_VERSION {
@@ -247,11 +246,10 @@ fn load_policy_from_file(path: &PathBuf) -> Result<(Policy, String), ConfigError
 
     let hash = compute_hash(&content);
 
-    let policy: Policy =
-        serde_json::from_str(&content).map_err(|e| ConfigError::ParseError {
-            path: path.clone(),
-            source: e,
-        })?;
+    let policy: Policy = serde_json::from_str(&content).map_err(|e| ConfigError::ParseError {
+        path: path.clone(),
+        source: e,
+    })?;
 
     // Check schema version
     if policy.schema_version != CONFIG_SCHEMA_VERSION {

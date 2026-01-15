@@ -31,7 +31,11 @@ fn write_log_line(line: &str) {
     let path = log_file_path();
     if let Some(parent) = path.parent() {
         if let Err(err) = fs::create_dir_all(parent) {
-            eprintln!("test_log: failed to create log dir {}: {}", parent.display(), err);
+            eprintln!(
+                "test_log: failed to create log dir {}: {}",
+                parent.display(),
+                err
+            );
             return;
         }
     }
@@ -39,16 +43,28 @@ fn write_log_line(line: &str) {
     let mut file = match OpenOptions::new().create(true).append(true).open(&path) {
         Ok(file) => file,
         Err(err) => {
-            eprintln!("test_log: failed to open log file {}: {}", path.display(), err);
+            eprintln!(
+                "test_log: failed to open log file {}: {}",
+                path.display(),
+                err
+            );
             return;
         }
     };
 
     if let Err(err) = file.write_all(line.as_bytes()) {
-        eprintln!("test_log: failed to write log file {}: {}", path.display(), err);
+        eprintln!(
+            "test_log: failed to write log file {}: {}",
+            path.display(),
+            err
+        );
     }
     if let Err(err) = file.write_all(b"\n") {
-        eprintln!("test_log: failed to finalize log line {}: {}", path.display(), err);
+        eprintln!(
+            "test_log: failed to finalize log line {}: {}",
+            path.display(),
+            err
+        );
     }
 }
 
@@ -80,6 +96,14 @@ pub fn log_event(level: &str, msg: &str, file: &str, line: u32, fields: &[(&str,
             map.insert(prefixed, value.clone());
         } else {
             map.insert((*key).to_string(), value.clone());
+        }
+    }
+
+    if !map.contains_key("test") {
+        if let Some(Value::String(test_name)) = map.get("test_name") {
+            map.insert("test".to_string(), Value::String(test_name.clone()));
+        } else if let Some(Value::String(thread_name)) = map.get("thread") {
+            map.insert("test".to_string(), Value::String(thread_name.clone()));
         }
     }
 
@@ -165,7 +189,10 @@ mod tests {
             "test-log",
             "test_log.rs",
             123,
-            &[("test", Value::String("test_log_event_serializes".to_string()))],
+            &[(
+                "test",
+                Value::String("test_log_event_serializes".to_string()),
+            )],
         );
 
         let path = log_file_path();
@@ -186,6 +213,11 @@ mod tests {
     #[test]
     #[should_panic(expected = "assertion failed")]
     fn test_assert_eq_macro_panics() {
-        test_assert_eq!(1, 2, "values should match", test = "test_assert_eq_macro_panics");
+        test_assert_eq!(
+            1,
+            2,
+            "values should match",
+            test = "test_assert_eq_macro_panics"
+        );
     }
 }

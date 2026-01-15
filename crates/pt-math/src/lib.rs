@@ -2,11 +2,11 @@
 
 pub mod math;
 
-pub use math::stable::*;
-pub use math::beta::*;
+pub use math::bayes_factor;
 pub use math::bernoulli;
+pub use math::beta::*;
 pub use math::binomial;
 pub use math::dirichlet;
 pub use math::gamma::*;
 pub use math::posterior::*;
-pub use math::bayes_factor;
+pub use math::stable::*;

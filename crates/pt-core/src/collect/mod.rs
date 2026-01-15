@@ -24,11 +24,11 @@ mod deep_scan;
 mod network;
 #[cfg(target_os = "linux")]
 mod proc_parsers;
+mod quick_scan;
 #[cfg(target_os = "linux")]
 pub mod systemd;
 #[cfg(target_os = "linux")]
 pub mod tick_delta;
-mod quick_scan;
 pub mod tool_runner;
 mod types;
 
@@ -48,11 +48,11 @@ pub use proc_parsers::{
 };
 pub use quick_scan::{quick_scan, QuickScanError, QuickScanOptions};
 pub use tool_runner::{
-    run_tool, run_tools_parallel, ToolConfig, ToolError, ToolOutput, ToolRunner,
-    ToolRunnerBuilder, ToolSpec, DEFAULT_BUDGET_MS, DEFAULT_MAX_OUTPUT_BYTES,
-    DEFAULT_MAX_PARALLEL, DEFAULT_TIMEOUT_SECS,
+    run_tool, run_tools_parallel, ToolConfig, ToolError, ToolOutput, ToolRunner, ToolRunnerBuilder,
+    ToolSpec, DEFAULT_BUDGET_MS, DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_PARALLEL,
+    DEFAULT_TIMEOUT_SECS,
 };
-pub use types::{ProcessRecord, ProcessState, ScanResult, ScanMetadata};
+pub use types::{ProcessRecord, ProcessState, ScanMetadata, ScanResult};
 
 // Re-export cgroup types
 #[cfg(target_os = "linux")]

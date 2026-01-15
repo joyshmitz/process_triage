@@ -9,11 +9,10 @@ pub mod schema;
 pub mod writer;
 
 pub use schema::{
-    TelemetrySchema, TableName,
-    runs_schema, proc_samples_schema, proc_features_schema,
-    proc_inference_schema, outcomes_schema, audit_schema,
+    audit_schema, outcomes_schema, proc_features_schema, proc_inference_schema,
+    proc_samples_schema, runs_schema, TableName, TelemetrySchema,
 };
-pub use writer::{BatchedWriter, WriterConfig, WriteError};
+pub use writer::{BatchedWriter, WriteError, WriterConfig};
 
 /// Schema version for telemetry tables.
 pub const SCHEMA_VERSION: &str = "1.0.0";

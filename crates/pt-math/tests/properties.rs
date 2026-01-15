@@ -3,7 +3,9 @@
 //! Uses proptest to verify mathematical properties hold across many random inputs.
 
 use proptest::prelude::*;
-use pt_math::{log_add_exp, log_beta, log_binomial, log_factorial, log_gamma, log_sub_exp, log_sum_exp};
+use pt_math::{
+    log_add_exp, log_beta, log_binomial, log_factorial, log_gamma, log_sub_exp, log_sum_exp,
+};
 
 /// Tolerance for floating point comparisons.
 const TOL: f64 = 1e-10;

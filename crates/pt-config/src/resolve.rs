@@ -73,10 +73,7 @@ const APP_NAME: &str = "process-triage";
 /// 4. XDG config directory (~/.config/process-triage/)
 /// 5. System config (/etc/process-triage/)
 /// 6. Built-in defaults (None)
-pub fn resolve_config(
-    cli_priors: Option<&Path>,
-    cli_policy: Option<&Path>,
-) -> ConfigPaths {
+pub fn resolve_config(cli_priors: Option<&Path>, cli_policy: Option<&Path>) -> ConfigPaths {
     let mut paths = ConfigPaths::default();
 
     // Resolve priors path
@@ -195,10 +192,16 @@ mod tests {
     #[test]
     fn test_config_source_display() {
         assert_eq!(format!("{}", ConfigSource::CliArgument), "CLI argument");
-        assert_eq!(format!("{}", ConfigSource::Environment), "environment variable");
+        assert_eq!(
+            format!("{}", ConfigSource::Environment),
+            "environment variable"
+        );
         assert_eq!(format!("{}", ConfigSource::XdgConfig), "XDG config");
         assert_eq!(format!("{}", ConfigSource::SystemConfig), "system config");
-        assert_eq!(format!("{}", ConfigSource::BuiltinDefault), "builtin default");
+        assert_eq!(
+            format!("{}", ConfigSource::BuiltinDefault),
+            "builtin default"
+        );
     }
 
     #[test]

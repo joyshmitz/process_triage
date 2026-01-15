@@ -321,7 +321,10 @@ fn read_cpuset_file(path: &str) -> Option<u32> {
 pub fn num_logical_cpus() -> u32 {
     // Try /proc/cpuinfo first
     if let Ok(content) = fs::read_to_string("/proc/cpuinfo") {
-        let count = content.lines().filter(|l| l.starts_with("processor")).count();
+        let count = content
+            .lines()
+            .filter(|l| l.starts_with("processor"))
+            .count();
         if count > 0 {
             return count as u32;
         }
@@ -501,7 +504,10 @@ Cpus_allowed_list:	0-3,8-11
             },
         };
 
-        assert_eq!(capacity.provenance.binding_constraint, BindingConstraint::Quota);
+        assert_eq!(
+            capacity.provenance.binding_constraint,
+            BindingConstraint::Quota
+        );
     }
 
     #[test]

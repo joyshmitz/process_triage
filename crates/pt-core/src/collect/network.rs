@@ -109,7 +109,10 @@ impl TcpState {
 
     /// Whether this state represents an active connection.
     pub fn is_active(&self) -> bool {
-        matches!(self, TcpState::Established | TcpState::SynSent | TcpState::SynRecv)
+        matches!(
+            self,
+            TcpState::Established | TcpState::SynSent | TcpState::SynRecv
+        )
     }
 
     /// Whether this state is a listening socket.
@@ -429,8 +432,16 @@ pub fn parse_proc_net_unix_content(content: &str) -> Vec<UnixSocket> {
         }
 
         // Format: Num RefCount Protocol Flags Type St Inode Path
-        let socket_type = parts[4].parse().ok().map(UnixSocketType::from_type).unwrap_or(UnixSocketType::Unknown);
-        let state = parts[5].parse().ok().map(UnixSocketState::from_state).unwrap_or(UnixSocketState::Unknown);
+        let socket_type = parts[4]
+            .parse()
+            .ok()
+            .map(UnixSocketType::from_type)
+            .unwrap_or(UnixSocketType::Unknown);
+        let state = parts[5]
+            .parse()
+            .ok()
+            .map(UnixSocketState::from_state)
+            .unwrap_or(UnixSocketState::Unknown);
         let inode = parts[6].parse().unwrap_or(0);
         let path = if parts.len() > 7 {
             Some(parts[7].to_string())
@@ -508,9 +519,16 @@ fn parse_ipv6_addr(hex: &str) -> String {
     }
 
     Ipv6Addr::new(
-        segments[0], segments[1], segments[2], segments[3],
-        segments[4], segments[5], segments[6], segments[7],
-    ).to_string()
+        segments[0],
+        segments[1],
+        segments[2],
+        segments[3],
+        segments[4],
+        segments[5],
+        segments[6],
+        segments[7],
+    )
+    .to_string()
 }
 
 #[cfg(test)]
@@ -601,7 +619,10 @@ mod tests {
 
         assert_eq!(sockets[0].socket_type, UnixSocketType::Stream);
         assert_eq!(sockets[0].inode, 22222);
-        assert_eq!(sockets[0].path, Some("/var/run/dbus/system_bus_socket".to_string()));
+        assert_eq!(
+            sockets[0].path,
+            Some("/var/run/dbus/system_bus_socket".to_string())
+        );
 
         assert_eq!(sockets[1].socket_type, UnixSocketType::Dgram);
         assert_eq!(sockets[1].inode, 33333);

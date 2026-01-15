@@ -6,8 +6,8 @@
 //! - Robot mode gates for automated operation
 //! - FDR control parameters
 
-use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
+use serde::{Deserialize, Serialize};
 
 /// Schema version for policy configuration.
 pub const POLICY_SCHEMA_VERSION: &str = "1.0.0";
@@ -167,32 +167,37 @@ impl LossRow {
     pub fn validate(&self, path: &str) -> Result<()> {
         if !self.keep.is_finite() || self.keep < 0.0 {
             return Err(Error::InvalidPolicy(format!(
-                "{}.keep must be non-negative and finite (got {})", path, self.keep
+                "{}.keep must be non-negative and finite (got {})",
+                path, self.keep
             )));
         }
         if !self.kill.is_finite() || self.kill < 0.0 {
             return Err(Error::InvalidPolicy(format!(
-                "{}.kill must be non-negative and finite (got {})", path, self.kill
+                "{}.kill must be non-negative and finite (got {})",
+                path, self.kill
             )));
         }
         if let Some(pause) = self.pause {
             if !pause.is_finite() || pause < 0.0 {
                 return Err(Error::InvalidPolicy(format!(
-                    "{}.pause must be non-negative and finite (got {})", path, pause
+                    "{}.pause must be non-negative and finite (got {})",
+                    path, pause
                 )));
             }
         }
         if let Some(throttle) = self.throttle {
             if !throttle.is_finite() || throttle < 0.0 {
                 return Err(Error::InvalidPolicy(format!(
-                    "{}.throttle must be non-negative and finite (got {})", path, throttle
+                    "{}.throttle must be non-negative and finite (got {})",
+                    path, throttle
                 )));
             }
         }
         if let Some(restart) = self.restart {
             if !restart.is_finite() || restart < 0.0 {
                 return Err(Error::InvalidPolicy(format!(
-                    "{}.restart must be non-negative and finite (got {})", path, restart
+                    "{}.restart must be non-negative and finite (got {})",
+                    path, restart
                 )));
             }
         }
@@ -295,14 +300,12 @@ impl Default for Guardrails {
                     notes: Some("databases and proxies".to_string()),
                 },
             ],
-            force_review_patterns: vec![
-                PatternEntry {
-                    pattern: r"\b(kube|k8s|etcd)\b".to_string(),
-                    kind: PatternKind::Regex,
-                    case_insensitive: true,
-                    notes: Some("cluster components".to_string()),
-                },
-            ],
+            force_review_patterns: vec![PatternEntry {
+                pattern: r"\b(kube|k8s|etcd)\b".to_string(),
+                kind: PatternKind::Regex,
+                case_insensitive: true,
+                notes: Some("cluster components".to_string()),
+            }],
             protected_users: vec!["root".to_string()],
             protected_groups: vec![],
             protected_categories: vec!["daemon".to_string(), "system".to_string()],
@@ -334,7 +337,8 @@ impl PatternEntry {
     pub fn validate(&self, path: &str) -> Result<()> {
         if self.pattern.is_empty() {
             return Err(Error::InvalidPolicy(format!(
-                "{}.pattern must not be empty", path
+                "{}.pattern must not be empty",
+                path
             )));
         }
         // Try to compile regex patterns

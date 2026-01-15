@@ -154,7 +154,10 @@ pub fn select_fdr(
     let selected_k = match method {
         FdrMethod::None => {
             // Select all with e > 1
-            sorted_indices.iter().filter(|&&i| candidates[i].e_value > 1.0).count()
+            sorted_indices
+                .iter()
+                .filter(|&&i| candidates[i].e_value > 1.0)
+                .count()
         }
         FdrMethod::EBh | FdrMethod::EBy => {
             let mut k = 0;
@@ -183,7 +186,11 @@ pub fn select_fdr(
     for (rank_0, &idx) in sorted_indices.iter().enumerate() {
         let rank = rank_0 + 1;
         let e_val = candidates[idx].e_value;
-        let p_val = if e_val > 0.0 { (1.0 / e_val).min(1.0) } else { 1.0 };
+        let p_val = if e_val > 0.0 {
+            (1.0 / e_val).min(1.0)
+        } else {
+            1.0
+        };
         let threshold = (m as f64) / (effective_alpha * rank as f64);
         let selected = rank <= selected_k;
 
@@ -366,10 +373,10 @@ mod tests {
     #[test]
     fn test_none_method_selects_evalue_gt_1() {
         let candidates = vec![
-            make_candidate(1, 2.0),   // > 1, selected
-            make_candidate(2, 1.5),   // > 1, selected
-            make_candidate(3, 0.8),   // < 1, not selected
-            make_candidate(4, 0.1),   // < 1, not selected
+            make_candidate(1, 2.0), // > 1, selected
+            make_candidate(2, 1.5), // > 1, selected
+            make_candidate(3, 0.8), // < 1, not selected
+            make_candidate(4, 0.1), // < 1, not selected
         ];
         let result = select_fdr(&candidates, 0.1, FdrMethod::None).unwrap();
         assert_eq!(result.selected_k, 2);
@@ -390,9 +397,9 @@ mod tests {
     #[test]
     fn test_p_value_derivation() {
         let candidates = vec![
-            make_candidate(1, 10.0),  // p = 0.1
-            make_candidate(2, 2.0),   // p = 0.5
-            make_candidate(3, 0.5),   // p = 1.0 (capped)
+            make_candidate(1, 10.0), // p = 0.1
+            make_candidate(2, 2.0),  // p = 0.5
+            make_candidate(3, 0.5),  // p = 1.0 (capped)
         ];
         let result = select_fdr(&candidates, 0.5, FdrMethod::EBh).unwrap();
 

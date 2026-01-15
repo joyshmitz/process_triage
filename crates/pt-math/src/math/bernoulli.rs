@@ -35,12 +35,18 @@ impl BetaParams {
 
     /// Create Beta(1, 1) uniform prior.
     pub fn uniform() -> Self {
-        Self { alpha: 1.0, beta: 1.0 }
+        Self {
+            alpha: 1.0,
+            beta: 1.0,
+        }
     }
 
     /// Create a Jeffreys prior Beta(0.5, 0.5).
     pub fn jeffreys() -> Self {
-        Self { alpha: 0.5, beta: 0.5 }
+        Self {
+            alpha: 0.5,
+            beta: 0.5,
+        }
     }
 
     /// Posterior mean E[p] = α / (α + β).
@@ -244,7 +250,11 @@ pub fn effective_sample_size(posterior: &BetaParams, prior: &BetaParams) -> f64 
 /// Batch update: compute posterior from multiple independent observations.
 ///
 /// This is equivalent to calling posterior_params once with summed counts.
-pub fn batch_update(prior: &BetaParams, observations: &[(f64, f64)], eta: f64) -> Option<BetaParams> {
+pub fn batch_update(
+    prior: &BetaParams,
+    observations: &[(f64, f64)],
+    eta: f64,
+) -> Option<BetaParams> {
     let mut total_k = 0.0;
     let mut total_n = 0.0;
 
@@ -406,8 +416,13 @@ mod tests {
             for beta in [0.1, 0.5, 1.0, 2.0, 10.0] {
                 let post = BetaParams::new(alpha, beta).unwrap();
                 let (p0, p1) = predictive_probs(&post);
-                assert!(approx_eq(p0 + p1, 1.0, 1e-12),
-                    "α={}, β={}: p0+p1={}", alpha, beta, p0 + p1);
+                assert!(
+                    approx_eq(p0 + p1, 1.0, 1e-12),
+                    "α={}, β={}: p0+p1={}",
+                    alpha,
+                    beta,
+                    p0 + p1
+                );
             }
         }
     }
@@ -537,8 +552,14 @@ mod tests {
 
         for level in [0.5, 0.9, 0.95, 0.99] {
             let (lo, hi) = credible_interval(&post, level);
-            assert!(lo < mean && mean < hi,
-                "level={}: [{}, {}] should contain mean {}", level, lo, hi, mean);
+            assert!(
+                lo < mean && mean < hi,
+                "level={}: [{}, {}] should contain mean {}",
+                level,
+                lo,
+                hi,
+                mean
+            );
         }
     }
 
@@ -681,7 +702,13 @@ mod tests {
         for k in 0..=10 {
             let post = posterior_params(&prior, k as f64, n, 1.0).unwrap();
             let (_, p1) = predictive_probs(&post);
-            assert!(p1 >= prev_mean, "k={}: p1={} should be >= {}", k, p1, prev_mean);
+            assert!(
+                p1 >= prev_mean,
+                "k={}: p1={} should be >= {}",
+                k,
+                p1,
+                prev_mean
+            );
             prev_mean = p1;
         }
     }

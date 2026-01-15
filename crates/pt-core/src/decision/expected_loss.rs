@@ -53,7 +53,9 @@ pub struct ActionFeasibility {
 
 impl ActionFeasibility {
     pub fn allow_all() -> Self {
-        Self { disabled: Vec::new() }
+        Self {
+            disabled: Vec::new(),
+        }
     }
 
     pub fn is_allowed(&self, action: Action) -> bool {
@@ -82,6 +84,7 @@ pub struct DecisionRationale {
     pub chosen_action: Action,
     pub tie_break: bool,
     pub disabled_actions: Vec<DisabledAction>,
+    pub used_recovery_preference: bool,
 }
 
 /// Decision output for a single candidate.
@@ -154,6 +157,7 @@ pub fn decide_action(
             chosen_action: optimal_action,
             tie_break,
             disabled_actions: disabled,
+            used_recovery_preference: false,
         },
     })
 }
@@ -193,6 +197,7 @@ pub fn decide_action_with_recovery(
 
     let recovery_expectations = expected_recovery_by_action(priors, posterior);
     let (mut optimal_action, mut tie_break) = select_optimal_action(&expected_losses);
+    let mut used_recovery_preference = false;
     if !recovery_expectations.is_empty() {
         let (candidate_action, used_recovery) = select_action_with_recovery(
             &expected_losses,
@@ -201,6 +206,7 @@ pub fn decide_action_with_recovery(
             optimal_action,
         );
         if used_recovery {
+            used_recovery_preference = true;
             if candidate_action != optimal_action {
                 tie_break = true;
             }
@@ -225,13 +231,22 @@ pub fn decide_action_with_recovery(
             chosen_action: optimal_action,
             tie_break,
             disabled_actions: disabled,
+            used_recovery_preference,
         },
     })
 }
 
 fn validate_posterior(posterior: &ClassScores) -> Result<(), DecisionError> {
-    let values = [posterior.useful, posterior.useful_bad, posterior.abandoned, posterior.zombie];
-    if values.iter().any(|v: &f64| v.is_nan() || v.is_infinite() || *v < 0.0) {
+    let values = [
+        posterior.useful,
+        posterior.useful_bad,
+        posterior.abandoned,
+        posterior.zombie,
+    ];
+    if values
+        .iter()
+        .any(|v: &f64| v.is_nan() || v.is_infinite() || *v < 0.0)
+    {
         return Err(DecisionError::InvalidPosterior {
             message: "posterior contains NaN/Inf or negative values".to_string(),
         });
@@ -261,10 +276,16 @@ fn expected_loss_for_action(
         + posterior.zombie * zombie)
 }
 
-fn loss_for_action(row: &LossRow, action: Action, class: &'static str) -> Result<f64, DecisionError> {
+fn loss_for_action(
+    row: &LossRow,
+    action: Action,
+    class: &'static str,
+) -> Result<f64, DecisionError> {
     match action {
         Action::Keep => Ok(row.keep),
-        Action::Pause => row.pause.ok_or(DecisionError::MissingLoss { action, class }),
+        Action::Pause => row
+            .pause
+            .ok_or(DecisionError::MissingLoss { action, class }),
         Action::Throttle => row
             .throttle
             .ok_or(DecisionError::MissingLoss { action, class }),
@@ -365,7 +386,10 @@ fn posterior_odds_abandoned_vs_useful(posterior: &ClassScores) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::policy::{Policy, LossMatrix, LossRow};
+    use crate::config::policy::{LossMatrix, LossRow, Policy};
+    use crate::config::priors::{
+        BetaParams, CausalInterventions, ClassPriors, Classes, InterventionPriors, Priors,
+    };
 
     fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
@@ -384,8 +408,8 @@ mod tests {
             abandoned: 0.2,
             zombie: 0.1,
         };
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
         let keep_loss = outcome
             .expected_loss
             .iter()
@@ -438,8 +462,8 @@ mod tests {
             abandoned: 0.25,
             zombie: 0.25,
         };
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
         assert_eq!(outcome.optimal_action, Action::Keep);
         assert!(outcome.rationale.tie_break);
     }
@@ -466,5 +490,132 @@ mod tests {
         let boundary = compute_sprt_boundary(&policy.loss_matrix).expect("boundary");
         let boundary = boundary.expect("boundary");
         assert!(boundary.log_odds_threshold.is_finite());
+    }
+
+    #[test]
+    fn recovery_preference_overrides_small_loss_gap() {
+        let posterior = ClassScores {
+            useful: 1.0,
+            useful_bad: 0.0,
+            abandoned: 0.0,
+            zombie: 0.0,
+        };
+
+        let loss_row = LossRow {
+            keep: 0.98,
+            pause: Some(1.0),
+            throttle: Some(2.0),
+            restart: Some(2.0),
+            kill: 0.99,
+        };
+        let policy = Policy {
+            loss_matrix: LossMatrix {
+                useful: loss_row.clone(),
+                useful_bad: loss_row.clone(),
+                abandoned: loss_row.clone(),
+                zombie: loss_row.clone(),
+            },
+            ..Policy::default()
+        };
+
+        let class_priors = ClassPriors {
+            prior_prob: 0.25,
+            cpu_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            runtime_gamma: None,
+            orphan_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            tty_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            net_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            io_active_beta: None,
+            hazard_gamma: None,
+            competing_hazards: None,
+        };
+
+        let priors = Priors {
+            schema_version: "1.0.0".to_string(),
+            description: None,
+            created_at: None,
+            updated_at: None,
+            host_profile: None,
+            classes: Classes {
+                useful: class_priors.clone(),
+                useful_bad: class_priors.clone(),
+                abandoned: class_priors.clone(),
+                zombie: class_priors,
+            },
+            hazard_regimes: vec![],
+            semi_markov: None,
+            change_point: None,
+            causal_interventions: Some(CausalInterventions {
+                pause: Some(InterventionPriors {
+                    useful: Some(BetaParams {
+                        alpha: 9.0,
+                        beta: 1.0,
+                    }),
+                    useful_bad: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 1.0,
+                    }),
+                    abandoned: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 1.0,
+                    }),
+                    zombie: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 1.0,
+                    }),
+                }),
+                throttle: None,
+                kill: Some(InterventionPriors {
+                    useful: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 9.0,
+                    }),
+                    useful_bad: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 1.0,
+                    }),
+                    abandoned: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 1.0,
+                    }),
+                    zombie: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 1.0,
+                    }),
+                }),
+                restart: None,
+            }),
+            command_categories: None,
+            state_flags: None,
+            hierarchical: None,
+            robust_bayes: None,
+            error_rate: None,
+            bocpd: None,
+        };
+
+        let outcome = decide_action_with_recovery(
+            &posterior,
+            &policy,
+            &ActionFeasibility::allow_all(),
+            &priors,
+            0.05,
+        )
+        .expect("decision");
+
+        assert_eq!(outcome.optimal_action, Action::Pause);
+        assert!(outcome.recovery_expectations.is_some());
+        assert!(outcome.rationale.used_recovery_preference);
     }
 }

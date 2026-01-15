@@ -94,7 +94,10 @@ mod session_id_format {
     #[test]
     fn session_id_starts_with_pt() {
         let sid = SessionId::new();
-        assert!(sid.0.starts_with("pt-"), "Session ID should start with 'pt-'");
+        assert!(
+            sid.0.starts_with("pt-"),
+            "Session ID should start with 'pt-'"
+        );
     }
 
     /// Too short session IDs should fail.
@@ -156,7 +159,7 @@ mod session_id_format {
     fn date_part_must_be_digits() {
         let bad_dates = [
             "pt-2026011a-143022-a7xq",
-            "pt-2026O115-143022-a7xq",  // Letter O instead of 0
+            "pt-2026O115-143022-a7xq", // Letter O instead of 0
             "pt-YYYYMMDD-143022-a7xq",
         ];
         for id in &bad_dates {
@@ -189,11 +192,11 @@ mod session_id_format {
     #[test]
     fn suffix_must_be_base32() {
         let bad_suffixes = [
-            "pt-20260115-143022-A7XQ",  // Uppercase
-            "pt-20260115-143022-a7x8",  // Digit 8 not in base32
-            "pt-20260115-143022-a7x9",  // Digit 9 not in base32
-            "pt-20260115-143022-a7x0",  // Digit 0 not in base32
-            "pt-20260115-143022-a7x1",  // Digit 1 not in base32
+            "pt-20260115-143022-A7XQ", // Uppercase
+            "pt-20260115-143022-a7x8", // Digit 8 not in base32
+            "pt-20260115-143022-a7x9", // Digit 9 not in base32
+            "pt-20260115-143022-a7x0", // Digit 0 not in base32
+            "pt-20260115-143022-a7x1", // Digit 1 not in base32
         ];
         for id in &bad_suffixes {
             assert!(
@@ -208,10 +211,10 @@ mod session_id_format {
     #[test]
     fn hyphens_in_correct_positions() {
         let bad_hyphens = [
-            "pt20260115-143022-a7xq",   // Missing first hyphen
-            "pt-20260115143022-a7xq",   // Missing second hyphen
-            "pt-20260115-143022a7xq",   // Missing third hyphen
-            "pt-20260115_143022-a7xq",  // Underscore instead of hyphen
+            "pt20260115-143022-a7xq",  // Missing first hyphen
+            "pt-20260115143022-a7xq",  // Missing second hyphen
+            "pt-20260115-143022a7xq",  // Missing third hyphen
+            "pt-20260115_143022-a7xq", // Underscore instead of hyphen
         ];
         for id in &bad_hyphens {
             assert!(
@@ -281,40 +284,60 @@ mod priors_schema {
     #[test]
     fn invalid_class_probs_fail() {
         let mut priors = Priors::default();
-        priors.classes.useful.prior_prob = 0.9;  // Sum now != 1.0
+        priors.classes.useful.prior_prob = 0.9; // Sum now != 1.0
         assert!(priors.validate().is_err());
     }
 
     /// Beta parameters must be positive.
     #[test]
     fn beta_params_must_be_positive() {
-        let valid = BetaParams { alpha: 1.0, beta: 1.0 };
+        let valid = BetaParams {
+            alpha: 1.0,
+            beta: 1.0,
+        };
         assert!(valid.validate("test").is_ok());
 
-        let zero_alpha = BetaParams { alpha: 0.0, beta: 1.0 };
+        let zero_alpha = BetaParams {
+            alpha: 0.0,
+            beta: 1.0,
+        };
         assert!(zero_alpha.validate("test").is_err());
 
-        let negative_beta = BetaParams { alpha: 1.0, beta: -0.5 };
+        let negative_beta = BetaParams {
+            alpha: 1.0,
+            beta: -0.5,
+        };
         assert!(negative_beta.validate("test").is_err());
     }
 
     /// Gamma parameters must be positive.
     #[test]
     fn gamma_params_must_be_positive() {
-        let valid = GammaParams { shape: 2.0, rate: 0.5 };
+        let valid = GammaParams {
+            shape: 2.0,
+            rate: 0.5,
+        };
         assert!(valid.validate("test").is_ok());
 
-        let zero_shape = GammaParams { shape: 0.0, rate: 0.5 };
+        let zero_shape = GammaParams {
+            shape: 0.0,
+            rate: 0.5,
+        };
         assert!(zero_shape.validate("test").is_err());
 
-        let negative_rate = GammaParams { shape: 2.0, rate: -0.1 };
+        let negative_rate = GammaParams {
+            shape: 2.0,
+            rate: -0.1,
+        };
         assert!(negative_rate.validate("test").is_err());
     }
 
     /// Dirichlet alpha must have at least 2 elements.
     #[test]
     fn dirichlet_needs_at_least_two_elements() {
-        let valid = DirichletParams { alpha: vec![1.0, 1.0] };
+        let valid = DirichletParams {
+            alpha: vec![1.0, 1.0],
+        };
         assert!(valid.validate("test").is_ok());
 
         let too_short = DirichletParams { alpha: vec![1.0] };
@@ -327,10 +350,14 @@ mod priors_schema {
     /// Dirichlet alpha elements must be positive.
     #[test]
     fn dirichlet_alpha_must_be_positive() {
-        let with_zero = DirichletParams { alpha: vec![1.0, 0.0, 1.0] };
+        let with_zero = DirichletParams {
+            alpha: vec![1.0, 0.0, 1.0],
+        };
         assert!(with_zero.validate("test").is_err());
 
-        let with_negative = DirichletParams { alpha: vec![1.0, -0.5, 1.0] };
+        let with_negative = DirichletParams {
+            alpha: vec![1.0, -0.5, 1.0],
+        };
         assert!(with_negative.validate("test").is_err());
     }
 
@@ -465,11 +492,7 @@ mod cli_json_output {
                 let parsed: Result<serde_json::Value, _> = serde_json::from_str(&stdout);
                 // Not all commands support JSON format yet, so just check if parseable when non-empty JSON-like
                 if stdout.trim().starts_with('{') || stdout.trim().starts_with('[') {
-                    assert!(
-                        parsed.is_ok(),
-                        "Version JSON should be valid: {}",
-                        stdout
-                    );
+                    assert!(parsed.is_ok(), "Version JSON should be valid: {}", stdout);
                 }
             }
         }
@@ -525,20 +548,14 @@ mod start_id_format {
     #[test]
     fn linux_start_id_construction() {
         let sid = StartId::from_linux("9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f", 123456789, 4242);
-        assert_eq!(
-            sid.0,
-            "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:123456789:4242"
-        );
+        assert_eq!(sid.0, "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:123456789:4242");
     }
 
     /// macOS Start ID construction should be valid.
     #[test]
     fn macos_start_id_construction() {
         let sid = StartId::from_macos("9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f", 987654321, 1234);
-        assert_eq!(
-            sid.0,
-            "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:987654321:1234"
-        );
+        assert_eq!(sid.0, "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:987654321:1234");
     }
 }
 
@@ -665,20 +682,23 @@ mod schema_patterns {
     #[test]
     fn session_id_pattern_rejects_invalid() {
         let session_re = regex::Regex::new(r"^pt-[0-9]{8}-[0-9]{6}-[a-z2-7]{4}$").unwrap();
-        assert!(!session_re.is_match("pt-20260115-143022-A7XQ"));  // Uppercase
-        assert!(!session_re.is_match("pt-20260115-143022-a7x8"));  // 8 not in base32
-        assert!(!session_re.is_match("PT-20260115-143022-a7xq"));  // Wrong prefix
-        assert!(!session_re.is_match("pt-2026011-143022-a7xq"));   // Short date
-        assert!(!session_re.is_match("pt-20260115-14302-a7xq"));   // Short time
+        assert!(!session_re.is_match("pt-20260115-143022-A7XQ")); // Uppercase
+        assert!(!session_re.is_match("pt-20260115-143022-a7x8")); // 8 not in base32
+        assert!(!session_re.is_match("PT-20260115-143022-a7xq")); // Wrong prefix
+        assert!(!session_re.is_match("pt-2026011-143022-a7xq")); // Short date
+        assert!(!session_re.is_match("pt-20260115-14302-a7xq")); // Short time
     }
 
     /// Checksum pattern should match SHA-256 hashes.
     #[test]
     fn checksum_pattern_matches() {
         let checksum_re = regex::Regex::new(r"^sha256:[a-f0-9]{64}$").unwrap();
-        assert!(checksum_re.is_match("sha256:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"));
-        assert!(checksum_re.is_match("sha256:0000000000000000000000000000000000000000000000000000000000000000"));
-        assert!(checksum_re.is_match("sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
+        assert!(checksum_re
+            .is_match("sha256:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"));
+        assert!(checksum_re
+            .is_match("sha256:0000000000000000000000000000000000000000000000000000000000000000"));
+        assert!(checksum_re
+            .is_match("sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"));
     }
 
     /// Checksum pattern should reject invalid hashes.
@@ -686,15 +706,19 @@ mod schema_patterns {
     fn checksum_pattern_rejects_invalid() {
         let checksum_re = regex::Regex::new(r"^sha256:[a-f0-9]{64}$").unwrap();
         // Uppercase letters
-        assert!(!checksum_re.is_match("sha256:ABCD1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"));
+        assert!(!checksum_re
+            .is_match("sha256:ABCD1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"));
         // Wrong prefix
-        assert!(!checksum_re.is_match("sha512:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"));
+        assert!(!checksum_re
+            .is_match("sha512:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"));
         // Too short
         assert!(!checksum_re.is_match("sha256:abcd1234"));
         // Too long
-        assert!(!checksum_re.is_match("sha256:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcd"));
+        assert!(!checksum_re
+            .is_match("sha256:abcd1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcd"));
         // Invalid characters
-        assert!(!checksum_re.is_match("sha256:ghij1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"));
+        assert!(!checksum_re
+            .is_match("sha256:ghij1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab"));
     }
 }
 
@@ -703,7 +727,7 @@ mod schema_patterns {
 // ============================================================================
 
 mod json_roundtrip {
-    use pt_common::id::{ProcessId, SessionId, StartId, ProcessIdentity};
+    use pt_common::id::{ProcessId, ProcessIdentity, SessionId, StartId};
 
     /// ProcessId should round-trip through JSON.
     #[test]

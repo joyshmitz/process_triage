@@ -47,7 +47,10 @@ impl ProcessState {
 
     /// Whether this state indicates an active process.
     pub fn is_active(&self) -> bool {
-        matches!(self, ProcessState::Running | ProcessState::Sleeping | ProcessState::DiskSleep)
+        matches!(
+            self,
+            ProcessState::Running | ProcessState::Sleeping | ProcessState::DiskSleep
+        )
     }
 
     /// Whether this state indicates a zombie process.

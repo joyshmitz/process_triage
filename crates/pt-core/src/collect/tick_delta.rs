@@ -13,8 +13,8 @@
 //! - `/proc/[pid]/stat`: utime, stime, num_threads
 //! - System CLK_TCK via sysconf(_SC_CLK_TCK)
 
-use super::cpu_capacity::{compute_cpu_capacity, CpuCapacity};
 use super::cgroup::collect_cgroup_details;
+use super::cpu_capacity::{compute_cpu_capacity, CpuCapacity};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::time::Duration;
@@ -275,9 +275,9 @@ pub fn compute_tick_delta(
     // Compute n_eff based on policy
     let n_eff = match config.n_eff_policy {
         NEffPolicy::Identity => n_ticks,
-        NEffPolicy::FixedReduction => {
-            ((n_ticks as f64) / config.reduction_factor).round().max(1.0) as u64
-        }
+        NEffPolicy::FixedReduction => ((n_ticks as f64) / config.reduction_factor)
+            .round()
+            .max(1.0) as u64,
         NEffPolicy::Autocorrelation => {
             // Placeholder for future autocorrelation-based correction
             n_ticks
@@ -455,7 +455,9 @@ mod tests {
             stime: 10000,
             total_ticks: 20000,
             num_threads: 1,
-            timestamp: std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(1000) + Duration::from_millis(10),
+            timestamp: std::time::SystemTime::UNIX_EPOCH
+                + Duration::from_secs(1000)
+                + Duration::from_millis(10),
             starttime: 12345,
         };
 
@@ -534,7 +536,10 @@ mod tests {
 
         // On a multi-core system, single thread should be the constraint
         if features.cpu_capacity.n_eff_cores > 1.0 {
-            assert_eq!(features.provenance.budget_constraint, BudgetConstraint::Threads);
+            assert_eq!(
+                features.provenance.budget_constraint,
+                BudgetConstraint::Threads
+            );
         }
     }
 

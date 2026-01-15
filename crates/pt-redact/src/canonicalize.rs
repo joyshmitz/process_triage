@@ -34,11 +34,9 @@ static RE_TIMESTAMP_UNIX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\b(9[0-9]{8}|1[0-9]{9,12})\b").unwrap()
 });
 
-static RE_PID_ARG: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"--pid[=\s]+\d+").unwrap());
+static RE_PID_ARG: Lazy<Regex> = Lazy::new(|| Regex::new(r"--pid[=\s]+\d+").unwrap());
 
-static RE_PORT_ARG: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"--port[=\s]+\d+").unwrap());
+static RE_PORT_ARG: Lazy<Regex> = Lazy::new(|| Regex::new(r"--port[=\s]+\d+").unwrap());
 
 static RE_TMP_SESSION: Lazy<Regex> = Lazy::new(|| {
     // Matches /tmp/pytest-123, /tmp/tmp.abc123, /var/tmp/session-456
@@ -67,9 +65,9 @@ impl Canonicalizer {
     /// Create a new canonicalizer.
     pub fn new() -> Self {
         // Try to detect home directory
-        let home_dir = std::env::var("HOME").ok().or_else(|| {
-            std::env::var("USERPROFILE").ok()
-        });
+        let home_dir = std::env::var("HOME")
+            .ok()
+            .or_else(|| std::env::var("USERPROFILE").ok());
 
         Self {
             home_dir,
@@ -129,7 +127,9 @@ impl Canonicalizer {
         result = RE_PID_ARG.replace_all(&result, "--pid [PID]").to_string();
 
         // 7. Replace port arguments
-        result = RE_PORT_ARG.replace_all(&result, "--port [PORT]").to_string();
+        result = RE_PORT_ARG
+            .replace_all(&result, "--port [PORT]")
+            .to_string();
 
         // 8. Replace UUIDs
         result = RE_UUID.replace_all(&result, "[UUID]").to_string();
@@ -285,10 +285,7 @@ mod tests {
     #[test]
     fn test_pid_placeholder() {
         let canon = Canonicalizer::new();
-        assert_eq!(
-            canon.canonicalize("kill --pid 12345"),
-            "kill --pid [PID]"
-        );
+        assert_eq!(canon.canonicalize("kill --pid 12345"), "kill --pid [PID]");
     }
 
     #[test]

@@ -1,10 +1,10 @@
 //! Core math modules.
 
-pub mod stable;
-pub mod beta;
+pub mod bayes_factor;
 pub mod bernoulli;
+pub mod beta;
 pub mod binomial;
 pub mod dirichlet;
 pub mod gamma;
 pub mod posterior;
-pub mod bayes_factor;
+pub mod stable;

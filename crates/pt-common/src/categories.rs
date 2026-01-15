@@ -31,7 +31,7 @@ pub const CATEGORIES_SCHEMA_VERSION: &str = "1.0.0";
 ///
 /// These categories affect the prior probability of a process being
 /// useful, abandoned, or zombie based on command type patterns.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CommandCategory {
     /// Test runners: bun test, jest, pytest, mocha, cargo test, go test
@@ -59,6 +59,7 @@ pub enum CommandCategory {
     /// Container tools: docker, podman, kubectl, docker-compose
     Container,
     /// Unknown/other - default category
+    #[default]
     Unknown,
 }
 
@@ -89,7 +90,10 @@ impl CommandCategory {
 
     /// Get category from index.
     pub fn from_index(idx: usize) -> Self {
-        Self::all().get(idx).copied().unwrap_or(CommandCategory::Unknown)
+        Self::all()
+            .get(idx)
+            .copied()
+            .unwrap_or(CommandCategory::Unknown)
     }
 
     /// Get human-readable name.
@@ -112,16 +116,10 @@ impl CommandCategory {
     }
 }
 
-impl Default for CommandCategory {
-    fn default() -> Self {
-        CommandCategory::Unknown
-    }
-}
-
 /// CWD (Current Working Directory) categories.
 ///
 /// Working directory context affects interpretation of process behavior.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CwdCategory {
     /// User project directories: ~/projects/*, ~/code/*, ~/repos/*
@@ -139,6 +137,7 @@ pub enum CwdCategory {
     /// Root filesystem: /
     Root,
     /// Unknown/other
+    #[default]
     Unknown,
 }
 
@@ -164,7 +163,10 @@ impl CwdCategory {
 
     /// Get category from index.
     pub fn from_index(idx: usize) -> Self {
-        Self::all().get(idx).copied().unwrap_or(CwdCategory::Unknown)
+        Self::all()
+            .get(idx)
+            .copied()
+            .unwrap_or(CwdCategory::Unknown)
     }
 
     /// Get human-readable name.
@@ -473,57 +475,89 @@ impl CategoryMatcher {
     fn default_command_patterns() -> Vec<(CommandCategory, Regex)> {
         let patterns = vec![
             // Test runners (highest priority - specific patterns)
-            (CommandCategory::Test, r"(^|[/\s])(bun\s+test|jest|pytest|mocha|vitest|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|phpunit|rspec|minitest)(\s|$)"),
+            (
+                CommandCategory::Test,
+                r"(^|[/\s])(bun\s+test|jest|pytest|mocha|vitest|cargo\s+test|go\s+test|npm\s+test|yarn\s+test|phpunit|rspec|minitest)(\s|$)",
+            ),
             (CommandCategory::Test, r"--test|--spec|\.test\.|\.spec\."),
-
             // AI/coding agents
-            (CommandCategory::Agent, r"(^|[/\s])(claude|codex|copilot|gemini|cursor|aider|continue|cody)(\s|$|-|_)"),
-            (CommandCategory::Agent, r"anthropic|openai.*agent|ai.*assistant"),
-
+            (
+                CommandCategory::Agent,
+                r"(^|[/\s])(claude|codex|copilot|gemini|cursor|aider|continue|cody)(\s|$|-|_)",
+            ),
+            (
+                CommandCategory::Agent,
+                r"anthropic|openai.*agent|ai.*assistant",
+            ),
             // Development servers
-            (CommandCategory::DevServer, r"(^|[/\s])(next\s+dev|vite|webpack.*dev|nodemon|ts-node-dev|vue-cli-service\s+serve)(\s|$)"),
-            (CommandCategory::DevServer, r"--hot|--watch|--hmr|dev.*server|serve.*dev"),
+            (
+                CommandCategory::DevServer,
+                r"(^|[/\s])(next\s+dev|vite|webpack.*dev|nodemon|ts-node-dev|vue-cli-service\s+serve)(\s|$)",
+            ),
+            (
+                CommandCategory::DevServer,
+                r"--hot|--watch|--hmr|dev.*server|serve.*dev",
+            ),
             (CommandCategory::DevServer, r"(^|[/\s])npm\s+run\s+dev"),
-
             // Build tools
-            (CommandCategory::Build, r"(^|[/\s])(webpack|esbuild|rollup|parcel|vite\s+build|tsc|cargo\s+build|make|gradle|maven|cmake)(\s|$)"),
+            (
+                CommandCategory::Build,
+                r"(^|[/\s])(webpack|esbuild|rollup|parcel|vite\s+build|tsc|cargo\s+build|make|gradle|maven|cmake)(\s|$)",
+            ),
             (CommandCategory::Build, r"npm\s+run\s+build|yarn\s+build"),
-
             // Editors/IDEs
-            (CommandCategory::Editor, r"(^|[/\s])(code|code-server|cursor|vim|nvim|neovim|emacs|nano|subl|sublime|atom|idea|pycharm|webstorm)(\s|$)"),
-
+            (
+                CommandCategory::Editor,
+                r"(^|[/\s])(code|code-server|cursor|vim|nvim|neovim|emacs|nano|subl|sublime|atom|idea|pycharm|webstorm)(\s|$)",
+            ),
             // Database clients
-            (CommandCategory::Database, r"(^|[/\s])(psql|mysql|mongo|mongosh|redis-cli|sqlite3|pgcli|mycli)(\s|$)"),
-
+            (
+                CommandCategory::Database,
+                r"(^|[/\s])(psql|mysql|mongo|mongosh|redis-cli|sqlite3|pgcli|mycli)(\s|$)",
+            ),
             // Container tools
-            (CommandCategory::Container, r"(^|[/\s])(docker|podman|kubectl|docker-compose|k9s|helm|minikube|kind)(\s|$)"),
-
+            (
+                CommandCategory::Container,
+                r"(^|[/\s])(docker|podman|kubectl|docker-compose|k9s|helm|minikube|kind)(\s|$)",
+            ),
             // Version control
-            (CommandCategory::Vcs, r"(^|[/\s])(git|gh|hub|svn|hg|mercurial)(\s|$)"),
-
+            (
+                CommandCategory::Vcs,
+                r"(^|[/\s])(git|gh|hub|svn|hg|mercurial)(\s|$)",
+            ),
             // Package managers
-            (CommandCategory::PackageManager, r"(^|[/\s])(npm|yarn|pnpm|pip|pip3|cargo|brew|apt|apt-get|dnf|yum|pacman)(\s|$)"),
-
+            (
+                CommandCategory::PackageManager,
+                r"(^|[/\s])(npm|yarn|pnpm|pip|pip3|cargo|brew|apt|apt-get|dnf|yum|pacman)(\s|$)",
+            ),
             // Production servers
-            (CommandCategory::Server, r"(^|[/\s])(gunicorn|uvicorn|nginx|apache|httpd|node\s+server|deno\s+serve|fastify|express)(\s|$)"),
+            (
+                CommandCategory::Server,
+                r"(^|[/\s])(gunicorn|uvicorn|nginx|apache|httpd|node\s+server|deno\s+serve|fastify|express)(\s|$)",
+            ),
             (CommandCategory::Server, r"--production|node_env=production"),
-
             // Daemons (broad patterns)
-            (CommandCategory::Daemon, r"(^|[/\s])(systemd|cron|crond|sshd|dockerd|containerd|supervisord|pm2|launchd)(\s|$)"),
+            (
+                CommandCategory::Daemon,
+                r"(^|[/\s])(systemd|cron|crond|sshd|dockerd|containerd|supervisord|pm2|launchd)(\s|$)",
+            ),
             (CommandCategory::Daemon, r"/usr/lib/systemd|/lib/systemd"),
-
             // Shells (last, as many things run in shells)
             // Match shell with optional path prefix: /bin/bash, /usr/bin/zsh, etc.
-            (CommandCategory::Shell, r"(^|/)(bash|zsh|fish|sh|dash|tcsh|csh|ksh|pwsh|powershell)(\s|$)"),
+            (
+                CommandCategory::Shell,
+                r"(^|/)(bash|zsh|fish|sh|dash|tcsh|csh|ksh|pwsh|powershell)(\s|$)",
+            ),
             // Match login shells: -bash, -zsh, etc.
-            (CommandCategory::Shell, r"^-(bash|zsh|fish|sh|dash|tcsh|csh|ksh)$"),
+            (
+                CommandCategory::Shell,
+                r"^-(bash|zsh|fish|sh|dash|tcsh|csh|ksh)$",
+            ),
         ];
 
         patterns
             .into_iter()
-            .filter_map(|(cat, pat)| {
-                Regex::new(pat).ok().map(|r| (cat, r))
-            })
+            .filter_map(|(cat, pat)| Regex::new(pat).ok().map(|r| (cat, r)))
             .collect()
     }
 
@@ -769,11 +803,7 @@ impl CategoryTaxonomy {
                     id: CommandCategory::Editor,
                     name: "Editor/IDE".to_string(),
                     description: "Text editors and integrated development environments".to_string(),
-                    examples: vec![
-                        "code".to_string(),
-                        "vim".to_string(),
-                        "cursor".to_string(),
-                    ],
+                    examples: vec!["code".to_string(), "vim".to_string(), "cursor".to_string()],
                     prior_hints: Some(PriorHints {
                         abandonment_tendency: Some(0.2),
                         expected_runtime_secs: Some(28800),
@@ -784,11 +814,7 @@ impl CategoryTaxonomy {
                     id: CommandCategory::Shell,
                     name: "Interactive Shell".to_string(),
                     description: "Command-line shells".to_string(),
-                    examples: vec![
-                        "bash".to_string(),
-                        "zsh".to_string(),
-                        "fish".to_string(),
-                    ],
+                    examples: vec!["bash".to_string(), "zsh".to_string(), "fish".to_string()],
                     prior_hints: Some(PriorHints {
                         abandonment_tendency: Some(0.3),
                         expected_runtime_secs: Some(3600),
@@ -814,11 +840,7 @@ impl CategoryTaxonomy {
                     id: CommandCategory::Vcs,
                     name: "Version Control".to_string(),
                     description: "Version control system commands".to_string(),
-                    examples: vec![
-                        "git".to_string(),
-                        "gh".to_string(),
-                        "svn".to_string(),
-                    ],
+                    examples: vec!["git".to_string(), "gh".to_string(), "svn".to_string()],
                     prior_hints: Some(PriorHints {
                         abandonment_tendency: Some(0.2),
                         expected_runtime_secs: Some(60),
@@ -829,11 +851,7 @@ impl CategoryTaxonomy {
                     id: CommandCategory::PackageManager,
                     name: "Package Manager".to_string(),
                     description: "Package and dependency managers".to_string(),
-                    examples: vec![
-                        "npm".to_string(),
-                        "cargo".to_string(),
-                        "pip".to_string(),
-                    ],
+                    examples: vec!["npm".to_string(), "cargo".to_string(), "pip".to_string()],
                     prior_hints: Some(PriorHints {
                         abandonment_tendency: Some(0.3),
                         expected_runtime_secs: Some(300),
@@ -868,55 +886,37 @@ impl CategoryTaxonomy {
                     id: CwdCategory::Project,
                     name: "Project Directory".to_string(),
                     description: "User project and code directories".to_string(),
-                    examples: vec![
-                        "~/projects/myapp".to_string(),
-                        "~/code/backend".to_string(),
-                    ],
+                    examples: vec!["~/projects/myapp".to_string(), "~/code/backend".to_string()],
                 },
                 CwdCategoryDef {
                     id: CwdCategory::System,
                     name: "System Directory".to_string(),
                     description: "System paths (/usr, /var, /etc)".to_string(),
-                    examples: vec![
-                        "/usr/local/bin".to_string(),
-                        "/var/log".to_string(),
-                    ],
+                    examples: vec!["/usr/local/bin".to_string(), "/var/log".to_string()],
                 },
                 CwdCategoryDef {
                     id: CwdCategory::Temp,
                     name: "Temporary Directory".to_string(),
                     description: "Temporary file storage".to_string(),
-                    examples: vec![
-                        "/tmp".to_string(),
-                        "/var/tmp".to_string(),
-                    ],
+                    examples: vec!["/tmp".to_string(), "/var/tmp".to_string()],
                 },
                 CwdCategoryDef {
                     id: CwdCategory::Home,
                     name: "Home Directory".to_string(),
                     description: "User home directory root".to_string(),
-                    examples: vec![
-                        "~".to_string(),
-                        "/home/user".to_string(),
-                    ],
+                    examples: vec!["~".to_string(), "/home/user".to_string()],
                 },
                 CwdCategoryDef {
                     id: CwdCategory::AppData,
                     name: "Application Data".to_string(),
                     description: "User application config and data".to_string(),
-                    examples: vec![
-                        "~/.config".to_string(),
-                        "~/.local/share".to_string(),
-                    ],
+                    examples: vec!["~/.config".to_string(), "~/.local/share".to_string()],
                 },
                 CwdCategoryDef {
                     id: CwdCategory::Runtime,
                     name: "Runtime Directory".to_string(),
                     description: "Runtime state directories".to_string(),
-                    examples: vec![
-                        "/run".to_string(),
-                        "/var/run".to_string(),
-                    ],
+                    examples: vec!["/run".to_string(), "/var/run".to_string()],
                 },
                 CwdCategoryDef {
                     id: CwdCategory::Root,
@@ -966,30 +966,66 @@ mod tests {
     fn test_categorize_test_commands() {
         let matcher = CategoryMatcher::new();
 
-        assert_eq!(matcher.categorize_command("bun test"), CommandCategory::Test);
-        assert_eq!(matcher.categorize_command("/usr/bin/jest"), CommandCategory::Test);
-        assert_eq!(matcher.categorize_command("pytest -v tests/"), CommandCategory::Test);
-        assert_eq!(matcher.categorize_command("cargo test --lib"), CommandCategory::Test);
-        assert_eq!(matcher.categorize_command("npm test"), CommandCategory::Test);
+        assert_eq!(
+            matcher.categorize_command("bun test"),
+            CommandCategory::Test
+        );
+        assert_eq!(
+            matcher.categorize_command("/usr/bin/jest"),
+            CommandCategory::Test
+        );
+        assert_eq!(
+            matcher.categorize_command("pytest -v tests/"),
+            CommandCategory::Test
+        );
+        assert_eq!(
+            matcher.categorize_command("cargo test --lib"),
+            CommandCategory::Test
+        );
+        assert_eq!(
+            matcher.categorize_command("npm test"),
+            CommandCategory::Test
+        );
     }
 
     #[test]
     fn test_categorize_devserver_commands() {
         let matcher = CategoryMatcher::new();
 
-        assert_eq!(matcher.categorize_command("next dev"), CommandCategory::DevServer);
-        assert_eq!(matcher.categorize_command("vite --host"), CommandCategory::DevServer);
-        assert_eq!(matcher.categorize_command("nodemon app.js"), CommandCategory::DevServer);
-        assert_eq!(matcher.categorize_command("npm run dev"), CommandCategory::DevServer);
+        assert_eq!(
+            matcher.categorize_command("next dev"),
+            CommandCategory::DevServer
+        );
+        assert_eq!(
+            matcher.categorize_command("vite --host"),
+            CommandCategory::DevServer
+        );
+        assert_eq!(
+            matcher.categorize_command("nodemon app.js"),
+            CommandCategory::DevServer
+        );
+        assert_eq!(
+            matcher.categorize_command("npm run dev"),
+            CommandCategory::DevServer
+        );
     }
 
     #[test]
     fn test_categorize_agent_commands() {
         let matcher = CategoryMatcher::new();
 
-        assert_eq!(matcher.categorize_command("claude --version"), CommandCategory::Agent);
-        assert_eq!(matcher.categorize_command("codex start"), CommandCategory::Agent);
-        assert_eq!(matcher.categorize_command("cursor ."), CommandCategory::Agent);
+        assert_eq!(
+            matcher.categorize_command("claude --version"),
+            CommandCategory::Agent
+        );
+        assert_eq!(
+            matcher.categorize_command("codex start"),
+            CommandCategory::Agent
+        );
+        assert_eq!(
+            matcher.categorize_command("cursor ."),
+            CommandCategory::Agent
+        );
     }
 
     #[test]
@@ -998,14 +1034,20 @@ mod tests {
 
         assert_eq!(matcher.categorize_command("bash"), CommandCategory::Shell);
         assert_eq!(matcher.categorize_command("-zsh"), CommandCategory::Shell);
-        assert_eq!(matcher.categorize_command("/bin/fish"), CommandCategory::Shell);
+        assert_eq!(
+            matcher.categorize_command("/bin/fish"),
+            CommandCategory::Shell
+        );
     }
 
     #[test]
     fn test_categorize_unknown() {
         let matcher = CategoryMatcher::new();
 
-        assert_eq!(matcher.categorize_command("some_random_command"), CommandCategory::Unknown);
+        assert_eq!(
+            matcher.categorize_command("some_random_command"),
+            CommandCategory::Unknown
+        );
         assert_eq!(matcher.categorize_command(""), CommandCategory::Unknown);
     }
 
@@ -1014,12 +1056,27 @@ mod tests {
         let matcher = CategoryMatcher::with_home_dir(Some("/home/user".to_string()));
 
         assert_eq!(matcher.categorize_cwd("/tmp/test"), CwdCategory::Temp);
-        assert_eq!(matcher.categorize_cwd("/var/tmp/session"), CwdCategory::Temp);
-        assert_eq!(matcher.categorize_cwd("/usr/local/bin"), CwdCategory::System);
-        assert_eq!(matcher.categorize_cwd("/home/user/projects/myapp"), CwdCategory::Project);
-        assert_eq!(matcher.categorize_cwd("/home/user/.config/app"), CwdCategory::AppData);
+        assert_eq!(
+            matcher.categorize_cwd("/var/tmp/session"),
+            CwdCategory::Temp
+        );
+        assert_eq!(
+            matcher.categorize_cwd("/usr/local/bin"),
+            CwdCategory::System
+        );
+        assert_eq!(
+            matcher.categorize_cwd("/home/user/projects/myapp"),
+            CwdCategory::Project
+        );
+        assert_eq!(
+            matcher.categorize_cwd("/home/user/.config/app"),
+            CwdCategory::AppData
+        );
         assert_eq!(matcher.categorize_cwd("/home/user"), CwdCategory::Home);
-        assert_eq!(matcher.categorize_cwd("/run/user/1000"), CwdCategory::Runtime);
+        assert_eq!(
+            matcher.categorize_cwd("/run/user/1000"),
+            CwdCategory::Runtime
+        );
         assert_eq!(matcher.categorize_cwd("/"), CwdCategory::Root);
     }
 
@@ -1032,11 +1089,20 @@ mod tests {
         assert_eq!(taxonomy.cwd_categories.len(), 8);
 
         // Check that test category has high abandonment tendency
-        let test_cat = taxonomy.command_categories
+        let test_cat = taxonomy
+            .command_categories
             .iter()
             .find(|c| c.id == CommandCategory::Test)
             .unwrap();
-        assert!(test_cat.prior_hints.as_ref().unwrap().abandonment_tendency.unwrap() > 0.5);
+        assert!(
+            test_cat
+                .prior_hints
+                .as_ref()
+                .unwrap()
+                .abandonment_tendency
+                .unwrap()
+                > 0.5
+        );
     }
 
     #[test]
@@ -1046,7 +1112,10 @@ mod tests {
         let parsed: CategoryTaxonomy = serde_json::from_str(&json).unwrap();
 
         assert_eq!(taxonomy.schema_version, parsed.schema_version);
-        assert_eq!(taxonomy.command_categories.len(), parsed.command_categories.len());
+        assert_eq!(
+            taxonomy.command_categories.len(),
+            parsed.command_categories.len()
+        );
     }
 
     #[test]
@@ -1094,8 +1163,12 @@ mod tests {
         assert_eq!(sig1, sig2);
 
         // Different flag order should produce same signature (sorted)
-        let sig3 = matcher.categorize("jest --coverage --watch", "/tmp").cmd_signature;
-        let sig4 = matcher.categorize("jest --watch --coverage", "/tmp").cmd_signature;
+        let sig3 = matcher
+            .categorize("jest --coverage --watch", "/tmp")
+            .cmd_signature;
+        let sig4 = matcher
+            .categorize("jest --watch --coverage", "/tmp")
+            .cmd_signature;
         assert_eq!(sig3, sig4);
     }
 
@@ -1114,8 +1187,12 @@ mod tests {
 
         // Commands with different argument values should have same signature
         // (only flag names are preserved, not values)
-        let sig1 = matcher.categorize("npm test --timeout=1000", "/tmp").cmd_signature;
-        let sig2 = matcher.categorize("npm test --timeout=5000", "/tmp").cmd_signature;
+        let sig1 = matcher
+            .categorize("npm test --timeout=1000", "/tmp")
+            .cmd_signature;
+        let sig2 = matcher
+            .categorize("npm test --timeout=5000", "/tmp")
+            .cmd_signature;
         assert_eq!(sig1, sig2);
     }
 
@@ -1151,16 +1228,21 @@ mod tests {
     #[test]
     fn test_normalize_command_tokens() {
         // Test basic normalization
-        let norm = CategoryMatcher::normalize_command_tokens("jest --watch", &CommandCategory::Test);
+        let norm =
+            CategoryMatcher::normalize_command_tokens("jest --watch", &CommandCategory::Test);
         assert!(norm.starts_with("test:jest:"));
         assert!(norm.contains("--watch"));
 
         // Test with path
-        let norm = CategoryMatcher::normalize_command_tokens("/usr/bin/git status", &CommandCategory::Vcs);
+        let norm =
+            CategoryMatcher::normalize_command_tokens("/usr/bin/git status", &CommandCategory::Vcs);
         assert!(norm.starts_with("vcs:git:"));
 
         // Test flag value stripping
-        let norm = CategoryMatcher::normalize_command_tokens("npm --registry=https://example.com", &CommandCategory::PackageManager);
+        let norm = CategoryMatcher::normalize_command_tokens(
+            "npm --registry=https://example.com",
+            &CommandCategory::PackageManager,
+        );
         assert!(norm.contains("--registry"));
         assert!(!norm.contains("https://"));
     }

@@ -114,7 +114,7 @@ impl FieldClass {
     }
 
     /// Parse a field class from a string.
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse_str(s: &str) -> Option<Self> {
         match s {
             "cmdline" => Some(FieldClass::Cmdline),
             "cmd" => Some(FieldClass::Cmd),

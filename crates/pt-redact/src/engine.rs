@@ -4,8 +4,8 @@
 //! to values, using canonicalization, hashing, and secret detection.
 
 use crate::{
-    Action, Canonicalizer, FieldClass, KeyManager, KeyMaterial, RedactionPolicy,
-    Result, SecretDetector,
+    Action, Canonicalizer, FieldClass, KeyManager, KeyMaterial, RedactionPolicy, Result,
+    SecretDetector,
 };
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -217,7 +217,9 @@ impl RedactionEngine {
 
             Action::NormalizeHash => {
                 let normalized = self.canonicalizer.canonicalize(value);
-                let hash = self.key.hash(&normalized, self.policy.hash_truncation_bytes);
+                let hash = self
+                    .key
+                    .hash(&normalized, self.policy.hash_truncation_bytes);
                 let mut result = RedactedValue::new(hash.clone(), Action::NormalizeHash, true);
                 result.original_hash = Some(hash);
                 result
@@ -276,7 +278,14 @@ fn truncate_value(value: &str, keep_chars: usize) -> String {
     }
 
     let prefix: String = value.chars().take(keep_chars).collect();
-    let suffix: String = value.chars().rev().take(keep_chars).collect::<String>().chars().rev().collect();
+    let suffix: String = value
+        .chars()
+        .rev()
+        .take(keep_chars)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
 
     format!("{}...{}", prefix, suffix)
 }
@@ -404,7 +413,10 @@ mod tests {
     #[test]
     fn test_detect_action_secret() {
         let engine = test_engine();
-        let result = engine.redact("--token=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", FieldClass::CmdlineArg);
+        let result = engine.redact(
+            "--token=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+            FieldClass::CmdlineArg,
+        );
 
         // Should detect the GitHub token and redact
         assert_eq!(result.output, "[REDACTED]");

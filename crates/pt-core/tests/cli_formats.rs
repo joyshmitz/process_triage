@@ -29,10 +29,7 @@ mod format_option {
 
     #[test]
     fn short_format_flag_accepted() {
-        pt_core()
-            .args(["-f", "json", "--help"])
-            .assert()
-            .success();
+        pt_core().args(["-f", "json", "--help"]).assert().success();
     }
 
     #[test]
@@ -133,58 +130,37 @@ mod global_options {
 
     #[test]
     fn verbose_flag_accepted() {
-        pt_core()
-            .args(["-v", "--help"])
-            .assert()
-            .success();
+        pt_core().args(["-v", "--help"]).assert().success();
     }
 
     #[test]
     fn multiple_verbose_flags_accepted() {
-        pt_core()
-            .args(["-vvv", "--help"])
-            .assert()
-            .success();
+        pt_core().args(["-vvv", "--help"]).assert().success();
     }
 
     #[test]
     fn quiet_flag_accepted() {
-        pt_core()
-            .args(["-q", "--help"])
-            .assert()
-            .success();
+        pt_core().args(["-q", "--help"]).assert().success();
     }
 
     #[test]
     fn no_color_flag_accepted() {
-        pt_core()
-            .args(["--no-color", "--help"])
-            .assert()
-            .success();
+        pt_core().args(["--no-color", "--help"]).assert().success();
     }
 
     #[test]
     fn robot_flag_accepted() {
-        pt_core()
-            .args(["--robot", "--help"])
-            .assert()
-            .success();
+        pt_core().args(["--robot", "--help"]).assert().success();
     }
 
     #[test]
     fn dry_run_flag_accepted() {
-        pt_core()
-            .args(["--dry-run", "--help"])
-            .assert()
-            .success();
+        pt_core().args(["--dry-run", "--help"]).assert().success();
     }
 
     #[test]
     fn shadow_flag_accepted() {
-        pt_core()
-            .args(["--shadow", "--help"])
-            .assert()
-            .success();
+        pt_core().args(["--shadow", "--help"]).assert().success();
     }
 
     #[test]

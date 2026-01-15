@@ -211,10 +211,7 @@ struct ActionLock {
 
 impl ActionLock {
     fn acquire(path: &Path) -> Result<Self, ExecutionError> {
-        let file = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(path);
+        let file = OpenOptions::new().create_new(true).write(true).open(path);
         match file {
             Ok(mut handle) => {
                 // Write PID to lock file for stale lock detection
@@ -276,9 +273,9 @@ impl Drop for ActionLock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Policy;
     use crate::decision::{Action, DecisionOutcome, ExpectedLoss};
     use crate::plan::{DecisionBundle, DecisionCandidate};
-    use crate::config::Policy;
     use pt_common::{IdentityQuality, ProcessId, SessionId, StartId};
     use tempfile::tempdir;
 
@@ -304,6 +301,7 @@ mod tests {
                 chosen_action: Action::Pause,
                 tie_break: false,
                 disabled_actions: vec![],
+                used_recovery_preference: false,
             },
         };
         let bundle = DecisionBundle {

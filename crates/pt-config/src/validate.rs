@@ -80,7 +80,10 @@ pub fn validate_priors(priors: &crate::priors::Priors) -> ValidationResult<()> {
 
     // Validate Beta params in hazard regimes
     for regime in &priors.hazard_regimes {
-        validate_gamma_params(&format!("hazard_regimes.{}.gamma", regime.name), &regime.gamma)?;
+        validate_gamma_params(
+            &format!("hazard_regimes.{}.gamma", regime.name),
+            &regime.gamma,
+        )?;
     }
 
     Ok(())
@@ -98,7 +101,10 @@ fn validate_class_params(name: &str, params: &crate::priors::ClassParams) -> Val
 
     // Validate Beta parameters
     validate_beta_params(&format!("classes.{}.cpu_beta", name), &params.cpu_beta)?;
-    validate_beta_params(&format!("classes.{}.orphan_beta", name), &params.orphan_beta)?;
+    validate_beta_params(
+        &format!("classes.{}.orphan_beta", name),
+        &params.orphan_beta,
+    )?;
     validate_beta_params(&format!("classes.{}.tty_beta", name), &params.tty_beta)?;
     validate_beta_params(&format!("classes.{}.net_beta", name), &params.net_beta)?;
 

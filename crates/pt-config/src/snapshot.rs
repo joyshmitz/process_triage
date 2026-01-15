@@ -96,7 +96,9 @@ impl ConfigSnapshot {
         policy_json: Option<&str>,
     ) -> Self {
         let timestamp = Utc::now();
-        let hostname = hostname::get().ok().map(|h| h.to_string_lossy().to_string());
+        let hostname = hostname::get()
+            .ok()
+            .map(|h| h.to_string_lossy().to_string());
 
         let priors_hash = priors_json.map(hash_content);
         let policy_hash = policy_json.map(hash_content);
@@ -129,7 +131,9 @@ impl ConfigSnapshot {
     /// Create a snapshot with only defaults (no config files loaded).
     pub fn defaults_only() -> Self {
         let timestamp = Utc::now();
-        let hostname = hostname::get().ok().map(|h| h.to_string_lossy().to_string());
+        let hostname = hostname::get()
+            .ok()
+            .map(|h| h.to_string_lossy().to_string());
 
         ConfigSnapshot {
             timestamp,
@@ -203,19 +207,25 @@ fn build_summary(priors: Option<&Priors>, policy: Option<&Policy>) -> ConfigSumm
             zombie: 0.05,
         });
 
-    let (robot_mode_enabled, robot_min_posterior, fdr_method, fdr_alpha, max_kills_per_run, protected_pattern_count) =
-        policy
-            .map(|p| {
-                (
-                    p.robot_mode.enabled,
-                    p.robot_mode.min_posterior,
-                    format!("{:?}", p.fdr_control.method).to_lowercase(),
-                    p.fdr_control.alpha,
-                    p.guardrails.max_kills_per_run,
-                    p.guardrails.protected_patterns.len(),
-                )
-            })
-            .unwrap_or((false, 0.99, "bh".to_string(), 0.05, 5, 0));
+    let (
+        robot_mode_enabled,
+        robot_min_posterior,
+        fdr_method,
+        fdr_alpha,
+        max_kills_per_run,
+        protected_pattern_count,
+    ) = policy
+        .map(|p| {
+            (
+                p.robot_mode.enabled,
+                p.robot_mode.min_posterior,
+                format!("{:?}", p.fdr_control.method).to_lowercase(),
+                p.fdr_control.alpha,
+                p.guardrails.max_kills_per_run,
+                p.guardrails.protected_patterns.len(),
+            )
+        })
+        .unwrap_or((false, 0.99, "bh".to_string(), 0.05, 5, 0));
 
     ConfigSummary {
         class_priors,

@@ -41,7 +41,9 @@ impl DirichletParams {
         if k == 0 || value.is_nan() || value <= 0.0 {
             return None;
         }
-        Some(Self { alpha: vec![value; k] })
+        Some(Self {
+            alpha: vec![value; k],
+        })
     }
 
     /// Create a uniform Dirichlet prior with all α_i = 1.
@@ -197,8 +199,8 @@ pub fn log_marginal_likelihood(prior: &DirichletParams, counts: &[f64], eta: f64
     let n_total: f64 = counts.iter().sum();
 
     // Multinomial coefficient: log(N! / Π_i n_i!)
-    let log_multinomial = log_gamma(n_total + 1.0)
-        - counts.iter().map(|&n| log_gamma(n + 1.0)).sum::<f64>();
+    let log_multinomial =
+        log_gamma(n_total + 1.0) - counts.iter().map(|&n| log_gamma(n + 1.0)).sum::<f64>();
 
     // Posterior alpha values
     let post_alpha: Vec<f64> = prior
@@ -328,14 +330,18 @@ mod tests {
     fn dirichlet_params_mean() {
         let p = DirichletParams::new(vec![1.0, 2.0, 3.0]).unwrap();
         let mean = p.mean();
-        assert!(vec_approx_eq(&mean, &[1.0/6.0, 2.0/6.0, 3.0/6.0], 1e-12));
+        assert!(vec_approx_eq(
+            &mean,
+            &[1.0 / 6.0, 2.0 / 6.0, 3.0 / 6.0],
+            1e-12
+        ));
     }
 
     #[test]
     fn dirichlet_params_variance() {
         let p = DirichletParams::new(vec![2.0, 3.0, 5.0]).unwrap();
         // Var[p_0] = 2 * (10-2) / (100 * 11) = 16/1100
-        assert!(approx_eq(p.variance(0), 16.0/1100.0, 1e-12));
+        assert!(approx_eq(p.variance(0), 16.0 / 1100.0, 1e-12));
     }
 
     // =======================================================================

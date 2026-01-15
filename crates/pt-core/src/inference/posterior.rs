@@ -74,13 +74,22 @@ pub struct PosteriorResult {
 #[derive(Debug, Error)]
 pub enum PosteriorError {
     #[error("invalid evidence for {field}: {message}")]
-    InvalidEvidence { field: &'static str, message: String },
+    InvalidEvidence {
+        field: &'static str,
+        message: String,
+    },
     #[error("invalid priors for {field}: {message}")]
-    InvalidPriors { field: &'static str, message: String },
+    InvalidPriors {
+        field: &'static str,
+        message: String,
+    },
 }
 
 /// Compute the posterior P(C|x) for the 4-class model.
-pub fn compute_posterior(priors: &Priors, evidence: &Evidence) -> Result<PosteriorResult, PosteriorError> {
+pub fn compute_posterior(
+    priors: &Priors,
+    evidence: &Evidence,
+) -> Result<PosteriorResult, PosteriorError> {
     let prior_scores = ClassScores {
         useful: ln_checked(priors.classes.useful.prior_prob, "priors.useful")?,
         useful_bad: ln_checked(priors.classes.useful_bad.prior_prob, "priors.useful_bad")?,
@@ -126,8 +135,16 @@ pub fn compute_posterior(priors: &Priors, evidence: &Evidence) -> Result<Posteri
     if let Some(orphan) = evidence.orphan {
         let term = ClassScores {
             useful: log_lik_beta_bernoulli(orphan, &priors.classes.useful.orphan_beta, "orphan")?,
-            useful_bad: log_lik_beta_bernoulli(orphan, &priors.classes.useful_bad.orphan_beta, "orphan")?,
-            abandoned: log_lik_beta_bernoulli(orphan, &priors.classes.abandoned.orphan_beta, "orphan")?,
+            useful_bad: log_lik_beta_bernoulli(
+                orphan,
+                &priors.classes.useful_bad.orphan_beta,
+                "orphan",
+            )?,
+            abandoned: log_lik_beta_bernoulli(
+                orphan,
+                &priors.classes.abandoned.orphan_beta,
+                "orphan",
+            )?,
             zombie: log_lik_beta_bernoulli(orphan, &priors.classes.zombie.orphan_beta, "orphan")?,
         };
         log_unnormalized = add_scores(log_unnormalized, term);
@@ -197,10 +214,30 @@ pub fn compute_posterior(priors: &Priors, evidence: &Evidence) -> Result<Posteri
 
     if let Some(flag_index) = evidence.state_flag {
         let term = ClassScores {
-            useful: log_lik_dirichlet(flag_index, priors.state_flags.as_ref(), "state_flags", "useful")?,
-            useful_bad: log_lik_dirichlet(flag_index, priors.state_flags.as_ref(), "state_flags", "useful_bad")?,
-            abandoned: log_lik_dirichlet(flag_index, priors.state_flags.as_ref(), "state_flags", "abandoned")?,
-            zombie: log_lik_dirichlet(flag_index, priors.state_flags.as_ref(), "state_flags", "zombie")?,
+            useful: log_lik_dirichlet(
+                flag_index,
+                priors.state_flags.as_ref(),
+                "state_flags",
+                "useful",
+            )?,
+            useful_bad: log_lik_dirichlet(
+                flag_index,
+                priors.state_flags.as_ref(),
+                "state_flags",
+                "useful_bad",
+            )?,
+            abandoned: log_lik_dirichlet(
+                flag_index,
+                priors.state_flags.as_ref(),
+                "state_flags",
+                "abandoned",
+            )?,
+            zombie: log_lik_dirichlet(
+                flag_index,
+                priors.state_flags.as_ref(),
+                "state_flags",
+                "zombie",
+            )?,
         };
         log_unnormalized = add_scores(log_unnormalized, term);
         evidence_terms.push(EvidenceTerm {
@@ -286,7 +323,11 @@ fn ln_checked(value: f64, field: &'static str) -> Result<f64, PosteriorError> {
     Ok(value.ln())
 }
 
-fn log_lik_cpu(cpu: &CpuEvidence, priors: &ClassPriors, config: &Priors) -> Result<f64, PosteriorError> {
+fn log_lik_cpu(
+    cpu: &CpuEvidence,
+    priors: &ClassPriors,
+    config: &Priors,
+) -> Result<f64, PosteriorError> {
     match cpu {
         CpuEvidence::Fraction { occupancy } => {
             if *occupancy < 0.0 || *occupancy > 1.0 || occupancy.is_nan() {
@@ -295,7 +336,11 @@ fn log_lik_cpu(cpu: &CpuEvidence, priors: &ClassPriors, config: &Priors) -> Resu
                     message: format!("expected in [0,1], got {occupancy}"),
                 });
             }
-            Ok(log_beta_pdf(*occupancy, priors.cpu_beta.alpha, priors.cpu_beta.beta))
+            Ok(log_beta_pdf(
+                *occupancy,
+                priors.cpu_beta.alpha,
+                priors.cpu_beta.beta,
+            ))
         }
         CpuEvidence::Binomial { k, n, eta } => {
             if *n <= 0.0 || *k < 0.0 || *k > *n || n.is_nan() || k.is_nan() {
@@ -349,8 +394,7 @@ fn log_lik_runtime(runtime: f64, priors: &ClassPriors) -> Result<f64, PosteriorE
             ),
         });
     }
-    let log_pdf = gamma.shape * gamma.rate.ln()
-        + (gamma.shape - 1.0) * runtime.ln()
+    let log_pdf = gamma.shape * gamma.rate.ln() + (gamma.shape - 1.0) * runtime.ln()
         - gamma.rate * runtime
         - log_gamma(gamma.shape);
     Ok(log_pdf)
@@ -415,7 +459,10 @@ fn log_dirichlet_categorical(
     if index >= params.alpha.len() {
         return Err(PosteriorError::InvalidEvidence {
             field,
-            message: format!("index {index} out of range for {} categories", params.alpha.len()),
+            message: format!(
+                "index {index} out of range for {} categories",
+                params.alpha.len()
+            ),
         });
     }
     let sum: f64 = params.alpha.iter().sum();
@@ -485,12 +532,30 @@ mod tests {
     fn base_priors() -> Priors {
         let class = ClassPriors {
             prior_prob: 0.25,
-            cpu_beta: BetaParams { alpha: 1.0, beta: 1.0 },
-            runtime_gamma: Some(GammaParams { shape: 2.0, rate: 1.0 }),
-            orphan_beta: BetaParams { alpha: 1.0, beta: 1.0 },
-            tty_beta: BetaParams { alpha: 1.0, beta: 1.0 },
-            net_beta: BetaParams { alpha: 1.0, beta: 1.0 },
-            io_active_beta: Some(BetaParams { alpha: 1.0, beta: 1.0 }),
+            cpu_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            runtime_gamma: Some(GammaParams {
+                shape: 2.0,
+                rate: 1.0,
+            }),
+            orphan_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            tty_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            net_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            io_active_beta: Some(BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            }),
             hazard_gamma: None,
             competing_hazards: None,
         };

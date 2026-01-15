@@ -77,8 +77,7 @@ impl SecretType {
 }
 
 // Pre-compiled detection patterns as individual Lazy statics
-static RE_AWS_ACCESS_KEY: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap());
+static RE_AWS_ACCESS_KEY: Lazy<Regex> = Lazy::new(|| Regex::new(r"AKIA[0-9A-Z]{16}").unwrap());
 
 static RE_GITHUB_TOKEN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"gh[pousr]_[A-Za-z0-9_]{36,}").unwrap());
@@ -89,9 +88,8 @@ static RE_GITLAB_TOKEN: Lazy<Regex> =
 static RE_SLACK_TOKEN: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"xox[baprs]-[A-Za-z0-9\-]+").unwrap());
 
-static RE_JWT: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap()
-});
+static RE_JWT: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap());
 
 static RE_PRIVATE_KEY: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"-----BEGIN[A-Z ]*PRIVATE KEY-----").unwrap());
@@ -99,11 +97,9 @@ static RE_PRIVATE_KEY: Lazy<Regex> =
 static RE_AI_API_KEY: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"sk-(?:ant-)?[A-Za-z0-9_-]{20,}").unwrap());
 
-static RE_PASSWORD_ARG: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"--password[=\s]+[^\s]+").unwrap());
+static RE_PASSWORD_ARG: Lazy<Regex> = Lazy::new(|| Regex::new(r"--password[=\s]+[^\s]+").unwrap());
 
-static RE_TOKEN_ARG: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"--token[=\s]+[^\s]+").unwrap());
+static RE_TOKEN_ARG: Lazy<Regex> = Lazy::new(|| Regex::new(r"--token[=\s]+[^\s]+").unwrap());
 
 static RE_API_KEY_ARG: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"--api[-_]?key[=\s]+[^\s]+").unwrap());
@@ -246,7 +242,10 @@ impl SecretDetector {
         }
 
         // Skip if it looks like a normal word or path
-        if value.chars().all(|c| c.is_ascii_alphabetic() || c == '_' || c == '-') {
+        if value
+            .chars()
+            .all(|c| c.is_ascii_alphabetic() || c == '_' || c == '-')
+        {
             return false;
         }
 
@@ -478,7 +477,9 @@ mod tests {
         let detections = find_all_secrets(input);
 
         assert!(detections.len() >= 2);
-        assert!(detections.iter().any(|d| d.secret_type == SecretType::TokenArg));
+        assert!(detections
+            .iter()
+            .any(|d| d.secret_type == SecretType::TokenArg));
         assert!(detections
             .iter()
             .any(|d| d.secret_type == SecretType::GitHubToken));

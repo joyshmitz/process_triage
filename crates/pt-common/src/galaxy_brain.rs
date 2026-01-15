@@ -626,10 +626,8 @@ mod tests {
     fn test_galaxy_brain_data_serialization() {
         let mut data = GalaxyBrainData::default();
         data.process_id = Some(12345);
-        data.cards.push(
-            MathCard::new(CardId::PosteriorCore)
-                .with_intuition("Test intuition"),
-        );
+        data.cards
+            .push(MathCard::new(CardId::PosteriorCore).with_intuition("Test intuition"));
 
         let json = serde_json::to_string_pretty(&data).unwrap();
         assert!(json.contains("posterior_core"));

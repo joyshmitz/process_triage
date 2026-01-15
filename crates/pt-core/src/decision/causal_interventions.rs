@@ -54,15 +54,14 @@ pub fn expected_recovery(beta: &BetaParams) -> f64 {
 }
 
 /// Update Beta parameters with observed outcomes.
-pub fn update_beta(
-    params: &BetaParams,
-    successes: f64,
-    trials: f64,
-    eta: f64,
-) -> BetaParams {
+pub fn update_beta(params: &BetaParams, successes: f64, trials: f64, eta: f64) -> BetaParams {
     let n = trials.max(0.0);
     let s = successes.max(0.0).min(n);
-    let eta = if eta.is_finite() && eta > 0.0 { eta.min(1.0) } else { 1.0 };
+    let eta = if eta.is_finite() && eta > 0.0 {
+        eta.min(1.0)
+    } else {
+        1.0
+    };
     BetaParams {
         alpha: params.alpha + eta * s,
         beta: params.beta + eta * (n - s),
@@ -131,7 +130,12 @@ pub fn expected_recovery_by_action(
     priors: &Priors,
     posterior: &ClassScores,
 ) -> Vec<RecoveryExpectation> {
-    let actions = [Action::Pause, Action::Throttle, Action::Restart, Action::Kill];
+    let actions = [
+        Action::Pause,
+        Action::Throttle,
+        Action::Restart,
+        Action::Kill,
+    ];
     let mut expectations = Vec::new();
     for action in actions {
         if let Some((probability, std_dev)) =
@@ -148,11 +152,7 @@ pub fn expected_recovery_by_action(
 }
 
 /// Get expected recovery probability for a specific action/class.
-pub fn recovery_for_class(
-    priors: &Priors,
-    action: Action,
-    class: ProcessClass,
-) -> Option<f64> {
+pub fn recovery_for_class(priors: &Priors, action: Action, class: ProcessClass) -> Option<f64> {
     let interventions = priors.causal_interventions.as_ref()?;
     let priors = match action {
         Action::Pause => interventions.pause.as_ref(),
@@ -188,7 +188,11 @@ fn beta_variance(beta: &BetaParams) -> Option<f64> {
     }
     let numerator = beta.alpha * beta.beta;
     let variance = numerator / (denom * denom * (denom + 1.0));
-    if variance.is_finite() { Some(variance) } else { None }
+    if variance.is_finite() {
+        Some(variance)
+    } else {
+        None
+    }
 }
 
 fn expected_recovery_stats_for_action(
@@ -230,7 +234,11 @@ fn expected_recovery_stats_for_action(
     if variance < 0.0 && variance > -1e-12 {
         variance = 0.0;
     }
-    let std_dev = if variance >= 0.0 { Some(variance.sqrt()) } else { None };
+    let std_dev = if variance >= 0.0 {
+        Some(variance.sqrt())
+    } else {
+        None
+    };
 
     Some((mean, std_dev))
 }
@@ -240,7 +248,11 @@ fn update_intervention_priors(
     outcome: &InterventionOutcome,
     eta: f64,
 ) -> InterventionPriors {
-    let successes = if outcome.recovered { outcome.weight.max(0.0) } else { 0.0 };
+    let successes = if outcome.recovered {
+        outcome.weight.max(0.0)
+    } else {
+        0.0
+    };
     let trials = outcome.weight.max(0.0);
     let updated = |value: &Option<BetaParams>| {
         value
@@ -278,18 +290,24 @@ fn update_intervention_priors(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::priors::{Classes, ClassPriors, GammaParams};
+    use crate::config::priors::{ClassPriors, Classes, GammaParams};
     use crate::inference::ClassScores;
 
     #[test]
     fn expected_recovery_matches_mean() {
-        let beta = BetaParams { alpha: 2.0, beta: 6.0 };
+        let beta = BetaParams {
+            alpha: 2.0,
+            beta: 6.0,
+        };
         assert!((expected_recovery(&beta) - 0.25).abs() <= 1e-12);
     }
 
     #[test]
     fn update_beta_applies_eta() {
-        let beta = BetaParams { alpha: 1.0, beta: 1.0 };
+        let beta = BetaParams {
+            alpha: 1.0,
+            beta: 1.0,
+        };
         let updated = update_beta(&beta, 3.0, 5.0, 1.0);
         assert!((updated.alpha - 4.0).abs() <= 1e-12);
         assert!((updated.beta - 3.0).abs() <= 1e-12);
@@ -297,7 +315,10 @@ mod tests {
 
     #[test]
     fn update_beta_clamps_successes_to_trials() {
-        let beta = BetaParams { alpha: 1.0, beta: 1.0 };
+        let beta = BetaParams {
+            alpha: 1.0,
+            beta: 1.0,
+        };
         let updated = update_beta(&beta, 10.0, 2.0, 1.0);
         assert!((updated.alpha - 3.0).abs() <= 1e-12);
         assert!((updated.beta - 1.0).abs() <= 1e-12);
@@ -350,10 +371,22 @@ mod tests {
             change_point: None,
             causal_interventions: Some(CausalInterventions {
                 pause: Some(InterventionPriors {
-                    useful: Some(BetaParams { alpha: 9.0, beta: 1.0 }),
-                    useful_bad: Some(BetaParams { alpha: 1.0, beta: 1.0 }),
-                    abandoned: Some(BetaParams { alpha: 2.0, beta: 6.0 }),
-                    zombie: Some(BetaParams { alpha: 1.0, beta: 9.0 }),
+                    useful: Some(BetaParams {
+                        alpha: 9.0,
+                        beta: 1.0,
+                    }),
+                    useful_bad: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 1.0,
+                    }),
+                    abandoned: Some(BetaParams {
+                        alpha: 2.0,
+                        beta: 6.0,
+                    }),
+                    zombie: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 9.0,
+                    }),
                 }),
                 throttle: None,
                 kill: None,
@@ -372,8 +405,8 @@ mod tests {
             abandoned: 0.2,
             zombie: 0.1,
         };
-        let expected = expected_recovery_for_action(&priors, &posterior, Action::Pause)
-            .expect("recovery");
+        let expected =
+            expected_recovery_for_action(&priors, &posterior, Action::Pause).expect("recovery");
         let manual = 0.5 * 0.9 + 0.2 * 0.5 + 0.2 * (2.0 / 8.0) + 0.1 * 0.1;
         assert!((expected - manual).abs() <= 1e-12);
     }
@@ -397,10 +430,22 @@ mod tests {
             change_point: None,
             causal_interventions: Some(CausalInterventions {
                 pause: Some(InterventionPriors {
-                    useful: Some(BetaParams { alpha: 2.0, beta: 2.0 }),
-                    useful_bad: Some(BetaParams { alpha: 2.0, beta: 2.0 }),
-                    abandoned: Some(BetaParams { alpha: 2.0, beta: 2.0 }),
-                    zombie: Some(BetaParams { alpha: 2.0, beta: 2.0 }),
+                    useful: Some(BetaParams {
+                        alpha: 2.0,
+                        beta: 2.0,
+                    }),
+                    useful_bad: Some(BetaParams {
+                        alpha: 2.0,
+                        beta: 2.0,
+                    }),
+                    abandoned: Some(BetaParams {
+                        alpha: 2.0,
+                        beta: 2.0,
+                    }),
+                    zombie: Some(BetaParams {
+                        alpha: 2.0,
+                        beta: 2.0,
+                    }),
                 }),
                 throttle: None,
                 kill: None,
@@ -431,7 +476,10 @@ mod tests {
     fn apply_outcome_updates_matching_class() {
         let interventions = CausalInterventions {
             pause: Some(InterventionPriors {
-                useful: Some(BetaParams { alpha: 1.0, beta: 1.0 }),
+                useful: Some(BetaParams {
+                    alpha: 1.0,
+                    beta: 1.0,
+                }),
                 useful_bad: None,
                 abandoned: None,
                 zombie: None,
@@ -447,10 +495,7 @@ mod tests {
             weight: 1.0,
         };
         let updated = apply_outcome(&interventions, &outcome, 1.0);
-        let updated_beta = updated
-            .pause
-            .and_then(|p| p.useful)
-            .expect("beta");
+        let updated_beta = updated.pause.and_then(|p| p.useful).expect("beta");
         assert!((updated_beta.alpha - 2.0).abs() <= 1e-12);
         assert!((updated_beta.beta - 1.0).abs() <= 1e-12);
     }
@@ -474,7 +519,10 @@ mod tests {
             change_point: None,
             causal_interventions: Some(CausalInterventions {
                 pause: Some(InterventionPriors {
-                    useful: Some(BetaParams { alpha: 1.0, beta: 1.0 }),
+                    useful: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 1.0,
+                    }),
                     useful_bad: None,
                     abandoned: None,
                     zombie: None,
@@ -517,11 +565,26 @@ mod tests {
     fn default_class() -> ClassPriors {
         ClassPriors {
             prior_prob: 0.25,
-            cpu_beta: BetaParams { alpha: 1.0, beta: 1.0 },
-            runtime_gamma: Some(GammaParams { shape: 1.0, rate: 1.0 }),
-            orphan_beta: BetaParams { alpha: 1.0, beta: 1.0 },
-            tty_beta: BetaParams { alpha: 1.0, beta: 1.0 },
-            net_beta: BetaParams { alpha: 1.0, beta: 1.0 },
+            cpu_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            runtime_gamma: Some(GammaParams {
+                shape: 1.0,
+                rate: 1.0,
+            }),
+            orphan_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            tty_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
+            net_beta: BetaParams {
+                alpha: 1.0,
+                beta: 1.0,
+            },
             io_active_beta: None,
             hazard_gamma: None,
             competing_hazards: None,

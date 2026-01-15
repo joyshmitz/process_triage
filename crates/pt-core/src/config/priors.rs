@@ -332,46 +332,130 @@ impl Default for Priors {
             classes: Classes {
                 useful: ClassPriors {
                     prior_prob: 0.70,
-                    cpu_beta: BetaParams { alpha: 5.0, beta: 3.0 },
-                    runtime_gamma: Some(GammaParams { shape: 2.0, rate: 0.0001 }),
-                    orphan_beta: BetaParams { alpha: 1.0, beta: 20.0 },
-                    tty_beta: BetaParams { alpha: 8.0, beta: 2.0 },
-                    net_beta: BetaParams { alpha: 5.0, beta: 3.0 },
-                    io_active_beta: Some(BetaParams { alpha: 6.0, beta: 2.0 }),
-                    hazard_gamma: Some(GammaParams { shape: 2.0, rate: 10.0 }),
+                    cpu_beta: BetaParams {
+                        alpha: 5.0,
+                        beta: 3.0,
+                    },
+                    runtime_gamma: Some(GammaParams {
+                        shape: 2.0,
+                        rate: 0.0001,
+                    }),
+                    orphan_beta: BetaParams {
+                        alpha: 1.0,
+                        beta: 20.0,
+                    },
+                    tty_beta: BetaParams {
+                        alpha: 8.0,
+                        beta: 2.0,
+                    },
+                    net_beta: BetaParams {
+                        alpha: 5.0,
+                        beta: 3.0,
+                    },
+                    io_active_beta: Some(BetaParams {
+                        alpha: 6.0,
+                        beta: 2.0,
+                    }),
+                    hazard_gamma: Some(GammaParams {
+                        shape: 2.0,
+                        rate: 10.0,
+                    }),
                     competing_hazards: None,
                 },
                 useful_bad: ClassPriors {
                     prior_prob: 0.05,
-                    cpu_beta: BetaParams { alpha: 9.0, beta: 1.0 },
-                    runtime_gamma: Some(GammaParams { shape: 1.5, rate: 0.00005 }),
-                    orphan_beta: BetaParams { alpha: 2.0, beta: 8.0 },
-                    tty_beta: BetaParams { alpha: 4.0, beta: 4.0 },
-                    net_beta: BetaParams { alpha: 3.0, beta: 5.0 },
-                    io_active_beta: Some(BetaParams { alpha: 2.0, beta: 6.0 }),
-                    hazard_gamma: Some(GammaParams { shape: 1.5, rate: 20.0 }),
+                    cpu_beta: BetaParams {
+                        alpha: 9.0,
+                        beta: 1.0,
+                    },
+                    runtime_gamma: Some(GammaParams {
+                        shape: 1.5,
+                        rate: 0.00005,
+                    }),
+                    orphan_beta: BetaParams {
+                        alpha: 2.0,
+                        beta: 8.0,
+                    },
+                    tty_beta: BetaParams {
+                        alpha: 4.0,
+                        beta: 4.0,
+                    },
+                    net_beta: BetaParams {
+                        alpha: 3.0,
+                        beta: 5.0,
+                    },
+                    io_active_beta: Some(BetaParams {
+                        alpha: 2.0,
+                        beta: 6.0,
+                    }),
+                    hazard_gamma: Some(GammaParams {
+                        shape: 1.5,
+                        rate: 20.0,
+                    }),
                     competing_hazards: None,
                 },
                 abandoned: ClassPriors {
                     prior_prob: 0.20,
-                    cpu_beta: BetaParams { alpha: 1.0, beta: 8.0 },
-                    runtime_gamma: Some(GammaParams { shape: 1.0, rate: 0.00001 }),
-                    orphan_beta: BetaParams { alpha: 6.0, beta: 2.0 },
-                    tty_beta: BetaParams { alpha: 1.0, beta: 8.0 },
-                    net_beta: BetaParams { alpha: 1.0, beta: 6.0 },
-                    io_active_beta: Some(BetaParams { alpha: 1.0, beta: 10.0 }),
-                    hazard_gamma: Some(GammaParams { shape: 1.0, rate: 50.0 }),
+                    cpu_beta: BetaParams {
+                        alpha: 1.0,
+                        beta: 8.0,
+                    },
+                    runtime_gamma: Some(GammaParams {
+                        shape: 1.0,
+                        rate: 0.00001,
+                    }),
+                    orphan_beta: BetaParams {
+                        alpha: 6.0,
+                        beta: 2.0,
+                    },
+                    tty_beta: BetaParams {
+                        alpha: 1.0,
+                        beta: 8.0,
+                    },
+                    net_beta: BetaParams {
+                        alpha: 1.0,
+                        beta: 6.0,
+                    },
+                    io_active_beta: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 10.0,
+                    }),
+                    hazard_gamma: Some(GammaParams {
+                        shape: 1.0,
+                        rate: 50.0,
+                    }),
                     competing_hazards: None,
                 },
                 zombie: ClassPriors {
                     prior_prob: 0.05,
-                    cpu_beta: BetaParams { alpha: 1.0, beta: 100.0 },
-                    runtime_gamma: Some(GammaParams { shape: 0.5, rate: 0.00001 }),
-                    orphan_beta: BetaParams { alpha: 10.0, beta: 1.0 },
-                    tty_beta: BetaParams { alpha: 1.0, beta: 20.0 },
-                    net_beta: BetaParams { alpha: 1.0, beta: 50.0 },
-                    io_active_beta: Some(BetaParams { alpha: 1.0, beta: 100.0 }),
-                    hazard_gamma: Some(GammaParams { shape: 0.5, rate: 100.0 }),
+                    cpu_beta: BetaParams {
+                        alpha: 1.0,
+                        beta: 100.0,
+                    },
+                    runtime_gamma: Some(GammaParams {
+                        shape: 0.5,
+                        rate: 0.00001,
+                    }),
+                    orphan_beta: BetaParams {
+                        alpha: 10.0,
+                        beta: 1.0,
+                    },
+                    tty_beta: BetaParams {
+                        alpha: 1.0,
+                        beta: 20.0,
+                    },
+                    net_beta: BetaParams {
+                        alpha: 1.0,
+                        beta: 50.0,
+                    },
+                    io_active_beta: Some(BetaParams {
+                        alpha: 1.0,
+                        beta: 100.0,
+                    }),
+                    hazard_gamma: Some(GammaParams {
+                        shape: 0.5,
+                        rate: 100.0,
+                    }),
                     competing_hazards: None,
                 },
             },
@@ -387,8 +471,14 @@ impl Default for Priors {
             }),
             robust_bayes: None,
             error_rate: Some(ErrorRate {
-                false_kill: Some(BetaParams { alpha: 1.0, beta: 99.0 }),
-                false_spare: Some(BetaParams { alpha: 5.0, beta: 95.0 }),
+                false_kill: Some(BetaParams {
+                    alpha: 1.0,
+                    beta: 99.0,
+                }),
+                false_spare: Some(BetaParams {
+                    alpha: 5.0,
+                    beta: 95.0,
+                }),
             }),
             bocpd: Some(Bocpd {
                 hazard_lambda: Some(0.01),

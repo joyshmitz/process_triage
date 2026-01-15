@@ -6,12 +6,12 @@
 //! - Resolution method
 //! - Effective values
 
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
-use sha2::{Sha256, Digest};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
-use crate::error::{Error, Result};
 use super::{ConfigResolution, ConfigSource, Policy, Priors};
+use crate::error::{Error, Result};
 
 /// Complete configuration snapshot for telemetry and audit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,9 +151,9 @@ fn compute_combined_hash(priors: &str, policy: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use super::super::priors::PRIORS_SCHEMA_VERSION;
     use super::super::policy::POLICY_SCHEMA_VERSION;
+    use super::super::priors::PRIORS_SCHEMA_VERSION;
+    use super::*;
 
     #[test]
     fn test_snapshot_from_defaults() {

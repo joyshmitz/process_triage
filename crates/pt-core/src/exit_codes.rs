@@ -143,7 +143,6 @@ impl From<ExitCode> for i32 {
     fn from(code: ExitCode) -> Self {
         code as i32
     }
-
 }
 
 impl std::fmt::Display for ExitCode {

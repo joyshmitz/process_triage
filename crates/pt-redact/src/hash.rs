@@ -78,7 +78,7 @@ impl KeyMaterial {
         let result = mac.finalize().into_bytes();
 
         // Truncate to specified bytes (clamped to valid range)
-        let trunc = truncation_bytes.min(32).max(4);
+        let trunc = truncation_bytes.clamp(4, 32);
         let hex = hex::encode(&result[..trunc]);
 
         format!("[HASH:{}:{}]", self.key_id, hex)

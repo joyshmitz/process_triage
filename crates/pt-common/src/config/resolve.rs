@@ -6,14 +6,14 @@
 //! 3. XDG default (~/.config/process_triage/)
 //! 4. Built-in defaults
 
-use std::path::PathBuf;
 use std::env;
 use std::fs;
+use std::path::PathBuf;
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
-use crate::error::{Error, Result};
 use super::{ConfigResolution, ConfigSource, Policy, Priors};
+use crate::error::{Error, Result};
 
 /// Configuration file paths.
 #[derive(Debug, Clone)]
@@ -138,26 +138,30 @@ impl ConfigResolver {
                 let hash = compute_sha256(&content);
 
                 let priors: Priors = serde_json::from_str(&content).map_err(|e| {
-                    Error::InvalidPriors(format!(
-                        "failed to parse {}: {}", p.display(), e
-                    ))
+                    Error::InvalidPriors(format!("failed to parse {}: {}", p.display(), e))
                 })?;
 
                 priors.validate()?;
 
-                Ok((priors, ConfigSource {
-                    path: Some(p.to_string_lossy().to_string()),
-                    hash: Some(hash),
-                    resolution,
-                }))
+                Ok((
+                    priors,
+                    ConfigSource {
+                        path: Some(p.to_string_lossy().to_string()),
+                        hash: Some(hash),
+                        resolution,
+                    },
+                ))
             }
             None => {
                 let priors = Priors::default();
-                Ok((priors, ConfigSource {
-                    path: None,
-                    hash: None,
-                    resolution: ConfigResolution::Default,
-                }))
+                Ok((
+                    priors,
+                    ConfigSource {
+                        path: None,
+                        hash: None,
+                        resolution: ConfigResolution::Default,
+                    },
+                ))
             }
         }
     }
@@ -175,26 +179,30 @@ impl ConfigResolver {
                 let hash = compute_sha256(&content);
 
                 let policy: Policy = serde_json::from_str(&content).map_err(|e| {
-                    Error::InvalidPolicy(format!(
-                        "failed to parse {}: {}", p.display(), e
-                    ))
+                    Error::InvalidPolicy(format!("failed to parse {}: {}", p.display(), e))
                 })?;
 
                 policy.validate()?;
 
-                Ok((policy, ConfigSource {
-                    path: Some(p.to_string_lossy().to_string()),
-                    hash: Some(hash),
-                    resolution,
-                }))
+                Ok((
+                    policy,
+                    ConfigSource {
+                        path: Some(p.to_string_lossy().to_string()),
+                        hash: Some(hash),
+                        resolution,
+                    },
+                ))
             }
             None => {
                 let policy = Policy::default();
-                Ok((policy, ConfigSource {
-                    path: None,
-                    hash: None,
-                    resolution: ConfigResolution::Default,
-                }))
+                Ok((
+                    policy,
+                    ConfigSource {
+                        path: None,
+                        hash: None,
+                        resolution: ConfigResolution::Default,
+                    },
+                ))
             }
         }
     }

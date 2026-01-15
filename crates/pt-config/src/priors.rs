@@ -325,7 +325,11 @@ impl Priors {
     /// Load priors from a JSON file.
     pub fn from_file(path: &std::path::Path) -> Result<Self, crate::validate::ValidationError> {
         let content = std::fs::read_to_string(path).map_err(|e| {
-            crate::validate::ValidationError::IoError(format!("Failed to read {}: {}", path.display(), e))
+            crate::validate::ValidationError::IoError(format!(
+                "Failed to read {}: {}",
+                path.display(),
+                e
+            ))
         })?;
 
         Self::from_str(&content)

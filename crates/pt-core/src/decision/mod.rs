@@ -1,11 +1,19 @@
 //! Decision theory utilities (expected loss, thresholds, FDR control, policy enforcement).
 
+pub mod alpha_investing;
+pub mod causal_interventions;
 pub mod enforcer;
 pub mod expected_loss;
-pub mod alpha_investing;
 pub mod fdr_selection;
-pub mod causal_interventions;
 
+pub use alpha_investing::{
+    AlphaInvestingPolicy, AlphaInvestingStore, AlphaUpdate, AlphaWealthState,
+};
+pub use causal_interventions::{
+    apply_outcome, apply_outcomes, expected_recovery, expected_recovery_by_action,
+    expected_recovery_for_action, recovery_for_class, recovery_table, InterventionOutcome,
+    ProcessClass, RecoveryExpectation, RecoveryTable,
+};
 pub use enforcer::{
     EnforcerError, PolicyCheckResult, PolicyEnforcer, PolicyViolation, ProcessCandidate,
     ViolationKind,
@@ -14,13 +22,7 @@ pub use expected_loss::{
     decide_action, decide_action_with_recovery, Action, ActionFeasibility, DecisionError,
     DecisionOutcome, DecisionRationale, DisabledAction, ExpectedLoss, SprtBoundary,
 };
-pub use alpha_investing::{AlphaInvestingPolicy, AlphaInvestingStore, AlphaUpdate, AlphaWealthState};
 pub use fdr_selection::{
     by_correction_factor, select_fdr, CandidateSelection, FdrCandidate, FdrError, FdrMethod,
     FdrSelectionResult, TargetIdentity,
-};
-pub use causal_interventions::{
-    apply_outcome, apply_outcomes, expected_recovery, expected_recovery_by_action,
-    expected_recovery_for_action, recovery_for_class, recovery_table, InterventionOutcome,
-    ProcessClass, RecoveryExpectation, RecoveryTable,
 };

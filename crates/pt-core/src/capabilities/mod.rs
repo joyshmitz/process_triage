@@ -18,7 +18,6 @@ pub use cache::{
     CacheConfig, CacheError, CapabilityCache, DEFAULT_CACHE_TTL_SECS,
 };
 pub use detect::{
-    detect_capabilities, ActionCapabilities, Capabilities, DataSourceCapabilities,
-    DetectionError, PermissionCapabilities, PlatformInfo, SupervisorCapabilities,
-    ToolCapabilities, ToolCapability,
+    detect_capabilities, ActionCapabilities, Capabilities, DataSourceCapabilities, DetectionError,
+    PermissionCapabilities, PlatformInfo, SupervisorCapabilities, ToolCapabilities, ToolCapability,
 };

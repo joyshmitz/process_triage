@@ -2,8 +2,9 @@
 
 use std::f64::consts::PI;
 
-const LOG_SQRT_2PI: f64 = 0.91893853320467274178; // 0.5 * ln(2*pi)
+const LOG_SQRT_2PI: f64 = 0.918_938_533_204_672_8; // 0.5 * ln(2*pi)
 const LANCZOS_G: f64 = 7.0;
+#[allow(clippy::excessive_precision)] // These are published numerical constants
 const LANCZOS_COEFFS: [f64; 9] = [
     0.999_999_999_999_809_93,
     676.520_368_121_885_1,
@@ -26,10 +27,7 @@ pub fn log_sum_exp(values: &[f64]) -> f64 {
     if values.iter().any(|v| v.is_nan()) {
         return f64::NAN;
     }
-    let max = values
-        .iter()
-        .cloned()
-        .fold(f64::NEG_INFINITY, f64::max);
+    let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
     if max == f64::NEG_INFINITY {
         return f64::NEG_INFINITY;
     }

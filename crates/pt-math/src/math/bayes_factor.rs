@@ -126,7 +126,7 @@ impl EvidenceStrength {
 
         // Jeffreys scale thresholds (in nats)
         const LN_3_2: f64 = 1.163_150_809_678_64; // ln(3.2)
-        const LN_32: f64 = 3.465_735_902_799_727;  // ln(32)
+        const LN_32: f64 = 3.465_735_902_799_727; // ln(32)
         const LN_100: f64 = 4.605_170_185_988_092; // ln(100)
         let ln_10 = std::f64::consts::LN_10;
 
