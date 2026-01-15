@@ -1,0 +1,873 @@
+#!/usr/bin/env bash
+#
+# pt-install-tools - Process Triage Tool Installer
+#
+# Attempts to install all available instrumentation tools for maximal
+# evidence collection. Uses non-interactive installs and continues on
+# individual failures.
+#
+# Usage:
+#   pt-install-tools              # Attempt to install all tools
+#   pt-install-tools --list       # List packages that would be installed
+#   pt-install-tools --check      # Check which tools are available
+#   pt-install-tools --manifest   # Generate capabilities manifest
+#
+# Environment variables:
+#   PT_SUDO       - Set to 0 to skip sudo commands (default: 1)
+#   PT_VERBOSE    - Set to 1 for verbose output
+#   PT_DRY_RUN    - Set to 1 to show commands without running
+#   PT_MANIFEST   - Custom path for manifest file
+#
+set -euo pipefail
+
+readonly VERSION="0.1.0"
+readonly SCRIPT_NAME="pt-install-tools"
+
+# ==============================================================================
+# Logging
+# ==============================================================================
+
+log_info() {
+    printf '\033[0;34mi\033[0m %s\n' "$*" >&2
+}
+
+log_success() {
+    printf '\033[0;32m✓\033[0m %s\n' "$*" >&2
+}
+
+log_error() {
+    printf '\033[0;31m✗\033[0m %s\n' "$*" >&2
+}
+
+log_warn() {
+    printf '\033[0;33m⚠\033[0m %s\n' "$*" >&2
+}
+
+log_step() {
+    printf '\033[0;36m→\033[0m %s\n' "$*" >&2
+}
+
+log_debug() {
+    if [[ "${PT_VERBOSE:-0}" == "1" ]]; then
+        printf '\033[0;90mD\033[0m %s\n' "$*" >&2
+    fi
+}
+
+# ==============================================================================
+# Platform-specific Package Lists
+# ==============================================================================
+#
+# Package categories:
+#   - System stats: sysstat (iostat, mpstat, sar)
+#   - Monitoring: atop, htop, iotop, nethogs, iftop, smem
+#   - Process inspection: lsof, strace, ltrace
+#   - Kernel/perf: linux-tools, perf
+#   - BPF: bpftrace, bcc, bpfcc-tools
+#   - Network: iproute2, ethtool, conntrack-tools
+#   - Cgroup: cgroup-tools, libcgroup-tools
+#   - Debug: gdb, elfutils, binutils
+#   - Audit: acct, psacct
+#   - Containers: podman (optional)
+
+get_apt_packages() {
+    local kernel_release
+    kernel_release=$(uname -r 2>/dev/null || echo "")
+
+    cat <<EOF
+# Core system stats
+sysstat
+
+# Process monitoring
+atop
+htop
+iotop
+nethogs
+iftop
+smem
+
+# Process inspection
+lsof
+strace
+ltrace
+
+# Kernel/perf tools (version-specific)
+linux-tools-common
+linux-tools-${kernel_release}
+linux-tools-generic
+
+# BPF tools
+bpftrace
+bpfcc-tools
+
+# Network tools
+iproute2
+ethtool
+conntrack-tools
+
+# Cgroup/resource tools
+cgroup-tools
+
+# Debugging
+gdb
+elfutils
+binutils
+
+# Process accounting
+acct
+
+# Optional: Container tools
+podman
+EOF
+}
+
+get_dnf_packages() {
+    cat <<EOF
+# Core system stats
+sysstat
+
+# Process monitoring
+atop
+htop
+iotop
+nethogs
+iftop
+smem
+
+# Process inspection
+lsof
+strace
+ltrace
+
+# Kernel/perf tools
+perf
+
+# BPF tools
+bpftrace
+bcc
+bcc-tools
+
+# Network tools
+iproute
+ethtool
+conntrack-tools
+
+# Cgroup/resource tools
+libcgroup-tools
+
+# Debugging
+gdb
+elfutils
+binutils
+
+# Process accounting
+psacct
+
+# Optional: Container tools
+podman
+EOF
+}
+
+get_pacman_packages() {
+    cat <<EOF
+# Core system stats
+sysstat
+
+# Process monitoring
+atop
+htop
+iotop
+nethogs
+iftop
+smem
+
+# Process inspection
+lsof
+strace
+ltrace
+
+# Kernel/perf tools
+perf
+
+# BPF tools
+bpftrace
+bcc
+bcc-tools
+
+# Network tools
+iproute2
+ethtool
+conntrack-tools
+
+# Debugging
+gdb
+elfutils
+binutils
+
+# Optional: Container tools
+podman
+EOF
+}
+
+get_apk_packages() {
+    # Alpine Linux - more limited set
+    cat <<EOF
+# Core system stats
+sysstat
+
+# Process monitoring
+htop
+iotop
+
+# Process inspection
+lsof
+strace
+
+# Network tools
+iproute2
+ethtool
+
+# Debugging
+gdb
+binutils
+
+# Optional: Container tools
+podman
+EOF
+}
+
+get_brew_packages() {
+    # macOS Homebrew - different tool set
+    cat <<EOF
+# Process monitoring
+htop
+
+# Process inspection
+lsof
+
+# Debugging
+gdb
+
+# Container tools
+podman
+EOF
+}
+
+# ==============================================================================
+# Platform Detection
+# ==============================================================================
+
+detect_os() {
+    local os=""
+
+    if [[ -f /etc/os-release ]]; then
+        # Extract ID from os-release without sourcing (avoids variable conflicts)
+        os=$(grep -E '^ID=' /etc/os-release | cut -d= -f2 | tr -d '"' || echo "unknown")
+    elif [[ "$(uname)" == "Darwin" ]]; then
+        os="macos"
+    elif [[ "$(uname)" == "FreeBSD" ]]; then
+        os="freebsd"
+    else
+        os="unknown"
+    fi
+
+    echo "$os"
+}
+
+detect_package_manager() {
+    local os="$1"
+    local pm=""
+
+    case "$os" in
+        ubuntu|debian|linuxmint|pop|elementary|zorin|kali)
+            if command -v apt-get &>/dev/null; then
+                pm="apt"
+            fi
+            ;;
+        fedora|centos|rhel|rocky|alma|ol)
+            if command -v dnf &>/dev/null; then
+                pm="dnf"
+            elif command -v yum &>/dev/null; then
+                pm="yum"
+            fi
+            ;;
+        arch|manjaro|endeavouros|garuda)
+            if command -v pacman &>/dev/null; then
+                pm="pacman"
+            fi
+            ;;
+        alpine)
+            if command -v apk &>/dev/null; then
+                pm="apk"
+            fi
+            ;;
+        opensuse*|sles)
+            if command -v zypper &>/dev/null; then
+                pm="zypper"
+            fi
+            ;;
+        macos)
+            if command -v brew &>/dev/null; then
+                pm="brew"
+            fi
+            ;;
+        *)
+            # Try to detect by available commands
+            if command -v apt-get &>/dev/null; then
+                pm="apt"
+            elif command -v dnf &>/dev/null; then
+                pm="dnf"
+            elif command -v yum &>/dev/null; then
+                pm="yum"
+            elif command -v pacman &>/dev/null; then
+                pm="pacman"
+            elif command -v apk &>/dev/null; then
+                pm="apk"
+            elif command -v brew &>/dev/null; then
+                pm="brew"
+            fi
+            ;;
+    esac
+
+    echo "$pm"
+}
+
+# ==============================================================================
+# Package List Retrieval
+# ==============================================================================
+
+get_packages_for_manager() {
+    local pm="$1"
+
+    case "$pm" in
+        apt)
+            get_apt_packages
+            ;;
+        dnf|yum)
+            get_dnf_packages
+            ;;
+        pacman)
+            get_pacman_packages
+            ;;
+        apk)
+            get_apk_packages
+            ;;
+        brew)
+            get_brew_packages
+            ;;
+        *)
+            log_error "Unknown package manager: $pm"
+            return 1
+            ;;
+    esac
+}
+
+filter_packages() {
+    # Filter out comments and empty lines, return unique packages
+    grep -v '^#' | grep -v '^[[:space:]]*$' | sort -u
+}
+
+# ==============================================================================
+# Installation Functions
+# ==============================================================================
+
+run_with_sudo() {
+    local cmd=("$@")
+
+    if [[ "${PT_SUDO:-1}" == "0" ]]; then
+        log_debug "Skipping sudo (PT_SUDO=0)"
+        return 1
+    fi
+
+    if [[ "${PT_DRY_RUN:-0}" == "1" ]]; then
+        log_info "[DRY RUN] sudo ${cmd[*]}"
+        return 0
+    fi
+
+    # Use sudo -n (non-interactive) to avoid hanging
+    if sudo -n "${cmd[@]}" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+install_package_apt() {
+    local pkg="$1"
+    log_debug "Installing $pkg via apt..."
+
+    if run_with_sudo apt-get install -y -qq "$pkg"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+install_package_dnf() {
+    local pkg="$1"
+    log_debug "Installing $pkg via dnf..."
+
+    if run_with_sudo dnf install -y -q "$pkg"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+install_package_yum() {
+    local pkg="$1"
+    log_debug "Installing $pkg via yum..."
+
+    if run_with_sudo yum install -y -q "$pkg"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+install_package_pacman() {
+    local pkg="$1"
+    log_debug "Installing $pkg via pacman..."
+
+    if run_with_sudo pacman -S --noconfirm --needed "$pkg"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+install_package_apk() {
+    local pkg="$1"
+    log_debug "Installing $pkg via apk..."
+
+    if run_with_sudo apk add --no-interactive "$pkg"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+install_package_brew() {
+    local pkg="$1"
+    log_debug "Installing $pkg via brew..."
+
+    # Homebrew doesn't need sudo
+    if [[ "${PT_DRY_RUN:-0}" == "1" ]]; then
+        log_info "[DRY RUN] brew install $pkg"
+        return 0
+    fi
+
+    if brew install "$pkg" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+install_package() {
+    local pm="$1"
+    local pkg="$2"
+
+    case "$pm" in
+        apt)
+            install_package_apt "$pkg"
+            ;;
+        dnf)
+            install_package_dnf "$pkg"
+            ;;
+        yum)
+            install_package_yum "$pkg"
+            ;;
+        pacman)
+            install_package_pacman "$pkg"
+            ;;
+        apk)
+            install_package_apk "$pkg"
+            ;;
+        brew)
+            install_package_brew "$pkg"
+            ;;
+        *)
+            log_error "Unknown package manager: $pm"
+            return 1
+            ;;
+    esac
+}
+
+update_package_cache() {
+    local pm="$1"
+
+    log_step "Updating package cache..."
+
+    case "$pm" in
+        apt)
+            run_with_sudo apt-get update -qq
+            ;;
+        dnf)
+            run_with_sudo dnf makecache -q
+            ;;
+        yum)
+            run_with_sudo yum makecache -q
+            ;;
+        pacman)
+            run_with_sudo pacman -Sy
+            ;;
+        apk)
+            run_with_sudo apk update
+            ;;
+        brew)
+            if [[ "${PT_DRY_RUN:-0}" != "1" ]]; then
+                brew update --quiet 2>/dev/null || true
+            fi
+            ;;
+    esac
+}
+
+# ==============================================================================
+# Tool Checking
+# ==============================================================================
+
+# Map package names to executable names (where they differ)
+declare -A PACKAGE_TO_BINARY=(
+    ["sysstat"]="iostat"
+    ["iproute2"]="ss"
+    ["iproute"]="ss"
+    ["linux-tools-common"]="perf"
+    ["linux-tools-generic"]="perf"
+    ["bpfcc-tools"]="bpftrace"
+    ["bcc-tools"]="bpftrace"
+    ["cgroup-tools"]="cgexec"
+    ["libcgroup-tools"]="cgexec"
+    ["elfutils"]="eu-readelf"
+    ["acct"]="lastcomm"
+    ["psacct"]="lastcomm"
+    ["conntrack-tools"]="conntrack"
+)
+
+get_binary_for_package() {
+    local pkg="$1"
+
+    if [[ -v PACKAGE_TO_BINARY["$pkg"] ]]; then
+        echo "${PACKAGE_TO_BINARY[$pkg]}"
+    else
+        echo "$pkg"
+    fi
+}
+
+check_tool_available() {
+    local binary="$1"
+
+    if command -v "$binary" &>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+get_tool_version() {
+    local binary="$1"
+    local version=""
+
+    # Try common version flags
+    for flag in "--version" "-V" "version" "-v"; do
+        version=$("$binary" "$flag" 2>&1 | head -1 || true)
+        if [[ -n "$version" ]]; then
+            # Extract version number
+            version=$(echo "$version" | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1 || echo "")
+            if [[ -n "$version" ]]; then
+                echo "$version"
+                return 0
+            fi
+        fi
+    done
+
+    echo "unknown"
+}
+
+get_tool_path() {
+    local binary="$1"
+    command -v "$binary" 2>/dev/null || echo ""
+}
+
+# ==============================================================================
+# Manifest Generation
+# ==============================================================================
+
+generate_manifest() {
+    local manifest_file="${PT_MANIFEST:-$HOME/.local/share/process_triage/tool-manifest.json}"
+    local manifest_dir
+    manifest_dir=$(dirname "$manifest_file")
+
+    log_step "Generating capabilities manifest..."
+
+    # Create directory if needed
+    mkdir -p "$manifest_dir"
+
+    # Start JSON output
+    {
+        echo "{"
+        echo "  \"generated_at\": \"$(date -Iseconds)\","
+        echo "  \"generator\": \"$SCRIPT_NAME\","
+        echo "  \"version\": \"$VERSION\","
+        echo "  \"platform\": {"
+        echo "    \"os\": \"$(detect_os)\","
+        echo "    \"kernel\": \"$(uname -r 2>/dev/null || echo unknown)\","
+        echo "    \"arch\": \"$(uname -m 2>/dev/null || echo unknown)\""
+        echo "  },"
+        echo "  \"tools\": {"
+
+        local first=true
+        local tools=(
+            "ps" "lsof" "ss" "netstat" "iostat" "perf" "strace"
+            "ltrace" "bpftrace" "systemctl" "docker" "podman"
+            "nice" "renice" "ionice" "htop" "atop" "iotop"
+            "nethogs" "iftop" "smem" "gdb" "cgexec" "conntrack"
+            "ethtool" "lastcomm"
+        )
+
+        for tool in "${tools[@]}"; do
+            if [[ "$first" != "true" ]]; then
+                echo ","
+            fi
+            first=false
+
+            printf "    \"%s\": {" "$tool"
+
+            if check_tool_available "$tool"; then
+                local path version
+                path=$(get_tool_path "$tool")
+                version=$(get_tool_version "$tool")
+                printf "\"available\": true, \"path\": \"%s\", \"version\": \"%s\"}" "$path" "$version"
+            else
+                printf "\"available\": false}"
+            fi
+        done
+
+        echo ""
+        echo "  }"
+        echo "}"
+    } > "$manifest_file"
+
+    log_success "Manifest written to: $manifest_file"
+}
+
+# ==============================================================================
+# Main Functions
+# ==============================================================================
+
+do_list() {
+    local os pm
+    os=$(detect_os)
+    pm=$(detect_package_manager "$os")
+
+    log_info "OS: $os"
+    log_info "Package manager: $pm"
+    echo ""
+    log_info "Packages that would be installed:"
+    echo ""
+
+    if [[ -z "$pm" ]]; then
+        log_error "Could not detect package manager"
+        exit 1
+    fi
+
+    get_packages_for_manager "$pm" | filter_packages | while read -r pkg; do
+        local binary
+        binary=$(get_binary_for_package "$pkg")
+        if check_tool_available "$binary"; then
+            echo "  [installed] $pkg"
+        else
+            echo "  [missing]   $pkg"
+        fi
+    done
+}
+
+do_check() {
+    log_info "Checking available instrumentation tools..."
+    echo ""
+
+    local available=0
+    local missing=0
+
+    local tools=(
+        "ps:Process listing"
+        "lsof:Open files"
+        "ss:Socket statistics"
+        "netstat:Network statistics"
+        "iostat:I/O statistics"
+        "perf:Performance counters"
+        "strace:Syscall tracing"
+        "ltrace:Library tracing"
+        "bpftrace:eBPF tracing"
+        "systemctl:Systemd control"
+        "docker:Docker"
+        "podman:Podman"
+        "nice:Process priority"
+        "renice:Adjust priority"
+        "ionice:I/O priority"
+        "htop:Process viewer"
+        "atop:Advanced monitor"
+        "iotop:I/O monitor"
+        "nethogs:Network monitor"
+        "iftop:Interface monitor"
+        "smem:Memory reporter"
+        "gdb:Debugger"
+        "cgexec:Cgroup exec"
+        "conntrack:Connection tracking"
+        "ethtool:Ethernet tool"
+    )
+
+    for entry in "${tools[@]}"; do
+        local tool="${entry%%:*}"
+        local desc="${entry##*:}"
+
+        if check_tool_available "$tool"; then
+            local version path
+            version=$(get_tool_version "$tool")
+            path=$(get_tool_path "$tool")
+            printf '\033[0;32m✓\033[0m %-12s %s (v%s)\n' "$tool" "$desc" "$version"
+            ((available++)) || true
+        else
+            printf '\033[0;31m✗\033[0m %-12s %s\n' "$tool" "$desc"
+            ((missing++)) || true
+        fi
+    done
+
+    echo ""
+    log_info "Available: $available | Missing: $missing"
+}
+
+do_install() {
+    local os pm
+    os=$(detect_os)
+    pm=$(detect_package_manager "$os")
+
+    log_info "OS: $os"
+    log_info "Package manager: $pm"
+    echo ""
+
+    if [[ -z "$pm" ]]; then
+        log_error "Could not detect package manager"
+        log_error "Manual installation required"
+        exit 1
+    fi
+
+    # Check sudo availability
+    if [[ "${PT_SUDO:-1}" == "1" ]] && ! sudo -n true 2>/dev/null; then
+        log_warn "sudo not available without password"
+        log_warn "Some packages may not be installed"
+        log_warn "Run with PT_SUDO=0 to skip sudo, or configure sudoers"
+    fi
+
+    # Update package cache
+    update_package_cache "$pm" || log_warn "Failed to update package cache"
+
+    # Get package list
+    local packages
+    packages=$(get_packages_for_manager "$pm" | filter_packages)
+
+    local installed=0
+    local failed=0
+    local skipped=0
+
+    log_step "Installing packages..."
+    echo ""
+
+    while read -r pkg; do
+        [[ -z "$pkg" ]] && continue
+
+        local binary
+        binary=$(get_binary_for_package "$pkg")
+
+        # Skip if already installed
+        if check_tool_available "$binary"; then
+            log_debug "Skipping $pkg (already installed)"
+            ((skipped++)) || true
+            continue
+        fi
+
+        printf "  Installing %-30s " "$pkg..."
+
+        if install_package "$pm" "$pkg"; then
+            printf '\033[0;32m✓\033[0m\n'
+            ((installed++)) || true
+        else
+            printf '\033[0;31m✗\033[0m\n'
+            ((failed++)) || true
+        fi
+    done <<< "$packages"
+
+    echo ""
+    log_info "Results: installed=$installed, failed=$failed, skipped=$skipped"
+
+    # Generate manifest after installation
+    generate_manifest
+
+    if [[ $failed -gt 0 ]]; then
+        log_warn "Some packages failed to install"
+        log_warn "This is normal - not all packages are available on all systems"
+    fi
+
+    log_success "Tool installation complete"
+}
+
+show_help() {
+    cat <<EOF
+$SCRIPT_NAME v$VERSION - Process Triage Tool Installer
+
+Usage: $SCRIPT_NAME [OPTIONS]
+
+Options:
+  --help, -h      Show this help message
+  --version, -V   Show version
+  --list          List packages that would be installed
+  --check         Check which tools are available
+  --manifest      Generate capabilities manifest only
+  (no args)       Attempt to install all tools
+
+Environment:
+  PT_SUDO=0       Skip sudo commands
+  PT_VERBOSE=1    Enable verbose output
+  PT_DRY_RUN=1    Show commands without running
+  PT_MANIFEST     Custom path for manifest file
+
+Examples:
+  $SCRIPT_NAME                    # Install all available tools
+  $SCRIPT_NAME --check            # See what's available
+  $SCRIPT_NAME --list             # Preview installation
+  PT_DRY_RUN=1 $SCRIPT_NAME       # Dry run
+EOF
+}
+
+# ==============================================================================
+# Main Entry Point
+# ==============================================================================
+
+main() {
+    case "${1:-}" in
+        --help|-h)
+            show_help
+            ;;
+        --version|-V)
+            echo "$SCRIPT_NAME v$VERSION"
+            ;;
+        --list)
+            do_list
+            ;;
+        --check)
+            do_check
+            ;;
+        --manifest)
+            generate_manifest
+            ;;
+        "")
+            do_install
+            ;;
+        *)
+            log_error "Unknown option: $1"
+            log_info "Run '$SCRIPT_NAME --help' for usage"
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
