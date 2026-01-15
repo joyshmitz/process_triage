@@ -215,9 +215,16 @@ pub fn detect_container_from_markers() -> Option<ContainerInfo> {
 
     // Check for container indication in /proc/1/cgroup
     if let Ok(content) = fs::read_to_string("/proc/1/cgroup") {
-        let info = detect_container_from_cgroup(&content);
-        if info.in_container {
-            return Some(info);
+        for line in content.lines() {
+            let mut parts = line.splitn(3, ':');
+            let _ = parts.next();
+            let _ = parts.next();
+            if let Some(path) = parts.next() {
+                let info = detect_container_from_cgroup(path);
+                if info.in_container {
+                    return Some(info);
+                }
+            }
         }
     }
 
