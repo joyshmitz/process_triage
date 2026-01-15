@@ -67,7 +67,7 @@ Every JSON output includes:
 ```json
 {
   "schema_version": "1.0.0",
-  "session_id": "sess-20260115-143022-abc123",
+  "session_id": "pt-20260115-143022-a7xq",
   "generated_at": "2026-01-15T14:30:22Z",
   "host_id": "devbox1.example.com",
   "summary": { ... }

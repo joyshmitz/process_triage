@@ -25,8 +25,8 @@ impl From<u32> for ProcessId {
 
 /// Start ID - unique identifier for a specific process incarnation.
 ///
-/// Format: `<boot_id_prefix>-<start_time_ticks>` (Linux)
-/// or `<boot_id_prefix>-<pid>-<start_time>` (macOS)
+/// Format: `<boot_id>:<start_time_ticks>:<pid>` (Linux)
+/// or `<boot_id>:<start_time>:<pid>` (macOS)
 ///
 /// This disambiguates PID reuse across reboots and within a boot.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -35,23 +35,34 @@ pub struct StartId(pub String);
 
 impl StartId {
     /// Create a new StartId from components (Linux).
-    pub fn from_linux(boot_id_prefix: &str, start_time_ticks: u64) -> Self {
-        StartId(format!("{}-{}", boot_id_prefix, start_time_ticks))
+    pub fn from_linux(boot_id: &str, start_time_ticks: u64, pid: u32) -> Self {
+        StartId(format!("{}:{}:{}", boot_id, start_time_ticks, pid))
     }
 
     /// Create a new StartId from components (macOS).
-    pub fn from_macos(boot_id_prefix: &str, pid: u32, start_time: u64) -> Self {
-        StartId(format!("{}-{}-{}", boot_id_prefix, pid, start_time))
+    pub fn from_macos(boot_id: &str, pid: u32, start_time: u64) -> Self {
+        StartId(format!("{}:{}:{}", boot_id, start_time, pid))
     }
 
     /// Parse and validate a StartId string.
     pub fn parse(s: &str) -> Option<Self> {
-        // Basic validation: must have at least one hyphen
-        if s.contains('-') && !s.is_empty() {
-            Some(StartId(s.to_string()))
-        } else {
-            None
+        let mut parts = s.split(':');
+        let boot_id = parts.next()?;
+        let start_time = parts.next()?;
+        let pid = parts.next()?;
+        if parts.next().is_some() {
+            return None;
         }
+        if uuid::Uuid::parse_str(boot_id).is_err() {
+            return None;
+        }
+        if start_time.parse::<u64>().is_err() {
+            return None;
+        }
+        if pid.parse::<u32>().is_err() {
+            return None;
+        }
+        Some(StartId(s.to_string()))
     }
 }
 
@@ -63,8 +74,8 @@ impl fmt::Display for StartId {
 
 /// Session ID for tracking triage sessions.
 ///
-/// Format: `sess-<date>-<time>-<random>`
-/// Example: `sess-20260115-143022-abc123`
+/// Format: `pt-YYYYMMDD-HHMMSS-XXXX`
+/// Example: `pt-20260115-143022-a7xq`
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct SessionId(pub String);
@@ -73,25 +84,37 @@ impl SessionId {
     /// Generate a new session ID.
     pub fn new() -> Self {
         let now = chrono::Utc::now();
-        let random: String = uuid::Uuid::new_v4()
-            .to_string()
-            .chars()
-            .take(6)
-            .collect();
-        SessionId(format!(
-            "sess-{}-{}",
-            now.format("%Y%m%d-%H%M%S"),
-            random
-        ))
+        let suffix = generate_base32_suffix();
+        SessionId(format!("pt-{}-{}-{}", now.format("%Y%m%d"), now.format("%H%M%S"), suffix))
     }
 
     /// Parse an existing session ID string.
     pub fn parse(s: &str) -> Option<Self> {
-        if s.starts_with("sess-") && s.len() > 20 {
-            Some(SessionId(s.to_string()))
-        } else {
-            None
+        if s.len() != 23 {
+            return None;
         }
+        let bytes = s.as_bytes();
+        if bytes.get(0) != Some(&b'p')
+            || bytes.get(1) != Some(&b't')
+            || bytes.get(2) != Some(&b'-')
+            || bytes.get(11) != Some(&b'-')
+            || bytes.get(18) != Some(&b'-')
+        {
+            return None;
+        }
+        let date = &s[3..11];
+        let time = &s[12..18];
+        let suffix = &s[19..23];
+        if !date.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        if !time.chars().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        if !suffix.chars().all(|c| matches!(c, 'a'..='z' | '2'..='7')) {
+            return None;
+        }
+        Some(SessionId(s.to_string()))
     }
 }
 
@@ -132,19 +155,39 @@ mod tests {
     #[test]
     fn test_session_id_format() {
         let sid = SessionId::new();
-        assert!(sid.0.starts_with("sess-"));
-        assert!(sid.0.len() > 20);
+        assert!(sid.0.starts_with("pt-"));
+        assert_eq!(sid.0.len(), 23);
     }
 
     #[test]
     fn test_start_id_linux() {
-        let sid = StartId::from_linux("abc12345", 123456789);
-        assert_eq!(sid.0, "abc12345-123456789");
+        let sid = StartId::from_linux("9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f", 123456789, 4242);
+        assert_eq!(
+            sid.0,
+            "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:123456789:4242"
+        );
     }
 
     #[test]
     fn test_start_id_macos() {
-        let sid = StartId::from_macos("abc12345", 1234, 987654321);
-        assert_eq!(sid.0, "abc12345-1234-987654321");
+        let sid = StartId::from_macos("9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f", 1234, 987654321);
+        assert_eq!(
+            sid.0,
+            "9d2d4e20-8c2b-4a3a-a8a2-90bcb7a1d86f:987654321:1234"
+        );
     }
+}
+
+fn generate_base32_suffix() -> String {
+    let uuid = uuid::Uuid::new_v4();
+    let bytes = uuid.as_bytes();
+    let mut value = ((bytes[0] as u32) << 16) | ((bytes[1] as u32) << 8) | (bytes[2] as u32);
+    value &= 0x000F_FFFF;
+    let alphabet = b"abcdefghijklmnopqrstuvwxyz234567";
+    let mut out = String::with_capacity(4);
+    for shift in [15_u32, 10, 5, 0] {
+        let idx = ((value >> shift) & 0x1F) as usize;
+        out.push(alphabet[idx] as char);
+    }
+    out
 }

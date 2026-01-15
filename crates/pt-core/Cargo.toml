@@ -8,6 +8,10 @@ repository = "https://github.com/Dicklesworthstone/process_triage"
 rust-version = "1.75"
 readme = "README.md"
 
+[lib]
+name = "pt_core"
+path = "src/lib.rs"
+
 [[bin]]
 name = "pt-core"
 path = "src/main.rs"
@@ -19,18 +23,23 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "1"
+dirs = "5"
 
 # Internal crates
 pt-common = { path = "../pt-common" }
+pt-config = { path = "../pt-config" }
 pt-math = { path = "../pt-math" }
 
 [features]
 default = []
-deep = []      # Enable expensive/privileged probes (lsof, ss, perf/eBPF)
-report = []    # HTML report generator
-daemon = []    # Dormant monitoring mode
-ui = []        # Premium TUI experience
+deep = []           # Enable expensive/privileged probes (lsof, ss, perf/eBPF)
+report = []         # HTML report generator
+daemon = []         # Dormant monitoring mode
+ui = []             # Premium TUI experience
+test-utils = []     # Export test utilities for integration tests
+test-tempdir = []   # Enable tempdir helper in test utilities
 
 [dev-dependencies]
 assert_cmd = "2"
 predicates = "3"
+tempfile = "3"

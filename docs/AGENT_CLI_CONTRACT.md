@@ -25,7 +25,7 @@ Every JSON response includes:
 ```json
 {
   "schema_version": "1.0.0",
-  "session_id": "sess-20260115-143022-abc123",
+  "session_id": "pt-20260115-143022-a7xq",
   "generated_at": "2026-01-15T14:30:22Z",
   "host_id": "devbox1.example.com"
 }
@@ -84,10 +84,10 @@ snapshot → plan → explain → apply → verify → diff → export/report
 ### Session ID Format
 
 ```
-sess-YYYYMMDD-HHMMSS-<random6>
+pt-YYYYMMDD-HHMMSS-<random4>
 ```
 
-Example: `sess-20260115-143022-abc123`
+Example: `pt-20260115-143022-a7xq`
 
 ### Session Context Passing
 
@@ -124,7 +124,7 @@ Returns:
 
 ```json
 {
-  "session_id": "sess-abc123",
+  "session_id": "pt-20260115-143022-a7xq",
   "state": "interrupted",
   "phase": "apply",
   "progress": {
@@ -133,7 +133,7 @@ Returns:
     "pending_actions": 2
   },
   "resumable": true,
-  "resume_command": "pt agent apply --session sess-abc123 --resume"
+  "resume_command": "pt agent apply --session pt-20260115-143022-a7xq --resume"
 }
 ```
 

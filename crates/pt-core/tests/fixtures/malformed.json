@@ -1,0 +1,5 @@
+{
+  "schema_version": "1.0.0",
+  "this_is": "not valid JSON because
+  it has an unclosed string
+}

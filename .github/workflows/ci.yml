@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          scandir: '.'
+          additional_files: 'pt install.sh'
+        env:
+          SHELLCHECK_OPTS: '-e SC2155 -e SC2034'
+
+  bash_syntax:
+    name: Bash Syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate pt syntax
+        run: bash -n pt
+
+      - name: Validate install.sh syntax
+        run: |
+          if [ -f install.sh ]; then
+            bash -n install.sh
+          else
+            echo "install.sh not present; skipping"
+          fi
+
+      - name: Validate test files (best-effort)
+        run: |
+          for file in test/*.bats; do
+            if [ -f "$file" ]; then
+              echo "Checking $file..."
+              bash -n "$file" 2>/dev/null || true
+            fi
+          done

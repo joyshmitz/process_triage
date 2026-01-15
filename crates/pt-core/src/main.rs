@@ -9,11 +9,7 @@
 
 use clap::{Args, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
-
-mod cli;
-mod exit_codes;
-
-use exit_codes::ExitCode;
+use pt_core::exit_codes::ExitCode;
 
 /// Process Triage Core - Intelligent process classification and cleanup
 #[derive(Parser)]
