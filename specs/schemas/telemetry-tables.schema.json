@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://process-triage.dev/schemas/telemetry-tables/1.0.0",
+  "title": "Telemetry Table Schemas",
+  "description": "Parquet schema definitions for pt telemetry tables",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "tables": {
+      "type": "object",
+      "properties": {
+        "runs": {
+          "$ref": "#/$defs/runs_schema"
+        },
+        "proc_samples": {
+          "$ref": "#/$defs/proc_samples_schema"
+        },
+        "proc_features": {
+          "$ref": "#/$defs/proc_features_schema"
+        },
+        "proc_inference": {
+          "$ref": "#/$defs/proc_inference_schema"
+        },
+        "outcomes": {
+          "$ref": "#/$defs/outcomes_schema"
+        },
+        "audit": {
+          "$ref": "#/$defs/audit_schema"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "column_def": {
+      "type": "object",
+      "required": ["name", "type", "nullable"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": {
+          "type": "string",
+          "enum": ["STRING", "INT8", "INT16", "INT32", "INT64", "FLOAT", "DOUBLE", "BOOLEAN", "TIMESTAMP_MICROS", "LIST<STRING>"]
+        },
+        "nullable": { "type": "boolean" },
+        "description": { "type": "string" },
+        "dictionary_encoded": { "type": "boolean" }
+      }
+    },
+    "table_schema": {
+      "type": "object",
+      "required": ["name", "columns", "partitioning", "compression"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "columns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/column_def" }
+        },
+        "partitioning": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "sorting": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "compression": { "type": "string" },
+        "row_group_size": { "type": "string" },
+        "retention_days": { "type": "integer" }
+      }
+    },
+    "runs_schema": {
+      "allOf": [{ "$ref": "#/$defs/table_schema" }],
+      "properties": {
+        "name": { "const": "runs" },
+        "columns": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/column_def" },
+          "contains": {
+            "properties": { "name": { "const": "session_id" } }
+          }
+        }
+      }
+    },
+    "proc_samples_schema": {
+      "allOf": [{ "$ref": "#/$defs/table_schema" }],
+      "properties": {
+        "name": { "const": "proc_samples" }
+      }
+    },
+    "proc_features_schema": {
+      "allOf": [{ "$ref": "#/$defs/table_schema" }],
+      "properties": {
+        "name": { "const": "proc_features" }
+      }
+    },
+    "proc_inference_schema": {
+      "allOf": [{ "$ref": "#/$defs/table_schema" }],
+      "properties": {
+        "name": { "const": "proc_inference" }
+      }
+    },
+    "outcomes_schema": {
+      "allOf": [{ "$ref": "#/$defs/table_schema" }],
+      "properties": {
+        "name": { "const": "outcomes" }
+      }
+    },
+    "audit_schema": {
+      "allOf": [{ "$ref": "#/$defs/table_schema" }],
+      "properties": {
+        "name": { "const": "audit" }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "1.0.0",
+      "tables": {
+        "runs": {
+          "name": "runs",
+          "description": "Session metadata and summary",
+          "columns": [
+            {"name": "session_id", "type": "STRING", "nullable": false, "description": "Session identifier", "dictionary_encoded": true},
+            {"name": "host_id", "type": "STRING", "nullable": false, "description": "Hashed host identifier"},
+            {"name": "mode", "type": "STRING", "nullable": false, "description": "Session mode", "dictionary_encoded": true},
+            {"name": "deep_scan", "type": "BOOLEAN", "nullable": false, "description": "Deep scan enabled"},
+            {"name": "started_at", "type": "TIMESTAMP_MICROS", "nullable": false, "description": "Session start (UTC)"},
+            {"name": "ended_at", "type": "TIMESTAMP_MICROS", "nullable": true, "description": "Session end (UTC)"},
+            {"name": "duration_ms", "type": "INT64", "nullable": true, "description": "Duration in milliseconds"},
+            {"name": "state", "type": "STRING", "nullable": false, "description": "Final session state", "dictionary_encoded": true},
+            {"name": "processes_scanned", "type": "INT32", "nullable": false, "description": "Total processes examined"},
+            {"name": "candidates_found", "type": "INT32", "nullable": false, "description": "Candidates flagged"},
+            {"name": "kills_successful", "type": "INT32", "nullable": false, "description": "Successful kills"},
+            {"name": "pt_version", "type": "STRING", "nullable": false, "description": "pt wrapper version"},
+            {"name": "pt_core_version", "type": "STRING", "nullable": false, "description": "pt-core version"},
+            {"name": "schema_version", "type": "STRING", "nullable": false, "description": "Telemetry schema version"}
+          ],
+          "partitioning": ["year", "month", "day", "host_id"],
+          "sorting": ["session_id"],
+          "compression": "zstd",
+          "row_group_size": "64KB",
+          "retention_days": 90
+        },
+        "outcomes": {
+          "name": "outcomes",
+          "description": "Action outcomes and feedback",
+          "columns": [
+            {"name": "session_id", "type": "STRING", "nullable": false, "description": "Session identifier", "dictionary_encoded": true},
+            {"name": "outcome_ts", "type": "TIMESTAMP_MICROS", "nullable": false, "description": "Outcome timestamp"},
+            {"name": "pid", "type": "INT32", "nullable": false, "description": "Process ID"},
+            {"name": "start_id", "type": "STRING", "nullable": false, "description": "Stable process identity"},
+            {"name": "recommendation", "type": "STRING", "nullable": false, "description": "System recommendation", "dictionary_encoded": true},
+            {"name": "decision", "type": "STRING", "nullable": false, "description": "Final decision", "dictionary_encoded": true},
+            {"name": "action_successful", "type": "BOOLEAN", "nullable": true, "description": "Action succeeded"},
+            {"name": "user_feedback", "type": "STRING", "nullable": true, "description": "User feedback", "dictionary_encoded": true},
+            {"name": "score", "type": "FLOAT", "nullable": false, "description": "Score at decision"}
+          ],
+          "partitioning": ["year", "month", "day", "host_id"],
+          "sorting": ["session_id", "outcome_ts"],
+          "compression": "zstd",
+          "row_group_size": "256KB",
+          "retention_days": 365
+        }
+      }
+    }
+  ]
+}
