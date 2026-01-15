@@ -17,6 +17,10 @@ readonly DECISIONS_FILE="$CONFIG_DIR/decisions.json"
 readonly PRIORS_FILE="$CONFIG_DIR/priors.json"
 readonly LOG_FILE="$CONFIG_DIR/triage.log"
 
+# Update infrastructure
+readonly GITHUB_REPO="Dicklesworthstone/process_triage"
+readonly RELEASES_URL="https://github.com/${GITHUB_REPO}/releases"
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Terminal Detection
 # ══════════════════════════════════════════════════════════════════════════════
@@ -177,6 +181,88 @@ log_debug() {
 log_verbose() {
     [[ "${VERBOSE:-}" == "1" ]] || return 0
     printf '%b\n' "${C_DIM}$*${C_RESET}" >&2
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Version checking (HTTP redirect method - no GitHub API needed)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Get latest version using redirect probing
+# GitHub /releases/latest redirects to /releases/tag/vX.Y.Z
+get_latest_version() {
+    local effective_url
+
+    # Follow redirects and get final URL
+    effective_url=$(curl -fsSL -o /dev/null -w '%{url_effective}' \
+        --connect-timeout 5 --max-time 10 \
+        "${RELEASES_URL}/latest" 2>/dev/null) || {
+        log_debug "Could not fetch latest release URL"
+        return 1
+    }
+
+    if [[ -z "$effective_url" ]]; then
+        log_debug "Empty effective URL from redirect"
+        return 1
+    fi
+
+    # Extract version from URL: .../releases/tag/v1.2.3 → 1.2.3
+    local version="${effective_url##*/}"  # Get last path component
+    version="${version#v}"                 # Remove 'v' prefix if present
+
+    # Validate semver format
+    if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+.*$ ]]; then
+        log_debug "Invalid version format from URL: $version"
+        return 1
+    fi
+
+    printf '%s' "$version"
+}
+
+# Semantic version comparison: returns 0 if v1 > v2
+version_gt() {
+    local v1="$1" v2="$2"
+
+    # Same version is not greater
+    [[ "$v1" == "$v2" ]] && return 1
+
+    # Use sort -V if available (GNU coreutils)
+    if echo | sort -V &>/dev/null; then
+        [[ "$(printf '%s\n' "$v1" "$v2" | sort -V | tail -n1)" == "$v1" ]]
+    else
+        # Fallback: compare major.minor.patch numerically
+        local -a a b
+        IFS='.' read -ra a <<< "$v1"
+        IFS='.' read -ra b <<< "$v2"
+        for i in 0 1 2; do
+            local ai="${a[i]:-0}" bi="${b[i]:-0}"
+            # Strip non-numeric suffix for comparison
+            ai="${ai%%[!0-9]*}"
+            bi="${bi%%[!0-9]*}"
+            ((ai > bi)) && return 0
+            ((ai < bi)) && return 1
+        done
+        return 1
+    fi
+}
+
+# Check for available updates
+# Returns 0 and prints new version if update available
+# Returns 1 if already on latest or check failed
+check_for_update() {
+    local current="$VERSION"
+    local latest
+
+    latest=$(get_latest_version) || {
+        log_debug "Could not check for updates"
+        return 1
+    }
+
+    if version_gt "$latest" "$current"; then
+        printf '%s' "$latest"
+        return 0
+    else
+        return 1  # No update available
+    fi
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
