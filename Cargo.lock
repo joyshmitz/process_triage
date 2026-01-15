@@ -1433,6 +1433,7 @@ dependencies = [
  "chrono",
  "clap",
  "dirs",
+ "hex",
  "libc",
  "predicates",
  "proptest",
@@ -1443,6 +1444,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 1.0.69",
  "toml",
@@ -1490,6 +1492,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
+ "tracing",
 ]
 
 [[package]]
