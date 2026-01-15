@@ -20,7 +20,7 @@ Success criteria:
 - Safety: no auto-kill by default; multi-stage mitigations; guardrails enforced by policy; `--robot` explicitly opts into automated execution.
 - Performance: quick scan <1s, deep scan <8s for typical process counts.
 - Closed-form Bayesian core: posterior/odds/expected-loss updates use conjugate priors; no ML.
-- Formal guarantees: PAC-Bayes bound on false-kill rate with explicit confidence.
+- Formal guarantees: PAC-Bayes bounds + Bayesian credible bounds on false-kill rate (shadow-mode calibrated) with explicit confidence.
 - Real-world impact weighting: kill-cost incorporates dependency and user-intent signals.
 - Operational learning loop: every decision is explainable and auditable from stored telemetry (raw + derived + outcomes).
 - Telemetry performance: logging is low-overhead (batched Parquet writes; no per-row inserts).
@@ -38,17 +38,22 @@ A) Basic closed-form Bayesian model (non-ML)
 - Class set: C in {useful, useful-but-bad, abandoned, zombie}
 - Bayes rule: P(C|x) proportional to P(C) * P(x|C)
 - Features: CPU usage u, runtime t, PPID, command, CWD, state flags, child count, TTY, I/O wait, CPU trend
-- Likelihoods:
-  - u|C ~ Beta(alpha_C, beta_C)
+- Likelihoods (keep the runtime “decision core” conjugate; allow continuous BetaPDF as a convenient approximation when needed):
+  - CPU occupancy from tick deltas: k_ticks|C ~ Binomial(n_ticks, p_{u,C}), p_{u,C} ~ Beta(alpha_C, beta_C)
+    - k_ticks = Δticks over window Δt (from /proc/PID/stat)
+    - n_ticks = HZ * Δt * N_EFF_CORES (or HZ * Δt * min(N_EFF_CORES, threads))
+    - u = k_ticks / n_ticks (continuous approximation: u|C ~ Beta(alpha_C, beta_C))
   - t|C ~ Gamma(k_C, theta_C)
-  - orphan o|C ~ Bernoulli(p_C), p_C ~ Beta(a_C, b_C)
+  - orphan o|C ~ Bernoulli(p_{o,C}), p_{o,C} ~ Beta(a_C, b_C)
   - state flags s|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha_C)
-  - command/CWD categories g|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha_C)
+  - command/CWD categories g|C ~ Categorical(rho_C), rho_C ~ Dirichlet(alpha_C)
 - Posterior (Naive Bayes):
   P(C|x) proportional to P(C) * product_j P(x_j|C)
 - Log-posterior formula:
-  log P(C|x) = log P(C) + log BetaPDF(u; alpha_C, beta_C) + log GammaPDF(t; k_C, theta_C)
-                + o log p_C + (1-o) log(1-p_C) + log pi_{C,g} + ...
+  log P(C|x) = log P(C) + log BetaBinomial(k_ticks; n_ticks, alpha_C, beta_C) + log GammaPDF(t; k_C, theta_C)
+                + o log p_{o,C} + (1-o) log(1-p_{o,C}) + log rho_{C,g} + ...
+  (where u = k_ticks/n_ticks; for large n_ticks you can use the continuous approximation log BetaPDF(u; alpha_C, beta_C))
+  (treat the Bernoulli/categorical terms as shorthand for the corresponding conjugate posterior-predictive log contributions from Beta-Bernoulli and Dirichlet-Multinomial)
 
 B) Decision rule via expected loss (Bayesian risk)
 - a* = argmin_a sum_C L(a,C) P(C|x)
@@ -57,19 +62,23 @@ B) Decision rule via expected loss (Bayesian risk)
   - useful-but-bad: keep=10, kill=20
   - abandoned: keep=30, kill=1
   - zombie: keep=50, kill=1
+  (note: zombies can’t be killed directly; interpret “kill” here as “resolve via parent reaping / restart parent”, see section 6)
 
 C) Survival analysis and hazards
 - hazard lambda_C
 - P(still running | t, C) = exp(-lambda_C * t)
-- Gamma prior on lambda_C yields closed-form posterior; integrated survival has Beta-like form
+- Gamma prior on lambda_C yields closed-form posterior; marginal survival (Gamma-mixed exponential) is Lomax/Pareto-II:
+  P(T>t) = (β/(β+t))^α (rate-parameterization)
 
 D) Change-point detection (closed-form)
-- U_t ~ Beta(alpha_1, beta_1) before tau
-- U_t ~ Beta(alpha_2, beta_2) after tau
-- Geometric prior on tau; posterior computed via Beta-binomial
+- Let k_t be the count of “busy” samples (or threshold exceedances) in a window of n_t samples.
+- k_t ~ Binomial(n_t, p_1) before τ, and k_t ~ Binomial(n_t, p_2) after τ
+- p_1 ~ Beta(alpha_1, beta_1), p_2 ~ Beta(alpha_2, beta_2)
+- Geometric prior on τ; posterior computed via Beta-binomial
 
 E) Hierarchical priors by command category
-- alpha_{C,g}, beta_{C,g} ~ Gamma(...)
+- Shrinkage by category (for CPU occupancy): p_{u,C,g} ~ Beta(alpha_{u,C,g}, beta_{u,C,g}), with empirical-Bayes shrinkage pulling (alpha_{u,C,g}, beta_{u,C,g}) toward a global class prior (alpha_C, beta_C).
+- Optional (offline calibration only): alpha_{u,C,g}, beta_{u,C,g} hyperpriors (e.g., Gamma on shapes) fit numerically (Laplace/EB), while runtime inference stays on conjugate Beta-Binomial marginals.
 
 F) Continuous-time hidden semi-Markov chain
 - S_t in {useful, useful-bad, abandoned, zombie}
@@ -79,7 +88,7 @@ G) CPU model as Markov-modulated Poisson / Levy subordinator
 - N(t) ~ Poisson(kappa_S * t)
 - burst size X_i ~ Exp(beta_S)
 - cumulative CPU: C(t) = sum_{i=1..N(t)} X_i
-- yields a compound Poisson (finite-activity Lévy subordinator) with tractable likelihood / closed-form Laplace transform; keep inference closed-form with conjugate Gamma priors on intensities/mark rates
+- yields a compound Poisson (finite-activity Lévy subordinator) with closed-form Laplace transform; treat this as a feature layer (fit via moment matching / EM / latent-count augmentation as needed) and feed burstiness summaries into the closed-form decision core
 
 H) Bayes factors for model selection
 - BF_{H1,H0} = [integral P(x|theta,H1)P(theta|H1) dtheta] / [integral P(x|theta,H0)P(theta|H0) dtheta]
@@ -103,7 +112,7 @@ L) Robust Bayes (imprecise priors)
 
 M) Information-theoretic abnormality
 - KL divergence: D_KL(p_hat || p_useful)
-- Chernoff bound: P(useful) <= exp(-t * I(p_hat))
+- Chernoff bound (tail under “useful”): P_useful(observe deviation) <= exp(-t * I(p_hat))
 - Large deviations / rate functions
 
 N) Wonham filtering (continuous-time partial observability)
@@ -137,15 +146,15 @@ S) Causal intervention layer (do-calculus)
 
 T) Coupled process-tree model
 - Graphical coupling on PPID tree (Ising-style prior or pairwise Potts)
-- Correlated state model: P(S_parent, S_child) with conjugate updates via pseudolikelihood
+- Correlated state model: pairwise Potts/Ising coupling on PPID edges; exact sum-product on the PPID forest, and (only if extra non-tree couplings exist) loopy BP or pseudolikelihood as a tractable approximation.
 
 U) POMDP / belief-state decision
 - Belief update: b_{t+1}(S) proportional to P(x_{t+1}|S) * sum_{S'} P(S|S') b_t(S')
 - Myopic Bayes-optimal action under belief state (closed-form expected loss)
 
-V) PAC-Bayes generalization guarantees
-- Bound false-kill rate in shadow mode using Beta posterior on error rate
-- Report: P(err <= eps) >= 1 - delta
+V) Generalization guarantees (PAC-Bayes + Bayesian credible bounds)
+- Bayesian credible upper bound on false-kill rate from shadow-mode outcomes using a Beta posterior on the error rate
+- PAC-Bayes: distribution-free generalization bound relating empirical false-kill rate to true false-kill rate via KL(Q||P); report both
 
 W) Empirical Bayes calibration
 - Fit hyperparameters by maximizing marginal likelihood of shadow-mode logs
@@ -164,7 +173,7 @@ Z) Dependency impact weighting
 
 AA) Hawkes processes (self-exciting point processes)
 - Model bursty CPU/IO/syscall events with exponential kernels
-- Closed-form likelihood for exponential kernels; conjugate updates for intensities
+- Closed-form likelihood expression for exponential kernels; practical inference via fast EM/MLE (optionally using branching augmentation where Gamma priors are conditionally conjugate given latent parent counts). Treat Hawkes as a feature layer feeding summaries to the closed-form decision core.
 
 AB) Marked point processes
 - Event times + magnitudes (syscall event + cost)
@@ -191,7 +200,7 @@ AH) POMDP with belief-state approximation
 
 AI) Multivariate Hawkes processes (cross-excitation)
 - Model cross-metric bursts (syscalls -> IO -> network)
-- Closed-form likelihood for exponential kernels with Gamma priors
+- Closed-form likelihood expression for exponential kernels; treat as a feature layer (fast EM/MLE / augmented-count approximations), feeding cross-excitation summaries into the closed-form decision core.
 
 AJ) Copula models for dependence (Archimedean/vine)
 - Joint CPU/IO/net dependence without independence assumptions
@@ -354,11 +363,14 @@ All of these are integrated in the system design below.
 - Installation is maximal, execution is budgeted: even if all tools are installed, expensive probes are scheduled via VOI/Whittle/submodular policies to control overhead.
 - Self-protection: `pt-core` runs with an overhead budget (caps concurrency, sampling rates, and optional nice/ionice) so the triage system does not become a new source of load.
 - Quick scan inputs (fast): ps pid, ppid, etimes, rss, %cpu, tty, args, state
+- Quick scan should also capture: uid, pgid, sid, and cgroup path (when available), since “who owns it?” and “what group/unit/container is it in?” strongly affect safe actions.
+- Process identity safety: quick scan should also capture a stable per-process start identifier (e.g., Linux `/proc/PID/stat` starttime ticks since boot) so action execution can revalidate identity and avoid PID-reuse footguns.
 - Deep scan inputs (slow):
   - /proc/PID/io (read/write deltas)
   - /proc/PID/stat (CPU tick deltas)
   - /proc/PID/status (RSS, threads)
   - /proc/PID/wchan (wait channel)
+  - /proc/PID/cgroup + /proc/PID/ns/* (namespaces) for containerization + unit attribution
   - ss -tnp (sockets) for network activity
   - pgrep -P (children)
   - who (TTY sessions)
@@ -366,6 +378,8 @@ All of these are integrated in the system design below.
   - optional: git -C cwd status -sb
   - optional: lsof /proc/PID/fd for live dependency graph signals (open sockets, files)
   - optional: ss -ntp correlation for live client count
+  - optional: systemd unit attribution (Linux): map PID -> unit/cgroup (systemctl/systemd-cgls) when available
+  - optional: container attribution: detect docker/podman/kube cgroup patterns and capture container ID (when available)
   - optional: perf (cycles, cache misses, branch mispredicts)
   - optional: bpftrace / bcc (eBPF probes for syscalls, IO, scheduler latency)
   - optional: pidstat / iostat / mpstat / vmstat (sysstat suite)
@@ -395,13 +409,22 @@ All of these are integrated in the system design below.
 
 ### 3.2 Feature Layer
 - Feature computation is deterministic and provenance-aware: each derived quantity records its input sources and time window so it can be recomputed and debugged from telemetry.
-- u: CPU usage normalized [0,1]
+- Δt: scan window duration (seconds), HZ: scheduler ticks per second
+- k_ticks: CPU tick delta over Δt (utime+stime delta)
+- n_ticks: tick budget over Δt (HZ * Δt * N_EFF_CORES, or HZ * Δt * min(N_EFF_CORES, threads))
+- u: CPU usage normalized to effective available capacity in [0,1]: u = k_ticks / n_ticks
+- u_cores: estimated cores used (can exceed 1): u_cores = k_ticks / (HZ * Δt)
+- n_samp: number of quick-scan samples in the window (used for trend/change-point features)
 - t: elapsed time (seconds)
 - o: orphan indicator (PPID=1)
 - s: state flags (R,S,Z,D)
 - g: command category (test, dev, agent, shell, build, daemon, unknown)
 - cwd category: repo root, temp, unknown
 - tty: active/detached
+- uid: owner uid (root vs user)
+- pgid/sid: process group and session ID (job-control + “kill the whole tree” safety)
+- cgroup/container: cgroup path, unit/container attribution (when available)
+- start_id: stable process start identifier (e.g., Linux `/proc/PID/stat` starttime ticks); used to detect PID reuse and to revalidate before applying actions.
 - io delta: active/idle
 - cpu delta: progressing/stalled
 - net activity: connected/no_connections
@@ -445,7 +468,7 @@ Storage approach:
 What gets logged (raw + derived + outcomes):
 - `runs`: `session_id`, host fingerprint, git commit, priors/policy snapshot hash, tool availability/capabilities, pt-core version.
 - `system_samples`: timestamped loadavg, PSI, memory pressure, swap, CPU frequency/residency, queueing proxies.
-- `proc_samples`: pid/ppid/state, cpu/rss/threads, tty/cwd/cmd categories, socket/client counts, cgroup identifiers.
+- `proc_samples`: pid/ppid/pgid/sid/uid/state, cpu/rss/threads, tty/cwd/cmd categories, socket/client counts, cgroup identifiers, unit/container attribution (when available), and a stable start identifier (to guard against PID reuse).
 - `proc_features`: Hawkes/BOCPD/Kalman/IMM state, copula params, EVT tail stats, periodicity features, sketches/heavy-hitter summaries.
 - `proc_inference`: per-class log-likelihood terms, Bayes factors, posterior, lfdr, VOI, PPC flags, DRO drift scores.
 - `decisions`: recommended action, expected loss, thresholds, FDR/alpha-investing state, safety gates triggered.
@@ -505,12 +528,14 @@ Schema invariants (for agents):
   - `3` partial failure executing actions
   - `4` blocked by safety gates / policy
   - `>=10` tooling/internal error
+- Ergonomic escape hatch: support `--exit-code always0` (or similar) so `set -e` workflows can still consume JSON without treating “candidates exist” as an error.
 
 ### 3.6 Session Bundles & Rich HTML Reports (Shareable Artifacts)
 Goal: one-command export/share of a complete session, and one-command generation of a premium, richly interactive HTML report.
 
 Bundle format (`.ptb`):
 - A single portable file that contains:
+  - Container choice: prefer ZIP for maximum cross-platform + in-browser parsing; allow tar.zst for power users when size/speed matters.
   - `manifest.json` (schema versions, tool versions/capabilities, host fingerprint, redaction policy version, checksums)
   - `plan.json` (candidates + recommended actions + gates)
   - `telemetry/` (Parquet partitions or reduced aggregates, depending on profile)
@@ -524,7 +549,9 @@ Export profiles:
 
 HTML report (single file, CDN-loaded):
 - Requirements:
-  - Single `report.html` that embeds session data (or references bundled Parquet) and loads UI/chart libraries from CDNs with pinned versions and SRI.
+  - Single `report.html` that works when opened directly (file://). Default: embed plan + derived summaries directly in the HTML (avoid relying on fetching local Parquet, which is often blocked by browser security).
+  - Optional deep mode: include a “dropzone” that lets the user load a `.ptb` bundle via file picker; the report unpacks it in-memory (ZIP reader in JS; tar.zst only if explicitly supported) and (optionally) uses DuckDB-WASM to query the included Parquet.
+  - Load UI/chart libraries from CDNs with pinned versions and SRI.
   - Visual polish: overview dashboard, sortable/searchable candidate table, per-process drilldown (timelines, evidence ledger, process tree, dependency impact), and actions/outcomes with before/after diffs.
   - Optional “power mode”: DuckDB-WASM in-browser for interactive queries over embedded/attached Parquet (when bundle profile permits).
   - Recommended CDN-loaded library stack (example; exact choices can evolve):
@@ -571,24 +598,26 @@ Design constraint: all posterior/odds/expected-loss updates used for decisions m
 C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 4.2 Priors and Likelihoods (Conjugate)
-- CPU usage u|C ~ Beta(alpha_C, beta_C)
+- CPU occupancy from tick deltas: k_ticks|C ~ Binomial(n_ticks, p_{u,C}), p_{u,C} ~ Beta(alpha_C, beta_C); define u = k_ticks/n_ticks (continuous approximation: u|C ~ Beta(alpha_C, beta_C))
 - Runtime t|C ~ Gamma(k_C, theta_C)
-- Orphan o|C ~ Bernoulli(p_C), p_C ~ Beta(a_C, b_C)
+- Orphan o|C ~ Bernoulli(p_{o,C}), p_{o,C} ~ Beta(a_C, b_C)
 - State flags s|C ~ Categorical(pi_C), pi_C ~ Dirichlet(alpha_C)
 - Command/CWD g|C ~ Categorical(rho_C), rho_C ~ Dirichlet(alpha_C)
-- TTY activity y|C ~ Bernoulli(q_C)
-- Net activity n|C ~ Bernoulli(r_C)
+- TTY activity y|C ~ Bernoulli(q_C), q_C ~ Beta(a_{tty,C}, b_{tty,C})
+- Net activity nu|C ~ Bernoulli(r_C), r_C ~ Beta(a_{net,C}, b_{net,C})
 
 ### 4.3 Posterior Computation (Closed-form)
 - P(C|x) proportional to P(C) * product_j P(x_j|C)
 - log posterior formula:
   log P(C|x) = log P(C)
-               + log BetaPDF(u; alpha_C, beta_C)
+               + log BetaBinomial(k_ticks; n_ticks, alpha_C, beta_C)  (≈ log BetaPDF(u; alpha_C, beta_C), u=k_ticks/n_ticks)
                + log GammaPDF(t; k_C, theta_C)
-               + o log p_C + (1-o) log(1-p_C)
-               + log pi_{C,g} + ...
+               + o log p_{o,C} + (1-o) log(1-p_{o,C})
+               + log rho_{C,g} + ...
+  (treat the Bernoulli/categorical terms as shorthand for the corresponding conjugate posterior-predictive log contributions from Beta-Bernoulli and Dirichlet-Multinomial)
 - Marginalize nuisance parameters with conjugate priors:
-  - Beta-Bernoulli for orphan and TTY
+  - Beta-Binomial for CPU occupancy
+  - Beta-Bernoulli for orphan, TTY, and net activity
   - Dirichlet-Multinomial for categorical features
 
 ### 4.4 Bayes Factors for Model Selection
@@ -601,17 +630,19 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - competing hazards: lambda_finish, lambda_abandon, lambda_bad
 - survival term: P(still running | t, C) = exp(-lambda_C * t)
 - Gamma priors on hazard rates yield closed-form posterior
+- With Gamma(α,β) prior on λ (rate parameterization), the marginal survival is Lomax/Pareto-II: P(T>t) = (β/(β+t))^α
 
 ### 4.6 Markov-Modulated Poisson / Levy Subordinator CPU
 - N(t) ~ Poisson(kappa_S * t)
 - burst sizes X_i ~ Exp(beta_S)
 - C(t) = sum_{i=1..N(t)} X_i
-- yields a compound Poisson (finite-activity Lévy subordinator) likelihood with closed-form Laplace transform; choose conjugate priors to keep updates closed-form
+- yields a compound Poisson (finite-activity Lévy subordinator) with closed-form Laplace transform; treat inference here as a feature layer (moment matching / EM / augmentation), then feed deterministic summaries to the closed-form decision core
 
 ### 4.7 Change-Point Detection
-- U_t ~ Beta(alpha_1, beta_1) before tau
-- U_t ~ Beta(alpha_2, beta_2) after tau
-- geometric prior on tau; posterior via Beta-binomial
+- Let k_t be the count of “busy” samples (or threshold exceedances) in a window of n_t samples.
+- k_t ~ Binomial(n_t, p_1) before τ, and k_t ~ Binomial(n_t, p_2) after τ
+- p_1 ~ Beta(alpha_1, beta_1), p_2 ~ Beta(alpha_2, beta_2)
+- geometric prior on τ; posterior via Beta-binomial
 
 ### 4.7b Bayesian Online Change-Point Detection (BOCPD)
 - Run-length recursion with conjugate updates for CPU/IO event rates
@@ -619,7 +650,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 4.8 Information-Theoretic Abnormality
 - compute D_KL(p_hat || p_useful)
-- Chernoff bound: P(useful) <= exp(-t * I(p_hat))
+- Chernoff bound (tail under “useful”): P_useful(observe deviation) <= exp(-t * I(p_hat))
 - large deviation rate functions for rare event detection
 
 ### 4.8b Large Deviations / Rate Functions
@@ -652,15 +683,25 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 4.13 Coupled Tree Priors (Correlated States)
 - Pairwise coupling on PPID edges: P(S_u, S_v) proportional to exp(J * 1{S_u=S_v})
-- Use pseudolikelihood updates to keep closed-form tractability
+- Primary: exact sum-product belief propagation on the PPID forest (section 4.37). If extra non-tree couplings are added (shared resources, sockets, etc.) creating loops, use loopy BP or pseudolikelihood as a tractable approximation.
 
 ### 4.14 Belief-State Update (POMDP Approximation)
 - b_{t+1}(S) proportional to P(x_{t+1}|S) * sum_{S'} P(S|S') b_t(S')
 - Myopic decision: minimize expected loss under b_t with action set A
 
-### 4.15 PAC-Bayes Guarantees (Shadow Mode)
-- Let e be false-kill rate, e ~ Beta(a,b) after observing k errors in n trials
-- Bound: P(e <= eps) >= 1 - delta, where eps = BetaInvCDF(1-delta; a+k, b+n-k)
+### 4.15 Bayesian Credible Bounds (Shadow Mode)
+- Let e be false-kill rate; with Beta(a,b) prior and k errors in n trials, posterior is e|data ~ Beta(a+k, b+n-k)
+- Credible upper bound: P(e <= eps) >= 1 - δ where eps = BetaInvCDF(1-δ; a+k, b+n-k)
+
+### 4.15b PAC-Bayes Generalization Bounds (Shadow Mode)
+- Use a PAC-Bayes bound to relate empirical false-kill rate to true false-kill rate with distribution-free guarantees.
+- One canonical form (Seeger-style): with probability ≥ 1-δ over n shadow-mode trials, for all posteriors Q over policies:
+  KL( \hat{e}(Q) || e(Q) ) ≤ ( KL(Q||P) + ln( (2√n)/δ ) ) / n
+  where P is a prior over policies, Q is the learned/selected posterior, \hat{e}(Q) is empirical false-kill rate, and e(Q) is true false-kill rate.
+- Practical use in pt:
+  - Treat each concrete “policy snapshot” (priors.json + policy.json + gates) as a hypothesis/policy.
+  - Use Q as a delta mass at the current policy (then KL(Q||P) = -ln P(policy)), or as a distribution over a small set of candidate policies.
+  - Report both: Bayesian credible bound (4.15) and PAC-Bayes bound (this section) as complementary safety evidence before enabling aggressive `--robot` thresholds.
 
 ### 4.16 Empirical Bayes Hyperparameter Calibration
 - Maximize marginal likelihood over shadow logs to tune alpha/beta/k/theta
@@ -675,7 +716,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 4.19 Hawkes Process Layer (Self-Exciting Events)
 - Model syscalls/IO/network events as Hawkes process with exponential kernels
-- Closed-form likelihood for exponential kernels; conjugate Gamma priors on intensity
+- Closed-form likelihood expression for exponential kernels; practical inference via fast EM/MLE (optionally with branching augmentation where Gamma priors are conditionally conjugate given latent parent counts). Treat Hawkes outputs as deterministic summaries feeding the closed-form decision core.
 
 ### 4.20 Marked Point Process Layer
 - Event times with magnitudes (bytes read/write, syscall cost)
@@ -729,7 +770,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
 
 ### 4.34 Bayesian Optimal Experimental Design (Active Sensing)
 - Choose next measurement m to maximize expected posterior entropy reduction per cost:
-  argmax_m [E_x (H(P(S|x)) - H(P(S|x, new=m))))] / cost(m)
+  argmax_m E_x [ H(P(S|x)) - H(P(S|x, new=m)) ] / cost(m)
 - For exponential-family likelihoods, use Fisher information approximations as a closed-form proxy
 
 ### 4.35 Extreme Value Theory (POT/GPD) Tail Modeling
@@ -782,6 +823,7 @@ C in {useful, useful-but-bad, abandoned, zombie}
   - useful-but-bad: keep=10, kill=20
   - abandoned: keep=30, kill=1
   - zombie: keep=50, kill=1
+  (note: zombies can’t be killed directly; interpret “kill” here as “resolve via parent reaping / restart parent”, see section 6)
 
 ### 5.2 Sequential Probability Ratio Test (SPRT)
 - kill if:
@@ -838,13 +880,22 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ## 6) Action Space (Beyond Kill)
 
 - keep
-- pause (SIGSTOP) and observe
+- pause (SIGSTOP) and observe (PID or process group)
 - resume (SIGCONT)
 - renice
+- cgroup freeze/quarantine (cgroup v2 freezer, when available)
 - cgroup CPU throttle
 - cpuset quarantine
+- stop supervisor/service (systemd/launchd/pm2/etc.) when the PID is managed and would respawn
 - restart (for known services)
-- kill (SIGTERM -> SIGKILL)
+- reap / resolve zombies (state `Z`): cannot “kill” a zombie; instead identify the parent chain and recommend restart/kill-parent so the zombie is reaped
+- kill (SIGTERM -> SIGKILL) (PID or process group; prefer group-aware actions when children exist)
+
+Operational realism notes:
+- Zombie processes (`Z`) are already dead; signals don’t remove them. Treat zombies as symptoms and route actions to the parent (or “report only”).
+- Uninterruptible sleep (`D`) may not respond to SIGKILL until the kernel unblocks; default to investigation (wchan, IO device, dependency impact) rather than blind killing.
+- Supervised processes often respawn: if a PID is under systemd/launchd/supervisord/nodemon/etc., killing the PID alone may be ineffective or harmful; prefer unit/supervisor actions and log “respawn detected” in after-action outcomes.
+- Process groups matter: many “rogue” workloads are actually a tree; staged actions should be group-aware (pause group → observe → term group → observe → kill group) to avoid leaving orphans.
 
 Decision engine selects action with minimum expected loss. Destructive actions (especially kill) require explicit confirmation by default via the TUI, but can be executed automatically under an explicit `--robot` flag and only when all safety gates pass (robust Bayes/DRO/FDR/alpha-investing/policy allowlists).
 
@@ -929,6 +980,7 @@ Requirement: at any time, the user can toggle a “galaxy-brain” view (keybind
 - Human-in-the-loop updates: decisions update priors (conjugate updates)
 - Shadow mode: advisory only, log decisions for calibration
 - Safety rails: rate-limit kill actions, never kill system services
+- Data-loss gate: detect open write FDs (sqlite WAL/journal, git locks, package managers, DB sockets) and inflate kill loss or hard-block in `--robot` unless explicitly overridden by policy.
 - Runbooks: suggest safe restart or pause for known services
 - Incident integration: logging, rollback hooks
 - Systemd/Kubernetes plugins for service-aware control
@@ -999,7 +1051,7 @@ Use the model to interpret the observed snapshot:
 - Define an inbox contract for daemon-driven “plans ready for review” (agent and human surfaces).
 
 ### Phase 2: Math Utilities
-- Implement BetaPDF, GammaPDF, Dirichlet-multinomial, Beta-Bernoulli
+- Implement BetaBinomial (and optional BetaPDF approximation), GammaPDF, Dirichlet-multinomial, Beta-Bernoulli
 - Implement Bayes factors, log-odds, posterior computation
 - Implement numerically-stable primitives (log-sum-exp, log-domain densities, stable special functions) to prevent underflow in Bayes factors/posteriors.
 - Implement Arrow/Parquet schemas for telemetry tables and a batched Parquet writer (append-only).
@@ -1169,6 +1221,8 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 - Guardrails for system services
 - Rate limiting, quarantine policies
 - Define robot-mode safety gates: minimum posterior odds, FDR/alpha-investing budgets, allowlists/denylists, and maximum blast radius per run.
+- Add “data-loss” safety gates: open write FDs (sqlite WAL/journal, git locks, package manager locks) inflate kill loss and can hard-block `--robot` unless policy explicitly allows.
+- Add “unkillable state” handling: zombies (`Z`) route to parent reaping; uninterruptible sleep (`D`) defaults to investigate/mitigate rather than blind kill.
 - Implement dormant mode daemon + service integration (section 3.7), ensuring it never becomes the hog (strict overhead budget, cooldowns, and safe escalation).
 
 ### Phase 9: Shadow Mode and Calibration
@@ -1181,11 +1235,12 @@ Telemetry and data governance are specified in sections 3.3–3.4; the phases be
 
 ## 11) Tests and Validation
 
-- Unit tests: math functions (BetaPDF, GammaPDF, Bayes factors)
+- Unit tests: math functions (BetaBinomial/BetaPDF, GammaPDF, Bayes factors)
 - Integration tests: deterministic output for fixed inputs
 - Telemetry tests: Parquet schema stability, batched writes, and DuckDB view/query correctness
 - Redaction tests: confirm sensitive strings never appear in persisted telemetry
 - Automation tests: `--robot`/`--shadow`/`--dry-run` behavior (no prompts; correct gating; no actions in shadow/dry-run)
+- Safety gate tests: data-loss gate (open write handles), zombie handling (`Z`), and uninterruptible sleep (`D`) behavior.
 - Agent CLI contract tests: schema invariants + exit codes + token-efficiency flags (`--compact`, `--fields`, `--only`) + JSONL progress stream.
 - Bundle/report tests: `.ptb` manifest/checksums, profile redaction guarantees, and report generator outputs (single HTML file with pinned CDN assets + SRI).
 - Offline report tests: `--embed-assets` produces a self-contained HTML file with no network fetch requirements.
