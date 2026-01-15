@@ -11,6 +11,7 @@ use clap::{Args, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
 use pt_core::config::{load_config, ConfigError, ConfigOptions};
 use pt_core::exit_codes::ExitCode;
+use pt_core::session::{SessionContext, SessionManifest, SessionMode, SessionState, SessionStore};
 use std::path::PathBuf;
 
 /// Process Triage Core - Intelligent process classification and cleanup
@@ -817,45 +818,17 @@ fn run_check(global: &GlobalOpts, args: &CheckArgs) -> ExitCode {
 
 fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
     match &args.command {
-        AgentCommands::Plan(_) => {
-            output_stub(global, "agent plan", "Agent plan mode not yet implemented");
-        }
-        AgentCommands::Explain(_) => {
-            output_stub(
-                global,
-                "agent explain",
-                "Agent explain mode not yet implemented",
-            );
-        }
-        AgentCommands::Apply(_) => {
-            output_stub(
-                global,
-                "agent apply",
-                "Agent apply mode not yet implemented",
-            );
-        }
-        AgentCommands::Verify(_) => {
-            output_stub(
-                global,
-                "agent verify",
-                "Agent verify mode not yet implemented",
-            );
-        }
-        AgentCommands::Diff(_) => {
-            output_stub(global, "agent diff", "Agent diff mode not yet implemented");
-        }
-        AgentCommands::Snapshot(_) => {
-            output_stub(
-                global,
-                "agent snapshot",
-                "Agent snapshot mode not yet implemented",
-            );
-        }
+        AgentCommands::Snapshot(args) => run_agent_snapshot(global, args),
+        AgentCommands::Plan(args) => run_agent_plan(global, args),
+        AgentCommands::Explain(args) => run_agent_explain(global, args),
+        AgentCommands::Apply(args) => run_agent_apply(global, args),
+        AgentCommands::Verify(args) => run_agent_verify(global, args),
+        AgentCommands::Diff(args) => run_agent_diff(global, args),
         AgentCommands::Capabilities => {
             output_capabilities(global);
+            ExitCode::Clean
         }
     }
-    ExitCode::Clean
 }
 
 fn run_config(global: &GlobalOpts, args: &ConfigArgs) -> ExitCode {
@@ -1171,6 +1144,10 @@ fn print_version(global: &GlobalOpts) {
 fn output_stub(global: &GlobalOpts, command: &str, message: &str) {
     let session_id = SessionId::new();
 
+    output_stub_with_session(global, &session_id, command, message);
+}
+
+fn output_stub_with_session(global: &GlobalOpts, session_id: &SessionId, command: &str, message: &str) {
     match global.format {
         OutputFormat::Json => {
             let output = serde_json::json!({
@@ -1227,4 +1204,291 @@ fn output_capabilities(global: &GlobalOpts) {
             println!("Use --capabilities <path> or set PT_CAPABILITIES_MANIFEST");
         }
     }
+}
+
+fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode {
+    let session_id = SessionId::new();
+
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("agent snapshot: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    let manifest = SessionManifest::new(&session_id, None, SessionMode::RobotPlan, args.label.clone());
+    let handle = match store.create(&manifest) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("agent snapshot: failed to create session: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    let ctx = SessionContext::new(
+        &session_id,
+        pt_core::logging::get_host_id(),
+        pt_core::logging::generate_run_id(),
+        args.label.clone(),
+    );
+    if let Err(e) = handle.write_context(&ctx) {
+        eprintln!("agent snapshot: failed to write context.json: {}", e);
+        return ExitCode::InternalError;
+    }
+
+    if let Some(path) = &global.capabilities {
+        match std::fs::read_to_string(path) {
+            Ok(content) => {
+                if let Err(e) = handle.write_capabilities_json(&content) {
+                    eprintln!("agent snapshot: failed to write capabilities.json: {}", e);
+                    return ExitCode::InternalError;
+                }
+            }
+            Err(e) => {
+                eprintln!("agent snapshot: failed to read capabilities manifest {}: {}", path, e);
+                return ExitCode::InternalError;
+            }
+        }
+    }
+
+    match global.format {
+        OutputFormat::Json => {
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "session_id": session_id.0,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "label": args.label,
+                "session_dir": handle.dir.display().to_string(),
+                "context_path": handle.context_path().display().to_string(),
+            });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        OutputFormat::Summary => {
+            println!("[{}] agent snapshot: created", session_id);
+        }
+        OutputFormat::Exitcode => {}
+        _ => {
+            println!("# pt-core agent snapshot");
+            println!();
+            println!("Session: {}", session_id);
+            println!("Dir: {}", handle.dir.display());
+            if let Some(label) = &args.label {
+                println!("Label: {}", label);
+            }
+        }
+    }
+
+    ExitCode::Clean
+}
+
+fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("agent plan: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    let (session_id, handle, created) = match args.session.as_ref() {
+        Some(raw) => {
+            let sid = match SessionId::parse(raw) {
+                Some(sid) => sid,
+                None => {
+                    eprintln!("agent plan: invalid --session {}", raw);
+                    return ExitCode::ArgsError;
+                }
+            };
+            let handle = match store.open(&sid) {
+                Ok(handle) => handle,
+                Err(e) => {
+                    eprintln!("agent plan: {}", e);
+                    return ExitCode::ArgsError;
+                }
+            };
+            (sid, handle, false)
+        }
+        None => {
+            let sid = SessionId::new();
+            let manifest = SessionManifest::new(&sid, None, SessionMode::RobotPlan, None);
+            let handle = match store.create(&manifest) {
+                Ok(handle) => handle,
+                Err(e) => {
+                    eprintln!("agent plan: failed to create session: {}", e);
+                    return ExitCode::InternalError;
+                }
+            };
+            let ctx = SessionContext::new(
+                &sid,
+                pt_core::logging::get_host_id(),
+                pt_core::logging::generate_run_id(),
+                None,
+            );
+            if let Err(e) = handle.write_context(&ctx) {
+                eprintln!("agent plan: failed to write context.json: {}", e);
+                return ExitCode::InternalError;
+            }
+            (sid, handle, true)
+        }
+    };
+
+    // Stub plan artifact (decision/plan.json) to establish durable session semantics.
+    let plan = serde_json::json!({
+        "schema_version": SCHEMA_VERSION,
+        "session_id": session_id.0,
+        "generated_at": chrono::Utc::now().to_rfc3339(),
+        "status": "stub",
+        "command": "agent plan",
+        "args": {
+            "max_candidates": args.max_candidates,
+            "threshold": args.threshold,
+            "only": args.only,
+            "yes": args.yes,
+            "dry_run": global.dry_run,
+            "robot": global.robot,
+            "shadow": global.shadow,
+        },
+        "note": if created {
+            "Created new session (no --session provided)"
+        } else {
+            "Reused existing session (--session)"
+        }
+    });
+
+    let plan_path = handle.dir.join("decision").join("plan.json");
+    if let Err(e) = std::fs::write(&plan_path, serde_json::to_string_pretty(&plan).unwrap()) {
+        eprintln!(
+            "agent plan: failed to write {}: {}",
+            plan_path.display(),
+            e
+        );
+        return ExitCode::InternalError;
+    }
+
+    // Update manifest state (best-effort; do not fail the whole command for manifest update).
+    let _ = handle.update_state(SessionState::Planned);
+
+    match global.format {
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string_pretty(&plan).unwrap());
+        }
+        OutputFormat::Summary => {
+            println!("[{}] agent plan: stub plan written", session_id);
+        }
+        OutputFormat::Exitcode => {}
+        _ => {
+            println!("# pt-core agent plan");
+            println!();
+            println!("Session: {}", session_id);
+            println!("Plan: {}", plan_path.display());
+            println!();
+            println!("(stub) Planning not yet implemented.");
+        }
+    }
+
+    ExitCode::Clean
+}
+
+fn run_agent_explain(global: &GlobalOpts, args: &AgentExplainArgs) -> ExitCode {
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("agent explain: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+    let sid = match SessionId::parse(&args.session) {
+        Some(sid) => sid,
+        None => {
+            eprintln!("agent explain: invalid --session {}", args.session);
+            return ExitCode::ArgsError;
+        }
+    };
+    if let Err(e) = store.open(&sid) {
+        eprintln!("agent explain: {}", e);
+        return ExitCode::ArgsError;
+    }
+    output_stub_with_session(global, &sid, "agent explain", "Agent explain mode not yet implemented");
+    ExitCode::Clean
+}
+
+fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("agent apply: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+    let sid = match SessionId::parse(&args.session) {
+        Some(sid) => sid,
+        None => {
+            eprintln!("agent apply: invalid --session {}", args.session);
+            return ExitCode::ArgsError;
+        }
+    };
+    if let Err(e) = store.open(&sid) {
+        eprintln!("agent apply: {}", e);
+        return ExitCode::ArgsError;
+    }
+    output_stub_with_session(global, &sid, "agent apply", "Agent apply mode not yet implemented");
+    ExitCode::Clean
+}
+
+fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("agent verify: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+    let sid = match SessionId::parse(&args.session) {
+        Some(sid) => sid,
+        None => {
+            eprintln!("agent verify: invalid --session {}", args.session);
+            return ExitCode::ArgsError;
+        }
+    };
+    if let Err(e) = store.open(&sid) {
+        eprintln!("agent verify: {}", e);
+        return ExitCode::ArgsError;
+    }
+    output_stub_with_session(global, &sid, "agent verify", "Agent verify mode not yet implemented");
+    ExitCode::Clean
+}
+
+fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("agent diff: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+    let base = match SessionId::parse(&args.base) {
+        Some(sid) => sid,
+        None => {
+            eprintln!("agent diff: invalid --base {}", args.base);
+            return ExitCode::ArgsError;
+        }
+    };
+    if let Err(e) = store.open(&base) {
+        eprintln!("agent diff: {}", e);
+        return ExitCode::ArgsError;
+    }
+    if let Some(compare) = args.compare.as_ref() {
+        if let Some(sid) = SessionId::parse(compare) {
+            if let Err(e) = store.open(&sid) {
+                eprintln!("agent diff: {}", e);
+                return ExitCode::ArgsError;
+            }
+        } else {
+            eprintln!("agent diff: invalid --compare {}", compare);
+            return ExitCode::ArgsError;
+        }
+    }
+    output_stub_with_session(global, &base, "agent diff", "Agent diff mode not yet implemented");
+    ExitCode::Clean
 }

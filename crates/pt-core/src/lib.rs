@@ -20,6 +20,8 @@ pub mod exit_codes;
 pub mod inference;
 pub mod logging;
 pub mod plan;
+pub mod session;
+pub mod supervision;
 
 // Re-export test utilities for integration tests
 #[cfg(any(test, feature = "test-utils"))]
