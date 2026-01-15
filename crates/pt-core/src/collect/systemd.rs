@@ -207,21 +207,25 @@ fn query_systemctl(pid: u32) -> Option<SystemdUnit> {
         "Description",
     ];
 
+    let property_arg = properties.join(",");
     let output = Command::new("systemctl")
-        .args([
-            "show",
-            "--property",
-            &properties.join(","),
-            &pid.to_string(),
-        ])
+        .args(["show", "--property", &property_arg, &format!("--pid={pid}")])
         .output()
         .ok()?;
 
-    if !output.status.success() {
-        return None;
-    }
+    let stdout = if output.status.success() {
+        String::from_utf8_lossy(&output.stdout).to_string()
+    } else {
+        let fallback = Command::new("systemctl")
+            .args(["show", "--property", &property_arg, &pid.to_string()])
+            .output()
+            .ok()?;
+        if !fallback.status.success() {
+            return None;
+        }
+        String::from_utf8_lossy(&fallback.stdout).to_string()
+    };
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
     parse_systemctl_output(&stdout, pid)
 }
 

@@ -312,12 +312,11 @@ fn extract_containerd_id(path: &str) -> Option<String> {
 
     if let Some(idx) = path.find("/containerd/") {
         let after = &path[idx + 12..];
-        // Skip namespace, get ID
-        let parts: Vec<&str> = after.split('/').collect();
-        if parts.len() >= 2 {
-            let id = parts[1];
-            if is_container_id(id) {
-                return Some(id.to_string());
+        // Prefer the last segment that looks like a container ID.
+        for part in after.split('/').rev() {
+            let candidate = part.strip_suffix(".scope").unwrap_or(part);
+            if is_container_id(candidate) {
+                return Some(candidate.to_string());
             }
         }
     }
@@ -499,6 +498,16 @@ mod tests {
 
         assert!(info.in_container);
         assert_eq!(info.runtime, ContainerRuntime::Containerd);
+    }
+
+    #[test]
+    fn test_detect_containerd_deep_path() {
+        let path = "/containerd/io.containerd.runtime.v2.task/default/abc123def456789012345678901234567890123456789012345678901234";
+        let info = detect_container_from_cgroup(path);
+
+        assert!(info.in_container);
+        assert_eq!(info.runtime, ContainerRuntime::Containerd);
+        assert!(info.container_id.is_some());
     }
 
     #[test]
