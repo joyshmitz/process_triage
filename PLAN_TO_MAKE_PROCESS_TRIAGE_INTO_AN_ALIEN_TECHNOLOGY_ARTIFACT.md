@@ -328,7 +328,7 @@ Implementation stance (critical): keep `pt` as a thin bash wrapper/installer for
 Operational stance (critical): make every run operationally improvable by recording both raw observations and derived quantities to append-only Parquet partitions, with DuckDB as the query engine over those partitions for debugging, calibration, and visualization.
 
 Success criteria:
-- Decision quality: in shadow mode, the estimated false-kill rate of “recommended kill” actions is <1% (report as a credible upper bound at a stated confidence level); high capture of abandoned/zombie processes as judged by user labels and/or post-run outcomes.
+- Decision quality: in shadow mode, the estimated false-kill rate of "recommended kill" actions is <1% (report as a credible upper bound at a stated confidence level); high capture of abandoned/zombie processes as judged by user labels and/or post-run outcomes.
 - Explainability: every decision has a full evidence ledger, posterior, and top Bayes factors.
 - Safety: no auto-kill by default; multi-stage mitigations; guardrails enforced by policy; `--robot` explicitly opts into automated execution.
 - Performance: quick scan <1s; targeted deep scan on top suspects <8s for typical process counts (full instrumentation is budgeted and may take longer when explicitly enabled).
@@ -340,6 +340,13 @@ Success criteria:
 - Telemetry safety: secrets/PII are redacted or hashed by policy before persistence.
 - Concurrency safety: Parquet-first storage supports concurrent runs without DB write-lock contention.
 - Full-auto UX: default mode runs to a pre-toggled approval UI; `--robot` runs to completion without prompts.
+- Agent ergonomics: `pt agent` provides token-efficient JSON/JSONL outputs, resumable sessions, fine-grained automation controls, and human-friendly summary formats suitable for handoff.
+- Fleet support: multi-host operation with aggregated telemetry, cross-host pattern detection, and fleet-wide FDR control.
+- Goal-oriented mode: users can specify resource recovery targets (memory, CPU, ports) and the system optimizes candidate selection to achieve those goals.
+- Differential efficiency: delta mode surfaces only changes since a prior session, reducing token/compute overhead for repeated monitoring.
+- Pattern acceleration: known signatures are recognized via fast lookup, bypassing full inference for high-confidence matches on common stuck/abandoned patterns.
+- Predictive capability: trajectory analysis warns of processes likely to become problematic before they cross kill thresholds.
+- Supervisor awareness: actions respect process supervision (systemd, launchd, pm2, Docker) and recommend supervisor-level commands when appropriate.
 
 ---
 
@@ -636,6 +643,101 @@ BN) Fast optimal-transport drift detection (Sinkhorn divergence)
 - Practical, fast approximation of Wasserstein distances for distribution shift monitoring on streaming telemetry
 - Keeps drift gates responsive without blowing the overhead budget
 
+BO) Fleet mode architecture (multi-host operation)
+- Aggregate telemetry across hosts into a central store (or federated queries)
+- Cross-host pattern detection: "this signature appears on N of M hosts"
+- Fleet-wide FDR control: prevent "1 false kill spread across 100 hosts" by treating the fleet as a single multiple-testing domain
+- Host-group priors: transfer learned priors between similar machine profiles
+- Parallel plan generation across hosts with unified reporting
+
+BP) Delta/differential mode (session comparison)
+- `--since <session-id>` or `--since <timestamp>` to surface only changes
+- Track: new suspicious processes, newly-worsened (REVIEW→KILL), resolved (gone), persistent offenders (suspicious for N sessions)
+- Dramatically reduces token/compute overhead for repeated monitoring by agents or scheduled jobs
+
+BQ) Goal-oriented resource recovery optimization
+- User specifies targets: `--goal "free 4GB RAM"`, `--goal "CPU < 70%"`, `--goal "free port 3000"`
+- System ranks candidates by contribution to goal, not just by "badness"
+- Optimization objective: minimize expected loss while achieving resource target
+- Knapsack-style selection when multiple candidates needed to meet goal
+
+BR) Pattern/signature library (known-pattern fast path)
+- Curated signatures for common stuck/abandoned patterns (jest workers, webpack, next dev, gunicorn, etc.)
+- Signature match yields high-confidence classification without full Bayesian inference
+- Signatures include: match criteria (cmd regex, CPU range, runtime, orphan status), classification, confidence, remediation hints
+- Sources: built-in, community-contributed, organization-specific
+- Version-aware: patterns can specify tool versions where behavior differs
+- "Unknown pattern" flag when nothing matches (triggers full inference with higher uncertainty)
+
+BS) Process genealogy narrative (explain backstory)
+- Reconstruct how a process reached its current state
+- Timeline: started by X, parent died at T, orphaned to init, TTY detached, IO stalled since T+N
+- Explains *why* the classification makes sense, not just *what* the classification is
+- Stored as structured events enabling replay and debugging
+
+BT) Supervisor-aware action routing
+- Detect if process is under supervision: systemd, launchd, supervisord, pm2, nodemon, Docker, Kubernetes
+- Recommend supervisor-level actions: `systemctl restart`, `pm2 restart`, `docker restart`
+- Warn when raw PID kill will just trigger respawn
+- Integrate restart policies into action cost (respawn → ineffective kill → prefer throttle/pause)
+
+BU) Trajectory/predictive analysis
+- Fit trend models to resource usage (memory growth rate, CPU trend)
+- Predict: time until OOM, time until reclassification threshold crossed
+- Surface early warnings: "likely problematic in ~N hours"
+- Enables proactive intervention during maintenance windows
+
+BV) Blast radius / dependency graph visualization
+- ASCII/text process tree with annotations
+- Show: child processes that would die, active connections, ports held, open file locks
+- Compute total blast radius (memory freed, processes killed, clients disconnected)
+- Critical for informed decision-making before applying actions
+
+BW) Confidence-bounded automation controls
+- Fine-grained `--robot` constraints:
+  - `--min-posterior 0.99` (only kill if extremely confident)
+  - `--max-blast-radius 2GB` (limit total impact per run)
+  - `--max-kills 5` (limit action count)
+  - `--require-known-signature` (only act on pattern matches)
+  - `--exclude-categories agent,daemon` (protect specific categories)
+- Provides a spectrum between full-manual and full-auto with explicit, auditable constraints
+
+BX) Session resumability and idempotency
+- Sessions are durable artifacts that survive connection interruptions
+- `pt agent apply --resume-session <id>` continues from where it left off
+- Track: plan, applied actions, pending actions, outcomes
+- Idempotent execution: re-running a completed action is a no-op
+
+BY) Learning transfer (prior export/import)
+- `pt agent export-priors` exports learned priors to a portable file
+- `pt agent import-priors --merge` imports priors to a new machine
+- Enables fleet-wide shared priors and bootstrapping new machines from experienced ones
+- Organization-level prior libraries with versioning
+
+BZ) Agent-optimized output formats
+- `--format summary` → one-line summary with counts and totals
+- `--format metrics` → machine-parseable key=value pairs
+- `--format slack` → human-friendly narrative suitable for chat handoff
+- `--format exitcode` → minimal output, communicate via exit code
+- Progressive verbosity levels for token efficiency
+
+CA) Watch/alert mode for agents
+- `pt agent watch --notify-exec "curl webhook..."` → structured webhook on threshold
+- `pt agent watch --format jsonl` → streaming events for integration
+- Enables push-based notification instead of polling
+- Integrates with monitoring systems (Prometheus metrics endpoint possible)
+
+CB) "What would change your mind" explanations
+- For uncertain processes, show what additional evidence would shift the decision
+- "If no network activity for 30 more minutes: P(abandoned) → 0.78"
+- "If parent process dies: P(abandoned) → 0.89"
+- Helps decide whether to wait/re-check or act now
+
+CC) Per-machine learned baselines
+- Track "normal" for each host: typical process count, baseline CPU, expected resource usage
+- Anomaly detection relative to that machine's history, not global priors
+- "This machine typically has 200 processes; now it has 450" is more informative than absolute counts
+
 R) Use-case interpretation of observed processes
 - bun test at 91% CPU for 18m in /data/projects/flywheel_gateway
 - gemini --yolo workers at 25m to 4h46m
@@ -805,57 +907,220 @@ Partitioning rule (example):
 - Keep an explicit “telemetry schema + redaction version” in `runs` so old data remains interpretable.
 
 ### 3.5 Agent/Robot CLI Contract (No TUI)
-Goal: give coding agents a hyper-ergonomic console interface that exposes everything a human can see/do in the TUI, but via token-efficient JSON/Markdown outputs and deterministic automation primitives.
+Goal: give coding agents a hyper-ergonomic console interface that exposes everything a human can see/do in the TUI, but via token-efficient JSON/Markdown outputs and deterministic automation primitives. The agent CLI is designed with AI agents (Claude, Cursor, Copilot, etc.) as first-class users—optimizing for token efficiency, structured outputs, fine-grained control, and seamless integration into automated workflows.
 
-Command surface (agent-optimized “session pipeline”; wrapper `pt` forwards to `pt-core agent ...`):
-1) Plan (create/compute)
-- `pt agent plan [--deep] [--min-age 3600] [--limit N] [--only kill|review|all] [--format json|md]`
-  - Runs full-auto exploration (quick scan -> targeted deep scan -> infer -> decide).
-  - Always returns: `session_id`, `schema_version`, system snapshot, candidates, and a pre-toggled recommended plan (the same items the TUI would preselect).
-  - Each candidate/action must include a stable identity tuple (at minimum: `pid`, `start_id`, `uid`) so later execution can revalidate identity and avoid PID-reuse / TOCTOU footguns.
-2) Explain (drill-down)
-- `pt agent explain --session <id> --pid <pid> [--format json|md] [--include raw] [--include ledger] [--galaxy-brain]`
-  - Returns a “why” summary, plus optional full evidence ledger (likelihood terms/Bayes factors) and capped/redacted raw samples.
-3) Apply (execute, no UI)
-- `pt agent apply --session <id> --recommended --yes`
-- `pt agent apply --session <id> --pids 123,456 --yes` (shorthand: must exist in the session plan)
-- `pt agent apply --session <id> --targets 123:<start_id>,456:<start_id> --yes` (preferred when piping across tools)
-  - Executes without UI; requires explicit `--yes`.
-  - Must always respect `--shadow` and `--dry-run`.
-  - Must revalidate process identity immediately before applying any action: if `(pid,start_id,uid,...)` no longer matches, block execution for that target and require a fresh plan.
-4) Status / sessions (automation primitives)
-- `pt agent sessions [--limit N]`
-- `pt agent show --session <id>`
-- `pt agent tail --session <id> [--format jsonl]`
-5) Export / report (shareable artifacts)
-- `pt agent export --session <id> --out bundle.ptb [--profile minimal|safe|forensic]`
-- `pt agent report --session <id> --out report.html [--bundle bundle.ptb] [--profile minimal|safe|forensic] [--galaxy-brain] [--embed-assets]`
-6) Inbox (daemon-driven “plans ready for review”)
-- `pt agent inbox [--limit N] [--format json|md]`
-  - Lists pending sessions/plans created by dormant mode escalation.
+Command surface (agent-optimized "session pipeline"; wrapper `pt` forwards to `pt-core agent ...`):
+
+#### 1) Plan (create/compute)
+```
+pt agent plan [OPTIONS]
+```
+Core options:
+- `--deep` - Force deep scan on all candidates (not just top suspects)
+- `--min-age <seconds>` - Only consider processes older than threshold (default: 0)
+- `--limit <N>` - Limit candidate count in output
+- `--only kill|review|all` - Filter output by recommendation category
+- `--format json|md|summary|metrics|slack` - Output format (see formats below)
+
+**Differential mode** (session comparison):
+- `--since <session-id>` - Compare against prior session, surface only changes
+- `--since-time <timestamp|duration>` - Compare against time (e.g., `--since-time 2h`)
+- Output includes: `new` (newly suspicious), `worsened` (escalated severity), `resolved` (no longer present), `persistent` (suspicious for N consecutive sessions)
+- Dramatically reduces token overhead for repeated monitoring
+
+**Goal-oriented mode** (resource recovery):
+- `--goal "free <amount> RAM"` - Target memory recovery (e.g., `--goal "free 4GB RAM"`)
+- `--goal "CPU < <percent>"` - Target CPU utilization (e.g., `--goal "CPU < 70%"`)
+- `--goal "free port <port>"` - Target specific port recovery
+- `--goal "free <N> processes"` - Reduce process count
+- System optimizes candidate selection to achieve goal with minimum expected loss
+- Output includes `goal_achievement` with projected vs actual recovery
+
+**Predictive mode**:
+- `--include-predictions` - Add trajectory analysis and time-to-threshold estimates
+- Each candidate includes: current classification, predicted future classification, time until threshold crossing, trend direction
+
+Behavior:
+- Runs full-auto exploration (quick scan → targeted deep scan → infer → decide)
+- Always returns: `session_id`, `schema_version`, system snapshot, candidates, and a pre-toggled recommended plan
+- Each candidate/action includes a stable identity tuple (`pid`, `start_id`, `uid`) for revalidation
+
+#### 2) Explain (drill-down)
+```
+pt agent explain --session <id> --pid <pid> [OPTIONS]
+```
+Core options:
+- `--format json|md` - Output format
+- `--include raw` - Include capped/redacted raw samples
+- `--include ledger` - Include full evidence ledger (likelihood terms, Bayes factors)
+- `--galaxy-brain` - Full mathematical derivation with equations and numbers
+
+**Dependency/blast radius**:
+- `--show-dependencies` - Show process tree with annotations
+- `--show-blast-radius` - Compute total impact (memory freed, processes killed, connections dropped)
+- Output includes ASCII tree visualization and structured dependency data
+
+**Genealogy/backstory**:
+- `--show-history` - Reconstruct process lifecycle narrative
+- Timeline: started by X, parent died at T, orphaned to init, TTY detached, IO stalled since T+N
+- Explains *how* the process reached its current state
+
+**What-would-change-your-mind**:
+- `--what-if` - Show hypothetical evidence that would shift the decision
+- "If no network activity for 30 more minutes: P(abandoned) → 0.78"
+- "If parent dies: P(abandoned) → 0.89"
+- Helps decide whether to wait/re-check or act now
+
+#### 3) Apply (execute, no UI)
+```
+pt agent apply --session <id> [OPTIONS]
+```
+Target selection:
+- `--recommended` - Apply all recommended actions from the plan
+- `--pids 123,456` - Apply to specific PIDs (must exist in session plan)
+- `--targets 123:<start_id>,456:<start_id>` - Explicit identity tuples (preferred)
+
+Confirmation:
+- `--yes` - Required for execution (explicit confirmation)
+- Must always respect `--shadow` and `--dry-run`
+
+**Confidence-bounded automation** (fine-grained `--robot` controls):
+- `--min-posterior <threshold>` - Only act if posterior probability exceeds threshold (e.g., `0.99`)
+- `--max-blast-radius <amount>` - Limit total impact per run (e.g., `2GB`, `5 processes`)
+- `--max-kills <N>` - Limit number of kill actions per run
+- `--require-known-signature` - Only act on pattern library matches, not novel detections
+- `--only-categories <list>` - Only act on specified categories (e.g., `test,devserver`)
+- `--exclude-categories <list>` - Never act on specified categories (e.g., `agent,daemon`)
+- `--abort-on-unknown` - Stop if any unexpected condition encountered
+
+Resumability:
+- `--resume-session <id>` - Resume an interrupted session from where it left off
+- Sessions track: plan, applied actions, pending actions, outcomes
+- Idempotent: re-running a completed action is a no-op
+
+Safety:
+- Must revalidate process identity immediately before applying any action
+- If `(pid,start_id,uid)` mismatches, block and require fresh plan
+- Supervisor-aware: detect supervised processes and suggest supervisor-level actions
+
+#### 4) Status / sessions (automation primitives)
+```
+pt agent sessions [--limit N] [--format json|md]
+pt agent show --session <id> [--format json|md]
+pt agent status --session <id> [--format json|md]  # Applied vs pending actions
+pt agent tail --session <id> [--format jsonl]       # Stream progress/outcomes
+```
+
+#### 5) Export / report (shareable artifacts)
+```
+pt agent export --session <id> --out bundle.ptb [OPTIONS]
+pt agent report --session <id> --out report.html [OPTIONS]
+```
+Options:
+- `--profile minimal|safe|forensic` - Redaction level
+- `--galaxy-brain` - Include full math ledger in report
+- `--embed-assets` - Inline CDN assets for offline viewing
+- `--encrypt` - Encrypt bundle for secure transport
+
+**Human-friendly summaries** (for handoff to users):
+- `--format slack` produces narrative suitable for chat:
+  ```
+  🧹 Process Triage Summary (devbox1.example.com)
+  Scanned 247 processes, found 4 candidates.
+  ✅ Killed 3 abandoned processes:
+     • stuck jest worker (4h, 1.2GB)
+     • orphaned next dev server (2d, 800MB)
+     • zombie webpack watcher (6h, 400MB)
+  📊 Recovered: 2.4GB RAM, 2.1 CPU cores
+  ```
+
+#### 6) Inbox (daemon-driven "plans ready for review")
+```
+pt agent inbox [--limit N] [--format json|md]
+```
+Lists pending sessions/plans created by dormant mode escalation.
+
+#### 7) Watch (background monitoring for agents)
+```
+pt agent watch [OPTIONS]
+```
+Options:
+- `--notify-exec <command>` - Execute command on threshold crossing (webhook, script)
+- `--format jsonl` - Stream events for integration
+- `--threshold <level>` - Trigger sensitivity (low|medium|high|critical)
+- `--interval <seconds>` - Check frequency (default: 60)
+
+Events emitted:
+- `candidate_detected` - New process crosses recommendation threshold
+- `severity_escalated` - Existing candidate worsens
+- `goal_violated` - Resource target exceeded
+- `baseline_anomaly` - Significant deviation from learned baseline
+
+Enables push-based notification instead of polling; integrates with monitoring systems.
+
+#### 8) Learning (prior management)
+```
+pt agent export-priors --out priors.json [--host-profile <name>]
+pt agent import-priors --from priors.json [--merge|--replace]
+pt agent list-priors [--format json|md]
+```
+- Export learned priors for transfer to other machines
+- Import priors to bootstrap new machines from experienced ones
+- Fleet-wide shared priors with versioning
+- `--host-profile` tags priors with machine characteristics for smart matching
+
+#### 9) Fleet operations (multi-host)
+```
+pt agent fleet plan --hosts <file|list> [OPTIONS]
+pt agent fleet apply --session <fleet-session-id> [OPTIONS]
+pt agent fleet report --session <fleet-session-id> [OPTIONS]
+```
+See section 3.8 for full fleet mode specification.
 
 Output formats:
-- Default: `--format json` (token-efficient and machine-stable).
-- Optional: `--format md` (human-readable, still concise).
-- Streaming: `--format jsonl` for progress/events (`plan_started`, `scan_done`, `infer_done`, `gates_evaluated`, `action_applied`, ...).
-- Projection: `--fields`/`--compact`/`--limit`/`--only kill|review|all` to control token usage.
-- Token-efficiency rule: defaults should return “just enough” (summary + recommended plan + top candidates); deeper details only on demand (`explain`, `--include`, `--galaxy-brain`).
+- `--format json` - Default; token-efficient, machine-stable, full structure
+- `--format md` - Human-readable markdown, still concise
+- `--format jsonl` - Streaming events for progress/integration
+- `--format summary` - One-line summary: `candidates=4 kill=3 review=1 spare=243 recoverable_mb=2400`
+- `--format metrics` - Key=value pairs for monitoring: `pt_candidates_total=4 pt_kill_recommended=3`
+- `--format slack` - Human-friendly narrative for chat handoff
+- `--format exitcode` - Minimal output; communicate via exit code only
+
+Projection controls:
+- `--fields <list>` - Include only specified fields
+- `--compact` - Omit optional/verbose fields
+- `--limit <N>` - Limit array sizes
+- `--only kill|review|all` - Filter candidates
+
+Token-efficiency rule: defaults return "just enough" (summary + recommended plan + top candidates); deeper details only on demand (`explain`, `--include`, `--galaxy-brain`).
 
 Schema invariants (for agents):
-- Every output includes: `schema_version`, `session_id`, `generated_at`, and a stable `summary`.
-- Avoid breaking changes: prefer additive fields; bump `schema_version` only when unavoidable.
-- “Pre-toggled” semantics are explicit:
-  - `recommended.preselected_pids` and/or `recommended.actions[]` (with staged action chains and per-PID safety gates).
+- Every output includes: `schema_version`, `session_id`, `generated_at`, `host_id`, and a stable `summary`
+- Avoid breaking changes: prefer additive fields; bump `schema_version` only when unavoidable
+- "Pre-toggled" semantics are explicit:
+  - `recommended.preselected_pids` and/or `recommended.actions[]` (with staged action chains and per-PID safety gates)
 - Identity safety is explicit:
-  - Every process reference includes `pid` plus a stable `start_id` (and `uid` at minimum); action execution uses these to revalidate targets and prevent PID-reuse mistakes.
-- Exit codes are automation-friendly:
-  - `0` clean / nothing to do
-  - `1` candidates exist (plan produced) but no actions executed
-  - `2` actions executed successfully
-  - `3` partial failure executing actions
-  - `4` blocked by safety gates / policy
-  - `>=10` tooling/internal error
-- Ergonomic escape hatch: support `--exit-code always0` (or similar) so `set -e` workflows can still consume JSON without treating “candidates exist” as an error.
+  - Every process reference includes `pid` plus a stable `start_id` (and `uid` at minimum)
+  - Action execution uses these to revalidate targets and prevent PID-reuse mistakes
+- Signature matching is explicit:
+  - `matched_signature` field when a pattern library entry matched
+  - `novel_pattern: true` when full inference was required
+- Predictions are explicit (when `--include-predictions`):
+  - `trajectory.trend`, `trajectory.time_to_threshold`, `trajectory.predicted_classification`
+
+Exit codes are automation-friendly:
+- `0` clean / nothing to do
+- `1` candidates exist (plan produced) but no actions executed
+- `2` actions executed successfully
+- `3` partial failure executing actions
+- `4` blocked by safety gates / policy
+- `5` goal not achievable (not enough candidates to meet resource target)
+- `6` session interrupted / resumable
+- `>=10` tooling/internal error
+
+Ergonomic escape hatches:
+- `--exit-code always0` - Always exit 0 (for `set -e` workflows that parse JSON)
+- `--timeout <seconds>` - Abort if operation exceeds time limit (predictable runtime for scripts)
 
 ### 3.6 Session Bundles & Rich HTML Reports (Shareable Artifacts)
 Goal: one-command export/share of a complete session, and one-command generation of a premium, richly interactive HTML report.
@@ -915,7 +1180,207 @@ Service integration:
 - Linux: systemd user service by default (`ptd.service` + timer), optional system-level install.
 - macOS: launchd agent.
 - Must include: cooldowns, backoff, and “never become the hog” protections (nice/ionice, probe budgeting, and hard caps).
-- Inbox UX: dormant escalation writes sessions to an inbox so humans (`pt inbox` / TUI view) and agents (`pt agent inbox`) can list “plans ready for review”.
+- Inbox UX: dormant escalation writes sessions to an inbox so humans (`pt inbox` / TUI view) and agents (`pt agent inbox`) can list "plans ready for review".
+
+### 3.8 Fleet Mode Architecture (Multi-Host Operation)
+Goal: enable `pt` to operate across multiple hosts, aggregate telemetry, detect cross-host patterns, and apply fleet-wide safety controls. Fleet mode is essential for AI agents and DevOps workflows that manage many machines.
+
+#### Fleet Topology Models
+1. **Parallel execution** (default): Agent runs `pt` on each host independently via SSH, then aggregates results locally.
+2. **Centralized controller**: A single `pt fleet` command orchestrates scans across multiple hosts, collecting telemetry to a central store.
+3. **Federated queries**: Each host maintains local telemetry; fleet queries aggregate on-demand without central collection.
+
+#### Fleet CLI Surface
+```
+pt agent fleet plan --hosts <file|comma-list> [OPTIONS]
+pt agent fleet apply --fleet-session <id> [OPTIONS]
+pt agent fleet report --fleet-session <id> [OPTIONS]
+pt agent fleet status --fleet-session <id>
+```
+
+Options:
+- `--hosts <file>` - File with one host per line (supports `user@host:port` format)
+- `--hosts host1,host2,host3` - Comma-separated host list
+- `--parallel <N>` - Max concurrent host connections (default: 10)
+- `--timeout <seconds>` - Per-host timeout
+- `--continue-on-error` - Don't abort fleet operation if one host fails
+- `--host-profile <name>` - Apply host-group priors
+
+#### Fleet Session Structure
+A fleet session contains:
+- `fleet_session_id` - Unique identifier for the fleet operation
+- `hosts[]` - Array of host sessions, each with:
+  - `host_id` - Hostname or identifier
+  - `session_id` - Per-host session ID
+  - `status` - pending|running|completed|failed
+  - `candidates[]` - Per-host candidates
+  - `summary` - Per-host summary
+- `fleet_summary` - Aggregated statistics across all hosts
+- `cross_host_patterns[]` - Patterns that appear on multiple hosts
+
+#### Cross-Host Pattern Detection
+The system detects patterns that span multiple hosts:
+- "Signature X appears on 8 of 12 hosts" → likely a common issue (build tool, shared config)
+- "Memory growth pattern on all staging hosts" → possible shared workload issue
+- "Orphaned process from same parent command on multiple hosts" → deployment/orchestration issue
+
+Pattern matching uses:
+- Command signature similarity (fuzzy matching on cmdline)
+- Timing correlation (processes started within same window)
+- Resource usage profile similarity
+- Working directory patterns
+
+#### Fleet-Wide FDR Control
+When operating across a fleet, FDR control must span all hosts:
+- Single-host FDR might allow 1 false kill per 100 processes
+- Fleet FDR prevents "1 false kill spread across 100 hosts" (unacceptable)
+- Implementation: treat the entire fleet as one multiple-testing domain
+- Stricter thresholds scale with fleet size: `α_fleet = α_single / sqrt(n_hosts)`
+
+#### Aggregated Telemetry
+Fleet mode can aggregate telemetry to a central store:
+- Central Parquet partitions with `host_id` column
+- DuckDB queries span all hosts
+- Enables: cross-host calibration, shared baseline learning, fleet-wide PAC-Bayes bounds
+
+Storage options:
+- Local aggregation (agent collects and merges)
+- Shared filesystem (NFS, cloud storage)
+- Object store (S3, GCS) with partition-by-host
+
+#### Host-Group Priors (Transfer Learning)
+Hosts with similar characteristics can share priors:
+- `--host-profile webserver` - Apply priors learned from webserver-class machines
+- `--host-profile devbox` - Apply priors learned from developer workstations
+- Automatic profile detection based on: installed tools, running services, resource levels
+
+Export/import for fleet learning:
+```
+pt agent export-priors --host-profile devbox --out devbox-priors.json
+pt agent import-priors --from devbox-priors.json --host-profile devbox
+```
+
+#### Fleet Report Format
+Fleet reports include:
+- Overview: hosts scanned, total candidates, actions taken, fleet health score
+- Per-host breakdown: candidates, actions, outcomes
+- Cross-host patterns: common issues, fleet-wide trends
+- Recommendations: "Consider addressing pattern X on all hosts"
+
+### 3.9 Pattern/Signature Library (Known-Pattern Fast Path)
+Goal: provide instant, high-confidence classification for known stuck/abandoned patterns without requiring full Bayesian inference. The pattern library accelerates common cases and provides stable, explainable matches.
+
+#### Signature Structure
+Each signature defines:
+```json
+{
+  "id": "jest-worker-hang-v29",
+  "name": "Stuck Jest Worker (v29+)",
+  "description": "Jest worker process that has hung during test execution",
+  "match": {
+    "cmd_regex": "node.*jest.*--worker",
+    "cpu_range": [90, 100],
+    "runtime_min_seconds": 3600,
+    "orphan": true,
+    "tty": false,
+    "io_idle_seconds": 600
+  },
+  "classification": "abandoned",
+  "confidence": 0.98,
+  "remediation": {
+    "recommended_action": "kill",
+    "hint": "Kill the parent test runner, not individual workers",
+    "safe_restart": true
+  },
+  "metadata": {
+    "tool": "jest",
+    "tool_versions": ["29.x", "30.x"],
+    "source": "builtin",
+    "contributors": ["community"],
+    "last_updated": "2025-01-15"
+  }
+}
+```
+
+#### Match Criteria
+Signatures support flexible matching:
+- `cmd_regex` - Regular expression on command line
+- `cmd_contains` - Substring match (faster than regex)
+- `binary_name` - Exact binary name match
+- `cpu_range` - [min, max] CPU percentage
+- `runtime_min_seconds` / `runtime_max_seconds` - Runtime bounds
+- `memory_min_mb` / `memory_max_mb` - Memory bounds
+- `orphan` - PPID=1 (reparented to init)
+- `tty` - Has controlling TTY
+- `io_idle_seconds` - No I/O for this duration
+- `net_idle_seconds` - No network activity for this duration
+- `state` - Process state (R, S, D, Z)
+- `cwd_pattern` - Working directory regex
+- `env_contains` - Environment variable patterns (when available)
+- `parent_cmd_regex` - Parent process command pattern
+- `child_count_range` - [min, max] child process count
+
+Matching is conjunctive (all specified criteria must match). Partial matches are scored proportionally.
+
+#### Signature Sources
+1. **Builtin** - Ship with `pt-core`:
+   - Jest workers, Mocha hangs, pytest stuck
+   - Webpack watchers, Vite dev servers, Next.js dev
+   - Node.js orphans, Python subprocess leaks
+   - Docker shim processes, container leftovers
+   - VS Code extension hosts, language servers
+   - AI assistant workers (Copilot, Claude, Cursor)
+
+2. **Community** - Fetched from central registry:
+   - `pt agent signatures update` - Fetch latest community signatures
+   - Versioned and signed for integrity
+   - Opt-in with `--community-signatures`
+
+3. **Organization** - Custom enterprise patterns:
+   - `--signatures /path/to/org-signatures.json`
+   - Internal tools, proprietary workloads
+   - Distributed via config management
+
+4. **User** - Personal additions:
+   - `~/.config/pt/signatures.json`
+   - "I always kill processes matching X"
+   - Learn from user decisions over time
+
+#### Signature Matching Flow
+1. Quick scan collects basic features
+2. Pattern matcher evaluates all signatures against each process
+3. Matched signatures are ranked by confidence and specificity
+4. Best match (if confidence > threshold) bypasses full inference
+5. No match → full Bayesian inference with "novel pattern" flag
+
+#### Signature vs. Inference Integration
+- **Matched signature**: Use signature's confidence as prior, verify with quick inference
+- **Partial match**: Boost prior toward signature's classification, run inference
+- **No match**: Run full inference, flag as "novel pattern" (higher uncertainty)
+- **Signature conflict**: Multiple signatures match → run inference to resolve
+
+#### Learning from Decisions
+User decisions can generate signature candidates:
+- "You've killed 5 processes matching pattern X in the last week"
+- "Would you like to add a signature for this pattern?"
+- Generates draft signature for review/approval
+
+#### Signature Management CLI
+```
+pt agent signatures list [--source builtin|community|org|user]
+pt agent signatures show <id>
+pt agent signatures add --file draft.json [--source user]
+pt agent signatures update [--community]
+pt agent signatures disable <id>
+pt agent signatures stats  # Match frequency, false positive rates
+```
+
+#### Signature Telemetry
+Track signature performance for calibration:
+- Match frequency per signature
+- User override rate (matched but user disagreed)
+- False positive rate (matched, killed, user reported issue)
+- Evolve signatures based on telemetry
 
 ---
 
@@ -1148,6 +1613,85 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - When probes overlap (redundant info) and have overhead, pick a near-optimal set maximizing information gain
 - Greedy selection yields approximation guarantees; integrates with 4.34 active sensing
 
+### 4.44 Trajectory Prediction and Time-to-Threshold Analysis
+Goal: predict future process state based on current trends, enabling proactive intervention before problems become acute.
+
+#### Trend Models
+For each resource metric (CPU, memory, IO rate), fit a trend model:
+- **Linear trend**: y(t) = a + b*t, estimated via Bayesian linear regression
+- **Exponential trend**: y(t) = a * exp(b*t), for memory leaks and growth patterns
+- **Plateau detection**: identify if metric is stabilizing or continuing to grow
+
+Use Kalman filtering (4.23) to smooth noisy observations before trend fitting.
+
+#### Time-to-Threshold Prediction
+Given current value y_0, trend parameters, and a threshold θ (e.g., OOM limit, CPU saturation):
+- Compute expected time until y(t) > θ
+- Report as: "Memory growing at +50MB/hour; will hit 4GB limit in ~8 hours"
+- Include prediction uncertainty (credible interval on time-to-threshold)
+
+#### Classification Trajectory
+Predict when a process will cross classification thresholds:
+- "P(abandoned) currently 0.45; if trend continues, will reach 0.8 in ~2 hours"
+- "CPU pattern suggests this will not self-terminate"
+
+Use BOCPD (4.7b) to detect regime changes that would invalidate trend extrapolation.
+
+#### Proactive Alerting
+When `--include-predictions` is enabled:
+- Each candidate includes: `trajectory.trend` (rising/falling/stable), `trajectory.time_to_threshold`, `trajectory.predicted_classification`, `trajectory.confidence`
+- Enables early intervention during maintenance windows
+- Supports "preemptive restart" recommendations for processes on bad trajectories
+
+### 4.45 Per-Machine Learned Baselines
+Goal: detect anomalies relative to each machine's normal behavior, not just global priors.
+
+#### Baseline Learning
+Track "normal" for each host over time:
+- Typical process count distribution
+- Baseline CPU/memory utilization
+- Expected resource usage by time of day (diurnal patterns)
+- Command category distributions (what processes normally run)
+
+Use exponentially weighted moving averages with seasonal adjustments.
+
+#### Anomaly Detection vs Baseline
+Report deviations from learned baseline:
+- "This machine typically has 200-250 processes; now it has 450"
+- "CPU baseline is 20%; current is 85%"
+- "Unusual process: 'custom_build' never seen before on this host"
+
+Baseline anomalies boost prior toward "investigate" even if absolute values seem normal.
+
+#### Baseline Persistence
+- Store baselines in per-host telemetry partitions
+- Update baselines from shadow-mode observations
+- Cold start: use global priors until sufficient local data
+
+#### Fleet Baseline Sharing
+- Pool baselines across similar hosts (same `--host-profile`)
+- New machine can bootstrap from fleet baseline
+- Detect hosts that are outliers relative to their cohort
+
+### 4.46 Signature-Informed Inference
+Goal: integrate pattern library matches (section 3.9) with Bayesian inference.
+
+#### When Signature Matches
+- Use signature confidence as an informative prior: P(C=signature.classification) boosted
+- Run quick inference to verify (don't blindly trust signatures)
+- If inference agrees: high confidence, fast path
+- If inference disagrees: flag for review, report conflict
+
+#### When No Signature Matches
+- Flag as "novel pattern" in output
+- Use conservative priors (higher uncertainty)
+- Candidate for signature learning if user makes consistent decisions
+
+#### Partial Signature Matches
+- Multiple criteria match, but not all
+- Proportionally boost prior based on match score
+- Full inference resolves final classification
+
 ---
 
 ## 5) Decision Theory and Optimal Stopping
@@ -1210,8 +1754,124 @@ C in {useful, useful-but-bad, abandoned, zombie}
 - This tightens kill thresholds under uncertainty
 
 ### 5.13 Submodular Probe Set Selection
-- If “install everything” is possible but “run everything at once” is too heavy, select a probe subset maximizing incremental value
+- If "install everything" is possible but "run everything at once" is too heavy, select a probe subset maximizing incremental value
 - Provides a principled way to be maximal over time while staying safe on overhead
+
+### 5.14 Goal-Oriented Resource Recovery Optimization
+Goal: when the user specifies a resource target (e.g., "free 4GB RAM"), optimize candidate selection to achieve that target with minimum expected loss.
+
+#### Goal Specification
+Supported goals:
+- `--goal "free <N> RAM"` - Target memory recovery (MB/GB)
+- `--goal "CPU < <N>%"` - Target CPU utilization
+- `--goal "free port <N>"` - Free a specific port
+- `--goal "processes < <N>"` - Reduce total process count
+
+Goals can be combined: `--goal "free 2GB RAM" --goal "CPU < 80%"`
+
+#### Optimization Formulation
+Given:
+- Set of candidate processes P, each with expected resource recovery r_i and expected loss L_i
+- Resource target R (e.g., 4GB)
+
+Solve the constrained optimization:
+```
+minimize: Σ_{i ∈ S} L_i           (total expected loss)
+subject to: Σ_{i ∈ S} r_i ≥ R    (achieve resource target)
+            S ⊆ {candidates with P(kill-ok) > threshold}
+```
+
+This is a variant of the knapsack problem. Use:
+- Greedy approximation: sort by loss/recovery ratio, select until target met
+- Dynamic programming for exact solution on small candidate sets
+- Report if goal is not achievable: "Cannot free 4GB; max recoverable is 2.1GB"
+
+#### Recovery Estimates
+For each candidate, estimate recoverable resources:
+- **Memory**: RSS (or USS if available) freed on kill
+- **CPU**: cores freed = current CPU% / 100
+- **Port**: port freed if process holds it
+- **Child resources**: include resources of child processes that would also terminate
+
+Handle uncertainty:
+- Memory may not be immediately freed (caching, shared pages)
+- CPU may be picked up by other processes
+- Report expected vs conservative estimates
+
+#### Goal Achievement Reporting
+Output includes:
+```json
+{
+  "goal": "free 4GB RAM",
+  "achievable": true,
+  "projected_recovery": "4.2GB",
+  "required_candidates": 3,
+  "total_expected_loss": 42.5,
+  "alternative_plans": [
+    {"candidates": 2, "recovery": "3.1GB", "loss": 28.0},
+    {"candidates": 5, "recovery": "5.8GB", "loss": 61.2}
+  ]
+}
+```
+
+#### Tradeoff Visualization
+When multiple plans achieve the goal, show the Pareto frontier:
+- "Kill 2 processes: recover 3.5GB, risk 0.02 false kills"
+- "Kill 4 processes: recover 5.2GB, risk 0.05 false kills"
+- User chooses based on risk tolerance
+
+### 5.15 Differential Session Comparison
+Goal: when comparing against a prior session, compute only the delta and surface changes efficiently.
+
+#### Delta Categories
+- **New candidates**: processes not in prior session that are now suspicious
+- **Worsened**: processes that were REVIEW, now KILL; or SPARE, now REVIEW
+- **Improved**: processes that were suspicious, now less so
+- **Resolved**: suspicious processes that no longer exist
+- **Persistent offenders**: suspicious in N consecutive sessions
+
+#### Efficiency Gains
+- Skip full inference for unchanged processes (use cached posteriors)
+- Only deep-scan new or changed candidates
+- Reduce output size to delta only
+
+#### Token-Efficient Delta Output
+```json
+{
+  "comparison": {
+    "prior_session": "abc123",
+    "prior_candidates": 5,
+    "current_candidates": 7
+  },
+  "delta": {
+    "new": [{"pid": 1234, "classification": "abandoned", ...}],
+    "worsened": [{"pid": 5678, "prior": "review", "current": "kill", ...}],
+    "resolved": [{"pid": 9012, "reason": "exited"}],
+    "persistent": [{"pid": 3456, "consecutive_sessions": 3, ...}]
+  }
+}
+```
+
+### 5.16 Fleet-Wide Decision Coordination
+Goal: coordinate decisions across multiple hosts to maintain fleet-level safety invariants.
+
+#### Fleet FDR Control
+When applying FDR control across a fleet:
+- Pool all candidates across all hosts into a single FDR domain
+- Stricter per-host thresholds to maintain fleet-level guarantee
+- Formula: `α_per_host = α_fleet / n_hosts` (conservative) or `α_fleet / sqrt(n_hosts)` (adaptive)
+
+#### Cross-Host Correlation
+Detect correlated patterns:
+- "3 hosts have processes from the same parent command"
+- "Memory growth pattern appears on all staging hosts"
+- Correlated patterns may indicate a common root cause → coordinate action
+
+#### Fleet-Level Actions
+Some actions should be fleet-wide:
+- "Restart service X on all affected hosts"
+- "Apply the same fix everywhere the pattern appears"
+- Reduce repetitive per-host decisions
 
 ---
 
@@ -1237,6 +1897,101 @@ Operational realism notes:
 - Session safety: protect the active login/session chain by default (current shell, tmux/screen, SSH server/client, controlling TTY) so triage never cuts off the user running it.
 - PID reuse / TOCTOU safety: always revalidate a target immediately before action (at minimum: `(pid,start_id,uid)` from section 3.5). If identity mismatches, block and require a fresh plan; never “best-effort” kill by PID alone.
 - Privilege/UID safety: by default, only execute actions against processes owned by the invoking user. Cross-UID (other users/root) actions require explicit privileges + policy allowlists; do not allow cross-UID auto-execution by default even if `sudo` is available.
+
+### 6.1 Supervisor Detection and Supervisor-Aware Actions
+
+Many processes on modern systems are managed by supervisors that will restart them if killed directly. Killing a supervised process without stopping the supervisor results in an immediate respawn—wasted effort at best, a confusing loop at worst. For AI agents managing remote systems, this is especially problematic: the agent may repeatedly kill a process thinking it's stuck when it's actually being correctly respawned by design.
+
+**Supervisor detection heuristics:**
+
+| Supervisor | Detection Method |
+|------------|------------------|
+| **systemd** | `systemctl status <pid>` returns unit info; or parent is `systemd` with a matching cgroup in `/sys/fs/cgroup/system.slice/` |
+| **launchd** | `launchctl list` + plist matching; or parent is `launchd` with `XPC_SERVICE_NAME` env var |
+| **supervisord** | Parent is `supervisord`; or matches entry in `/etc/supervisor/conf.d/*.conf` |
+| **pm2** | `pm2 jlist` returns process info; or matches `PM2_HOME` env pattern |
+| **Docker** | Process has docker-specific cgroup (`/docker/`); or `docker inspect` by container ID from cgroup |
+| **containerd/CRI** | Cgroup pattern `/kubepods/` or `/containerd/` |
+| **nodemon/forever/pm2** | Parent command matches known watcher patterns; env vars like `NODEMON` |
+| **tmux/screen** | Session attachment via `/proc/<pid>/fd` inspection or parent hierarchy |
+| **nohup/disown** | No controlling TTY + specific parent patterns |
+
+**Supervisor-aware action strategies:**
+
+For each detected supervisor type, the action space expands beyond raw signals:
+
+```
+systemd-supervised process:
+  - systemctl stop <unit>      # Graceful stop, supervisor-aware
+  - systemctl restart <unit>   # Restart via supervisor (for stuck services)
+  - systemctl reload <unit>    # Config reload without restart
+  - systemctl mask <unit>      # Prevent auto-restart (temporary disable)
+
+launchd-supervised process:
+  - launchctl stop <label>     # Graceful stop
+  - launchctl unload <plist>   # Remove from supervision
+  - launchctl kickstart -k <label>  # Force restart
+
+pm2-supervised process:
+  - pm2 stop <id|name>         # Graceful stop
+  - pm2 restart <id|name>      # Restart via pm2
+  - pm2 delete <id|name>       # Remove from pm2 entirely
+
+Docker container:
+  - docker stop <container>    # SIGTERM + grace period + SIGKILL
+  - docker restart <container> # Restart container
+  - docker pause <container>   # Freeze without killing (cgroup freezer)
+  - docker kill <container>    # Immediate SIGKILL
+
+supervisord-managed process:
+  - supervisorctl stop <name>  # Graceful stop
+  - supervisorctl restart <name>
+```
+
+**Output contract for supervisor detection:**
+
+The `pt agent plan` output includes supervisor information when detected:
+
+```json
+{
+  "candidates": [{
+    "pid": 12345,
+    "supervised": true,
+    "supervisor": {
+      "type": "systemd",
+      "unit": "myapp.service",
+      "can_restart": true,
+      "restart_policy": "always"
+    },
+    "recommended_action": "systemctl_stop",
+    "fallback_action": "kill",
+    "supervisor_action_command": "systemctl stop myapp.service",
+    "why_supervisor": "Process will respawn within 100ms if killed directly; supervisor action is more effective"
+  }]
+}
+```
+
+**Agent behavior implications:**
+
+When an AI agent receives supervisor information:
+1. **Prefer supervisor actions over raw kill** when the goal is to stop the process permanently
+2. **Use raw kill with pause observation** when investigating whether a process is actually stuck (the respawn itself provides signal)
+3. **Use supervisor restart** when the goal is recovery from a bad state, not termination
+4. **Never repeatedly kill a supervised process** without either stopping the supervisor or acknowledging the respawn-by-design pattern
+
+**Respawn tracking:**
+
+To detect "kill-respawn loops", track `(command_pattern, cgroup, supervisor_unit)` tuples across time:
+
+```json
+{
+  "respawn_events": [
+    {"pattern": "myapp --worker", "supervisor": "systemd:myapp.service",
+     "kills": 3, "respawns": 3, "window_minutes": 5,
+     "recommendation": "Use systemctl stop instead of kill"}
+  ]
+}
+```
 
 Decision engine selects action with minimum expected loss. Destructive actions (especially kill) require explicit confirmation by default via the TUI, but can be executed automatically under an explicit `--robot` flag and only when all safety gates pass (robust Bayes/DRO/FDR/alpha-investing/policy allowlists).
 
