@@ -309,10 +309,14 @@ pub struct Detection {
 impl Detection {
     /// Get a redacted version of the match for logging.
     pub fn redacted_match(&self) -> String {
-        if self.matched.len() <= 8 {
+        // Use char count instead of byte length for UTF-8 safety
+        let char_count = self.matched.chars().count();
+        if char_count <= 8 {
             "[REDACTED]".to_string()
         } else {
-            format!("{}...[REDACTED]", &self.matched[..4])
+            // Take first 4 characters safely (handles multi-byte UTF-8)
+            let prefix: String = self.matched.chars().take(4).collect();
+            format!("{}...[REDACTED]", prefix)
         }
     }
 }

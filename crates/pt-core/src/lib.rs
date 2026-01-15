@@ -4,10 +4,12 @@
 //! - Exit codes for CLI operations
 //! - Configuration loading and validation
 //! - CLI utilities and helpers
+//! - Process collection and scanning
 //!
 //! The binary entry point is in `main.rs`.
 
 pub mod cli;
+pub mod collect;
 pub mod config;
 pub mod exit_codes;
 
