@@ -12,6 +12,7 @@ pub mod cli;
 pub mod collect;
 pub mod config;
 pub mod decision;
+pub mod action;
 pub mod exit_codes;
 pub mod inference;
 pub mod logging;

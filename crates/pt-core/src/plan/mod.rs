@@ -83,7 +83,7 @@ impl Default for ActionTimeouts {
 }
 
 /// Preconditions that must be revalidated at apply time.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PreCheck {
     VerifyIdentity,
