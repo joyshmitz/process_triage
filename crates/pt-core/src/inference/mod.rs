@@ -11,6 +11,7 @@ pub mod hazard;
 pub mod impact;
 pub mod kalman;
 pub mod ledger;
+pub mod martingale;
 pub mod posterior;
 pub mod ppc;
 pub mod robust;
@@ -73,6 +74,10 @@ pub use sketches::{
     CountMinConfig, CountMinSketch, HeavyHitter, PercentileSummary, SketchError, SketchEvidence,
     SketchManager, SketchManagerConfig, SketchResult, SketchSummary, SpaceSaving,
     SpaceSavingConfig, TDigest, TDigestConfig,
+};
+pub use martingale::{
+    BatchMartingaleAnalyzer, BoundParameters, BoundType, MartingaleAnalyzer, MartingaleConfig,
+    MartingaleError, MartingaleEvidence, MartingaleResult, MartingaleUpdateResult,
 };
 #[cfg(target_os = "linux")]
 pub use impact::{

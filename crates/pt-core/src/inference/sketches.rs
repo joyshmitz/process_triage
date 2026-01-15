@@ -486,8 +486,8 @@ pub struct TDigest {
     config: TDigestConfig,
     /// Sorted centroids.
     centroids: Vec<Centroid>,
-    /// Unprocessed buffer.
-    buffer: Vec<f64>,
+    /// Unprocessed buffer of (value, weight) pairs.
+    buffer: Vec<(f64, f64)>,
     /// Total weight.
     total_weight: f64,
     /// Minimum value seen.
@@ -538,7 +538,7 @@ impl TDigest {
 
         self.min = self.min.min(value);
         self.max = self.max.max(value);
-        self.buffer.push(value);
+        self.buffer.push((value, weight));
         self.total_weight += weight;
 
         if self.buffer.len() >= self.buffer_capacity() {
@@ -552,12 +552,18 @@ impl TDigest {
             return;
         }
 
-        // Sort buffer
-        self.buffer
-            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        // Sort buffer by value
+        self.buffer.sort_by(|a, b| {
+            a.0.partial_cmp(&b.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Create centroids from buffer
-        let new_centroids: Vec<_> = self.buffer.drain(..).map(|v| Centroid::new(v, 1.0)).collect();
+        let new_centroids: Vec<_> = self
+            .buffer
+            .drain(..)
+            .map(|(value, weight)| Centroid::new(value, weight))
+            .collect();
 
         // Merge new centroids with existing
         self.merge_centroids(new_centroids);
@@ -777,7 +783,7 @@ impl TDigest {
     pub fn memory_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
             + self.centroids.capacity() * std::mem::size_of::<Centroid>()
-            + self.buffer.capacity() * std::mem::size_of::<f64>()
+            + self.buffer.capacity() * std::mem::size_of::<(f64, f64)>()
     }
 }
 
