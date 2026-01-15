@@ -217,6 +217,42 @@ AR) Renewal reward / semi-regenerative processes
 AS) Conformal prediction (distribution-free coverage)
 - Prediction intervals for runtime/CPU with finite-sample guarantees
 
+AT) False Discovery Rate (FDR) control across many processes
+- Multiple-testing correction (Benjamini-Hochberg, local fdr) for kill recommendations
+- Prevents “1 false-kill in a thousand processes” during large scans
+
+AU) Restless bandits / Whittle index policies
+- Schedule deep scans/instrumentation under overhead budgets
+- Choose which PIDs get eBPF/perf/stack sampling when you cannot instrument all
+
+AV) Bayesian optimal experimental design (active sensing)
+- Choose next measurement (perf vs eBPF vs stack sample) that maximizes expected information gain per cost
+- Uses Fisher information / mutual information in exponential families
+
+AW) Extreme value theory (POT/GPD)
+- Model CPU/IO spike tails via peaks-over-threshold and generalized Pareto
+- Distinguish legitimate spiky workloads from pathological runaway spikes
+
+AX) Streaming sketches / heavy-hitter theory
+- Count-Min sketch / Space-Saving to summarize high-rate events (syscalls, bytes) at scale
+- Allows “collect everything” while staying low-overhead
+
+AY) Belief propagation / message passing on process tree
+- Exact sum-product on PPID trees for coupled state models (when tree-structured)
+- Produces exact marginal posteriors under pairwise couplings (no pseudolikelihood needed on trees)
+
+AZ) Wavelet / spectral periodicity analysis
+- Detect periodic CPU/IO patterns (cron-like vs pathological loops) via wavelets or periodograms
+- Multi-scale decomposition features feed survival/change-point models
+
+BA) Switching linear dynamical systems (IMM filter)
+- Combine discrete regime switching with Kalman dynamics for CPU/IO time series
+- Closed-form updates via interacting multiple-model filtering
+
+BB) Online FDR / alpha-investing for sequential operations
+- Control false-kill risk over time as decisions accumulate
+- Complements batch BH FDR in 4.32
+
 R) Use-case interpretation of observed processes
 - bun test at 91% CPU for 18m in /data/projects/flywheel_gateway
 - gemini --yolo workers at 25m to 4h46m
@@ -259,6 +295,12 @@ All of these are integrated in the system design below.
   - optional: conntrack-tools (connection tracking)
   - optional: nvidia-smi / rocm-smi (GPU process metrics)
   - optional: /proc/pressure/* (PSI) and /proc/schedstat
+  - optional: acct/psacct (process accounting: lastcomm, sa)
+  - optional: auditd (system call auditing, security context)
+  - optional: pcp (Performance Co-Pilot) for richer historical + per-process time series
+  - optional: flamegraph toolchain (stack profiling visualization)
+  - optional: gdb + pstack/eu-stack (stack traces)
+  - optional: language profilers: py-spy (Python), rbspy (Ruby), async-profiler (JVM), xctrace (macOS, if Xcode)
 - OS-level metrics for queueing cost and VOI:
   - loadavg, run-queue delay, iowait, memory pressure, swap activity
 
@@ -449,6 +491,48 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 4.31 Conformal Prediction
 - Distribution-free prediction intervals for runtime/CPU
 
+### 4.32 FDR Control (Many-Process Safety)
+- Treat “kill-recommended” as multiple hypothesis tests across many PIDs
+- Use local false discovery rate: lfdr_i = P(useful_i | x_i)
+- Select a kill set K that controls expected false-kill proportion (BH-style on lfdr or p-values from Bayes factors)
+
+### 4.33 Restless Bandits / Whittle Index Scheduling
+- Each PID is an arm; actions are {quick-scan, deep-scan, instrument, pause, throttle}
+- Compute an index per PID approximating marginal value of deep inspection (VOI per cost)
+- Prioritize limited-overhead probes (perf/eBPF/stack sampling) on highest-index PIDs
+
+### 4.34 Bayesian Optimal Experimental Design (Active Sensing)
+- Choose next measurement m to maximize expected posterior entropy reduction per cost:
+  argmax_m [E_x (H(P(S|x)) - H(P(S|x, new=m))))] / cost(m)
+- For exponential-family likelihoods, use Fisher information approximations as a closed-form proxy
+
+### 4.35 Extreme Value Theory (POT/GPD) Tail Modeling
+- Model exceedances of CPU/IO/network bursts above a high threshold u0
+- Fit generalized Pareto tail parameters; treat heavy-tail behavior as evidence of pathological bursts (or known spiky workloads)
+
+### 4.36 Streaming Sketches / Heavy-Hitter Summaries
+- When event streams are huge (syscalls, bytes), maintain sketches:
+  - Count-Min sketch for rates per PID
+  - Space-Saving / Misra-Gries for heavy hitters
+  - Reservoir sampling for representative stack traces / syscalls
+- Feed sketch summaries into Hawkes/marked-point-process layers without storing raw events
+
+### 4.37 Belief Propagation on PPID Trees
+- For tree-structured coupling graphs, compute exact marginals via sum-product message passing
+- Use as the primary coupled-tree inference when PPID graph is a forest
+
+### 4.38 Wavelet / Spectral Periodicity Features
+- Multi-resolution wavelet energy + dominant period estimates
+- Separates periodic “expected” load from steady runaway loops
+
+### 4.39 Switching Linear Dynamical Systems (IMM)
+- Interacting multiple-model filter for regime-switching CPU/IO dynamics
+- Improves regime inference beyond single Kalman + BOCPD
+
+### 4.40 Online FDR / Alpha-Investing
+- Maintain an error budget over time; allocate “kill attempts” only when posterior is extremely strong
+- Provides long-run safety even under repeated scans
+
 ---
 
 ## 5) Decision Theory and Optimal Stopping
@@ -485,6 +569,23 @@ C in {useful, useful-but-bad, abandoned, zombie}
 ### 5.7 Belief-State Policy (Myopic POMDP)
 - a* = argmin_a sum_S L(a,S) b_t(S)
 - Use belief update from 4.14; enforce safety constraints
+
+### 5.8 FDR-Gated Kill Set Selection
+- Rank candidate kills by lfdr_i = P(useful_i | x_i) (lower is “safer to kill”)
+- Choose the largest set K such that estimated FDR(K) <= alpha (shadow-mode calibrated)
+- This prevents “scan many processes and inevitably kill one useful one”
+
+### 5.9 Budgeted Instrumentation Policy (Whittle / VOI)
+- Under overhead constraints, allocate expensive probes to the highest expected VOI per unit cost
+- Prefer: pause -> observe -> deep-scan -> throttle -> kill (as confidence increases)
+
+### 5.10 Active Sensing Action Selection
+- Choose measurement/action jointly to maximize expected improvement in decision quality per cost
+- Guarantees: if VOI is low, stop measuring and act (or pause)
+
+### 5.11 Online FDR Risk Budget (Alpha-Investing)
+- Maintain a global false-kill risk budget across time and across repeated scans
+- Spend budget only on extremely strong posterior odds; replenish with confirmed-correct actions
 
 ---
 
@@ -582,8 +683,8 @@ Use the model to interpret the observed snapshot:
 - Quick scan: ps + basic features
 - Deep scan: /proc IO, CPU deltas, wchan, net, children, TTY
 - Optional system tools (auto-install):
-  - Linux: sysstat (pidstat/iostat/mpstat/vmstat/sar), perf, bpftrace/bcc, iotop, nethogs/iftop, lsof
-  - macOS: fs_usage, sample, nettop, powermetrics, dtruss (if permitted), lsof
+  - Linux: sysstat, perf, bpftrace/bcc/bpftool, iotop, nethogs/iftop, lsof, atop, sysdig, smem, numactl/numastat, turbostat/powertop, strace/ltrace, acct/psacct, auditd, pcp
+  - macOS: fs_usage, sample, spindump, nettop, powermetrics, lsof, dtruss (if permitted)
 
 ### Phase 3a: Tooling Install Strategy (Maximal Instrumentation by Default)
 Policy: always try to install everything and collect as much data as possible.
@@ -599,33 +700,48 @@ Linux package managers:
   - strace, ltrace
   - ethtool, iproute2 (ss)
   - conntrack-tools, cgroup-tools
+  - acct, auditd, pcp
+  - gdb, elfutils (eu-stack), binutils
+  - python3-pip + pipx (py-spy), openjdk (async-profiler)
 - Fedora/RHEL (dnf):
   - sysstat, perf, bpftrace, bcc, bpftool, iotop, nethogs, iftop, lsof
   - atop, sysdig, smem, numactl
   - turbostat, powertop
   - strace, ltrace, ethtool, iproute, conntrack-tools, cgroup-tools
+  - psacct, audit, pcp
+  - gdb, elfutils, binutils
+  - python3-pip + pipx (py-spy), java-latest-openjdk (async-profiler)
 - Arch (pacman):
   - sysstat, perf, bpftrace, bcc, bpftool, iotop, nethogs, iftop, lsof
   - atop, sysdig, smem, numactl
   - turbostat, powertop
   - strace, ltrace, ethtool, iproute2, conntrack-tools, cgroup-tools
+  - acct, audit, pcp
+  - gdb, elfutils, binutils
+  - python-pipx (py-spy), jdk-openjdk (async-profiler)
 - Alpine (apk):
   - sysstat, perf, bpftrace, iotop, nethogs, iftop, lsof
   - atop, sysdig, smem, numactl
   - strace, ltrace, iproute2
   - conntrack-tools, cgroup-tools
+  - acct (if available), audit (if available), pcp (if available)
+  - gdb, binutils, elfutils (if available)
+  - py3-pip + pipx (py-spy), openjdk (async-profiler) (if available)
 
 macOS (Homebrew):
 - core utils: lsof, iproute2mac (if needed), htop
 - tracing/metrics: fs_usage, sample, nettop, powermetrics (native tools)
 - if SIP allows: dtruss
- - extra: sysstat (where available), gnu-time
+- extra: sysstat (where available), gnu-time
+- profilers: py-spy, rbspy, async-profiler, flamegraph tools (where available)
+- native extras: spindump, vm_stat, sysctl, log show (system logs)
 
 Install workflow:
 - Detect OS + package manager.
 - Attempt full install; if any package fails, continue installing the rest.
 - Record capabilities in a local cache (what is available vs missing).
 - Prefer richer signals when available (eBPF/perf), but never fail if missing.
+- If a tool is not available via package manager, download pinned upstream binaries (with checksums) into a tools cache and re-run capability detection.
 
 Capability matrix (signal -> tool -> OS support -> fallback):
 - syscalls/IO events: bpftrace/bcc (Linux), dtruss (macOS if permitted) -> fallback: strace
@@ -638,6 +754,10 @@ Capability matrix (signal -> tool -> OS support -> fallback):
 - PSI stall pressure: /proc/pressure/* (Linux) -> fallback: none
 - cgroup pressure: systemd-cgtop/cgget (Linux) -> fallback: /sys/fs/cgroup
 - stack sampling: sample/spindump (macOS), perf/ftrace (Linux) -> fallback: none
+- stack traces (blocking/nonblocking): gdb/pstack/eu-stack (Linux), sample/spindump (macOS) -> fallback: none
+- process accounting history: acct/psacct (Linux) -> fallback: none
+- syscall audit stream: auditd (Linux) -> fallback: strace (limited)
+- systemwide historical TSDB: pcp (Linux) -> fallback: sar (limited)
 
 Data-to-math mapping (signal -> model layer):
 - CPU bursts + syscall spikes -> Hawkes / marked point process intensities
@@ -651,6 +771,13 @@ Data-to-math mapping (signal -> model layer):
 - Network bursts -> Hawkes cross-excitation + copula dependence
 - Distribution drift vs baseline -> Wasserstein distance + large-deviation bounds
 - Rare-event persistence -> martingale concentration bounds
+- Many-PID scan decisions -> FDR / local fdr thresholding
+- Instrumentation budget -> Whittle index / active sensing design
+- Accounting history -> empirical Bayes priors on runtime/CPU distributions
+- auditd/sysdig streams -> marked point processes / Hawkes cross-excitation
+- Extreme spikes -> EVT (POT/GPD) + tail-risk penalties (CVaR)
+- Periodic patterns -> wavelet/spectral features + survival priors
+- Coupled tree inference -> belief propagation (sum-product) on PPID forest
 
 ### Phase 4: Inference Integration
 - Combine evidence to compute P(C|x)
@@ -659,10 +786,21 @@ Data-to-math mapping (signal -> model layer):
 - Add Hawkes / marked point process layers for bursty events
 - Add BOCPD run-length posterior for regime shifts
 - Add robust statistics summaries for noise suppression
+- Add copula dependence modeling, Kalman smoothing, and Wasserstein drift detection
+- Add EVT tail modeling for extreme spikes
+- Add streaming sketches/heavy-hitter summaries for high-rate event streams
+- Add belief propagation for exact coupled-tree inference (PPID forests)
+- Add wavelet/spectral periodicity features
+- Add switching LDS (IMM) for regime-switching dynamics
+- Add Bayesian model averaging over inference submodels
 
 ### Phase 5: Decision Theory
 - Implement expected loss, SPRT threshold, VOI
 - Load-aware threshold via Erlang-C
+- Add FDR-gated kill set selection across many PIDs
+- Add active sensing policy (choose next best measurement per cost)
+- Add Whittle/VOI index policy for budgeted instrumentation
+- Add online FDR/alpha-investing safety budget for repeated scans
 
 ### Phase 6: Action Tray
 - Keep/pause/throttle/kill suggestions
@@ -692,6 +830,13 @@ Data-to-math mapping (signal -> model layer):
 - Calibration tests for empirical Bayes hyperparameters
 - Hawkes/marked point process fit sanity tests
 - BOCPD change-point detection regression tests
+- FDR-gating tests (multiple-process safety)
+- EVT tail-fitting regression tests
+- Sketch/heavy-hitter tests (accuracy vs resource budget)
+- Belief propagation correctness tests on PPID trees
+- Periodicity feature regression tests
+- IMM filter regression tests
+- Online FDR/alpha-investing tests
 
 ---
 
