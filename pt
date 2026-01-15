@@ -72,11 +72,25 @@ declare -A TYPE_LIFETIME=(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Gum Availability
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Gum should only be used in interactive TTY, not in CI
+GUM_AVAILABLE=false
+if [[ "$IS_TTY" == "true" ]] && [[ "$IS_CI" != "true" ]] && command -v gum &>/dev/null; then
+    GUM_AVAILABLE=true
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Dependency Management
 # ══════════════════════════════════════════════════════════════════════════════
 
 ensure_gum() {
-    command -v gum &>/dev/null && return 0
+    # Skip gum install in non-interactive or CI environments
+    if [[ "$IS_TTY" != "true" ]] || [[ "$IS_CI" == "true" ]]; then
+        return 0
+    fi
+    command -v gum &>/dev/null && { GUM_AVAILABLE=true; return 0; }
     echo "Installing gum..."
     if command -v apt-get &>/dev/null; then
         sudo mkdir -p /etc/apt/keyrings 2>/dev/null || true
@@ -91,7 +105,11 @@ ensure_gum() {
         [[ "$arch" == "aarch64" ]] && arch="arm64"
         curl -fsSL "https://github.com/charmbracelet/gum/releases/download/v0.14.1/gum_0.14.1_linux_${arch}.tar.gz" | sudo tar xz -C /usr/local/bin gum
     fi
-    command -v gum &>/dev/null || { echo "Failed to install gum"; exit 1; }
+    if command -v gum &>/dev/null; then
+        GUM_AVAILABLE=true
+    else
+        echo "Failed to install gum (interactive features disabled)"
+    fi
 }
 
 ensure_config() {

@@ -305,7 +305,7 @@ impl CategoryMatcher {
 
             // Production servers
             (CommandCategory::Server, r"(^|[/\s])(gunicorn|uvicorn|nginx|apache|httpd|node\s+server|deno\s+serve|fastify|express)(\s|$)"),
-            (CommandCategory::Server, r"--production|NODE_ENV=production"),
+            (CommandCategory::Server, r"--production|node_env=production"),
 
             // Daemons (broad patterns)
             (CommandCategory::Daemon, r"(^|[/\s])(systemd|cron|crond|sshd|dockerd|containerd|supervisord|pm2|launchd)(\s|$)"),
