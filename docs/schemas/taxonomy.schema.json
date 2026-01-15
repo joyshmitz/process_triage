@@ -252,19 +252,19 @@
           "description": "Typical minimum runtime in seconds"
         },
         "typical_max_seconds": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "minimum": 0,
-          "description": "Typical maximum runtime in seconds (null = long-running)"
+          "description": "Typical maximum runtime in seconds (null = long-running/unbounded)"
         },
         "stale_after_seconds": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "minimum": 0,
-          "description": "When process should be considered potentially stale"
+          "description": "When process should be considered potentially stale (null = never)"
         },
         "suspicious_after_seconds": {
-          "type": "integer",
+          "type": ["integer", "null"],
           "minimum": 0,
-          "description": "When process should be flagged for review"
+          "description": "When process should be flagged for review (null = never)"
         }
       }
     }

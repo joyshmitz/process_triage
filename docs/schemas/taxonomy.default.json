@@ -1,0 +1,525 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Default command and CWD category taxonomy for process triage. Categories are features for Bayesian inference, not final classifications.",
+  "command_categories": {
+    "order": [
+      "test",
+      "devserver",
+      "agent",
+      "build",
+      "editor",
+      "server",
+      "daemon",
+      "database",
+      "shell",
+      "other"
+    ],
+    "default_category": "other",
+    "categories": {
+      "test": {
+        "description": "Test runners and testing frameworks. Typically short-lived, often left running accidentally.",
+        "patterns": [
+          { "type": "contains", "value": "bun test", "field": "cmdline" },
+          { "type": "contains", "value": "jest", "field": "cmdline" },
+          { "type": "contains", "value": "pytest", "field": "cmdline" },
+          { "type": "contains", "value": "mocha", "field": "cmdline" },
+          { "type": "contains", "value": "vitest", "field": "cmdline" },
+          { "type": "contains", "value": "cargo test", "field": "cmdline" },
+          { "type": "contains", "value": "go test", "field": "cmdline" },
+          { "type": "contains", "value": "npm test", "field": "cmdline" },
+          { "type": "contains", "value": "yarn test", "field": "cmdline" },
+          { "type": "contains", "value": "pnpm test", "field": "cmdline" },
+          { "type": "regex", "value": "\\brunner\\b.*test", "field": "cmdline" },
+          { "type": "contains", "value": "rspec", "field": "cmdline" },
+          { "type": "contains", "value": "minitest", "field": "cmdline" },
+          { "type": "contains", "value": "phpunit", "field": "cmdline" },
+          { "type": "contains", "value": "unittest", "field": "cmdline" },
+          { "type": "contains", "value": "nose2", "field": "cmdline" },
+          { "type": "exact", "value": "bats", "field": "comm" }
+        ],
+        "examples": [
+          "bun test --watch",
+          "jest --coverage",
+          "pytest -v tests/",
+          "cargo test --all"
+        ],
+        "prior_adjustments": {
+          "useful_mult": 0.8,
+          "useful_bad_mult": 1.2,
+          "abandoned_mult": 2.0,
+          "zombie_mult": 1.5
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 1,
+          "typical_max_seconds": 3600,
+          "stale_after_seconds": 7200,
+          "suspicious_after_seconds": 14400
+        },
+        "subcategories": {
+          "watch": {
+            "description": "Test watchers that re-run on file changes",
+            "patterns": [
+              { "type": "contains", "value": "--watch", "field": "cmdline" },
+              { "type": "contains", "value": "-w", "field": "cmdline" }
+            ],
+            "examples": ["jest --watch", "vitest --watch"],
+            "typical_lifetime": {
+              "typical_min_seconds": 60,
+              "typical_max_seconds": 86400,
+              "stale_after_seconds": 172800,
+              "suspicious_after_seconds": 259200
+            }
+          }
+        }
+      },
+      "devserver": {
+        "description": "Development servers with hot-reload. Expected to run during development sessions.",
+        "patterns": [
+          { "type": "contains", "value": "next dev", "field": "cmdline" },
+          { "type": "contains", "value": "vite", "field": "cmdline" },
+          { "type": "contains", "value": "webpack serve", "field": "cmdline" },
+          { "type": "contains", "value": "webpack-dev-server", "field": "cmdline" },
+          { "type": "contains", "value": "--hot", "field": "cmdline" },
+          { "type": "contains", "value": "npm run dev", "field": "cmdline" },
+          { "type": "contains", "value": "yarn dev", "field": "cmdline" },
+          { "type": "contains", "value": "pnpm dev", "field": "cmdline" },
+          { "type": "contains", "value": "flask run", "field": "cmdline" },
+          { "type": "contains", "value": "django runserver", "field": "cmdline" },
+          { "type": "contains", "value": "rails server", "field": "cmdline" },
+          { "type": "contains", "value": "rails s", "field": "cmdline" },
+          { "type": "contains", "value": "php artisan serve", "field": "cmdline" },
+          { "type": "contains", "value": "cargo watch", "field": "cmdline" },
+          { "type": "contains", "value": "air", "field": "comm", "comment": "Go live reload" },
+          { "type": "contains", "value": "nodemon", "field": "cmdline" },
+          { "type": "contains", "value": "ts-node-dev", "field": "cmdline" },
+          { "type": "contains", "value": "tsx watch", "field": "cmdline" }
+        ],
+        "examples": [
+          "next dev -p 3000",
+          "vite --port 5173",
+          "flask run --reload",
+          "nodemon server.js"
+        ],
+        "prior_adjustments": {
+          "useful_mult": 0.9,
+          "useful_bad_mult": 1.1,
+          "abandoned_mult": 1.8,
+          "zombie_mult": 1.3
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 60,
+          "typical_max_seconds": 86400,
+          "stale_after_seconds": 172800,
+          "suspicious_after_seconds": 604800
+        }
+      },
+      "agent": {
+        "description": "AI coding agents and assistants. May spawn subprocesses and run for extended periods.",
+        "patterns": [
+          { "type": "contains", "value": "claude", "field": "cmdline" },
+          { "type": "contains", "value": "codex", "field": "cmdline" },
+          { "type": "contains", "value": "copilot", "field": "cmdline" },
+          { "type": "contains", "value": "gemini", "field": "cmdline" },
+          { "type": "contains", "value": "aider", "field": "cmdline" },
+          { "type": "contains", "value": "cursor", "field": "cmdline" },
+          { "type": "contains", "value": "cody", "field": "cmdline" },
+          { "type": "contains", "value": "continue", "field": "cmdline" },
+          { "type": "regex", "value": "\\bgpt\\b", "field": "cmdline" },
+          { "type": "contains", "value": "anthropic", "field": "cmdline" },
+          { "type": "contains", "value": "openai", "field": "cmdline" }
+        ],
+        "examples": [
+          "claude --dangerously-skip-permissions",
+          "aider --model gpt-4",
+          "cursor ."
+        ],
+        "prior_adjustments": {
+          "useful_mult": 1.0,
+          "useful_bad_mult": 0.8,
+          "abandoned_mult": 1.5,
+          "zombie_mult": 1.2
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 60,
+          "typical_max_seconds": 43200,
+          "stale_after_seconds": 86400,
+          "suspicious_after_seconds": 172800
+        }
+      },
+      "build": {
+        "description": "Build tools and compilers. Usually short-lived but can be resource-intensive.",
+        "patterns": [
+          { "type": "contains", "value": "webpack", "field": "cmdline" },
+          { "type": "contains", "value": "esbuild", "field": "cmdline" },
+          { "type": "contains", "value": "rollup", "field": "cmdline" },
+          { "type": "contains", "value": "parcel", "field": "cmdline" },
+          { "type": "contains", "value": "tsc", "field": "cmdline" },
+          { "type": "contains", "value": "typescript", "field": "cmdline" },
+          { "type": "exact", "value": "make", "field": "comm" },
+          { "type": "exact", "value": "cmake", "field": "comm" },
+          { "type": "exact", "value": "ninja", "field": "comm" },
+          { "type": "contains", "value": "cargo build", "field": "cmdline" },
+          { "type": "contains", "value": "go build", "field": "cmdline" },
+          { "type": "exact", "value": "gcc", "field": "comm" },
+          { "type": "exact", "value": "g++", "field": "comm" },
+          { "type": "exact", "value": "clang", "field": "comm" },
+          { "type": "exact", "value": "rustc", "field": "comm" },
+          { "type": "contains", "value": "npm run build", "field": "cmdline" },
+          { "type": "contains", "value": "yarn build", "field": "cmdline" },
+          { "type": "contains", "value": "gradle", "field": "cmdline" },
+          { "type": "contains", "value": "maven", "field": "cmdline" },
+          { "type": "exact", "value": "mvn", "field": "comm" }
+        ],
+        "examples": [
+          "webpack --mode production",
+          "cargo build --release",
+          "tsc --build",
+          "make -j8"
+        ],
+        "prior_adjustments": {
+          "useful_mult": 1.0,
+          "useful_bad_mult": 1.5,
+          "abandoned_mult": 1.3,
+          "zombie_mult": 2.0
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 1,
+          "typical_max_seconds": 1800,
+          "stale_after_seconds": 3600,
+          "suspicious_after_seconds": 7200
+        }
+      },
+      "editor": {
+        "description": "Text editors and IDEs. Long-running by nature.",
+        "patterns": [
+          { "type": "exact", "value": "code", "field": "comm" },
+          { "type": "contains", "value": "code-server", "field": "cmdline" },
+          { "type": "exact", "value": "vim", "field": "comm" },
+          { "type": "exact", "value": "nvim", "field": "comm" },
+          { "type": "exact", "value": "neovim", "field": "comm" },
+          { "type": "exact", "value": "emacs", "field": "comm" },
+          { "type": "exact", "value": "nano", "field": "comm" },
+          { "type": "exact", "value": "sublime_text", "field": "comm" },
+          { "type": "contains", "value": "idea", "field": "cmdline", "comment": "IntelliJ IDEA" },
+          { "type": "contains", "value": "webstorm", "field": "cmdline" },
+          { "type": "contains", "value": "pycharm", "field": "cmdline" },
+          { "type": "contains", "value": "goland", "field": "cmdline" },
+          { "type": "contains", "value": "rubymine", "field": "cmdline" },
+          { "type": "contains", "value": "atom", "field": "cmdline" },
+          { "type": "contains", "value": "zed", "field": "cmdline" },
+          { "type": "exact", "value": "helix", "field": "comm" }
+        ],
+        "examples": [
+          "code .",
+          "nvim src/main.rs",
+          "emacs --daemon"
+        ],
+        "prior_adjustments": {
+          "useful_mult": 1.2,
+          "useful_bad_mult": 0.7,
+          "abandoned_mult": 0.8,
+          "zombie_mult": 0.9
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 60,
+          "typical_max_seconds": null,
+          "stale_after_seconds": 604800,
+          "suspicious_after_seconds": 1209600
+        }
+      },
+      "server": {
+        "description": "Production-style application servers. Expected to be long-running.",
+        "patterns": [
+          { "type": "exact", "value": "nginx", "field": "comm" },
+          { "type": "exact", "value": "apache2", "field": "comm" },
+          { "type": "exact", "value": "httpd", "field": "comm" },
+          { "type": "contains", "value": "gunicorn", "field": "cmdline" },
+          { "type": "contains", "value": "uvicorn", "field": "cmdline" },
+          { "type": "contains", "value": "hypercorn", "field": "cmdline" },
+          { "type": "contains", "value": "puma", "field": "cmdline" },
+          { "type": "contains", "value": "unicorn", "field": "cmdline" },
+          { "type": "exact", "value": "node", "field": "comm" },
+          { "type": "contains", "value": "pm2", "field": "cmdline" },
+          { "type": "contains", "value": "supervisor", "field": "cmdline" },
+          { "type": "contains", "value": "caddy", "field": "cmdline" },
+          { "type": "contains", "value": "traefik", "field": "cmdline" },
+          { "type": "exact", "value": "java", "field": "comm", "weight": 0.5, "comment": "Weak signal without more context" }
+        ],
+        "examples": [
+          "gunicorn app:app -w 4",
+          "uvicorn main:app --host 0.0.0.0",
+          "nginx -g 'daemon off;'"
+        ],
+        "prior_adjustments": {
+          "useful_mult": 1.3,
+          "useful_bad_mult": 0.6,
+          "abandoned_mult": 0.5,
+          "zombie_mult": 0.7
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 60,
+          "typical_max_seconds": null,
+          "stale_after_seconds": null,
+          "suspicious_after_seconds": null
+        }
+      },
+      "daemon": {
+        "description": "System daemons and background services. Protected from aggressive actions.",
+        "patterns": [
+          { "type": "exact", "value": "systemd", "field": "comm" },
+          { "type": "exact", "value": "init", "field": "comm" },
+          { "type": "exact", "value": "launchd", "field": "comm" },
+          { "type": "exact", "value": "cron", "field": "comm" },
+          { "type": "exact", "value": "crond", "field": "comm" },
+          { "type": "exact", "value": "atd", "field": "comm" },
+          { "type": "exact", "value": "sshd", "field": "comm" },
+          { "type": "exact", "value": "dbus-daemon", "field": "comm" },
+          { "type": "exact", "value": "dockerd", "field": "comm" },
+          { "type": "exact", "value": "containerd", "field": "comm" },
+          { "type": "exact", "value": "kubelet", "field": "comm" },
+          { "type": "exact", "value": "journald", "field": "comm" },
+          { "type": "exact", "value": "rsyslogd", "field": "comm" },
+          { "type": "exact", "value": "syslog-ng", "field": "comm" },
+          { "type": "exact", "value": "NetworkManager", "field": "comm" },
+          { "type": "exact", "value": "snapd", "field": "comm" },
+          { "type": "exact", "value": "polkitd", "field": "comm" },
+          { "type": "exact", "value": "udisksd", "field": "comm" },
+          { "type": "exact", "value": "udevd", "field": "comm" },
+          { "type": "regex", "value": "^kworker/", "field": "comm" },
+          { "type": "regex", "value": "^\\[.*\\]$", "field": "comm", "comment": "Kernel threads" }
+        ],
+        "examples": [
+          "systemd --user",
+          "/usr/sbin/sshd -D",
+          "dockerd --host=unix:///var/run/docker.sock"
+        ],
+        "prior_adjustments": {
+          "useful_mult": 1.5,
+          "useful_bad_mult": 0.3,
+          "abandoned_mult": 0.2,
+          "zombie_mult": 0.4
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 60,
+          "typical_max_seconds": null,
+          "stale_after_seconds": null,
+          "suspicious_after_seconds": null
+        }
+      },
+      "database": {
+        "description": "Database servers and clients. Critical infrastructure, handle with care.",
+        "patterns": [
+          { "type": "exact", "value": "postgres", "field": "comm" },
+          { "type": "exact", "value": "mysqld", "field": "comm" },
+          { "type": "exact", "value": "mysql", "field": "comm" },
+          { "type": "exact", "value": "mariadbd", "field": "comm" },
+          { "type": "exact", "value": "mongod", "field": "comm" },
+          { "type": "exact", "value": "redis-server", "field": "comm" },
+          { "type": "exact", "value": "redis-cli", "field": "comm" },
+          { "type": "contains", "value": "elasticsearch", "field": "cmdline" },
+          { "type": "contains", "value": "clickhouse", "field": "cmdline" },
+          { "type": "exact", "value": "sqlite3", "field": "comm" },
+          { "type": "exact", "value": "psql", "field": "comm" },
+          { "type": "contains", "value": "cockroach", "field": "cmdline" },
+          { "type": "contains", "value": "cassandra", "field": "cmdline" },
+          { "type": "exact", "value": "etcd", "field": "comm" },
+          { "type": "exact", "value": "consul", "field": "comm" }
+        ],
+        "examples": [
+          "postgres -D /var/lib/postgresql/data",
+          "redis-server /etc/redis/redis.conf",
+          "mongod --dbpath /data/db"
+        ],
+        "prior_adjustments": {
+          "useful_mult": 1.4,
+          "useful_bad_mult": 0.5,
+          "abandoned_mult": 0.3,
+          "zombie_mult": 0.5
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 60,
+          "typical_max_seconds": null,
+          "stale_after_seconds": null,
+          "suspicious_after_seconds": null
+        }
+      },
+      "shell": {
+        "description": "Interactive shells. Context-dependent: may be legitimate or orphaned.",
+        "patterns": [
+          { "type": "exact", "value": "bash", "field": "comm" },
+          { "type": "exact", "value": "zsh", "field": "comm" },
+          { "type": "exact", "value": "fish", "field": "comm" },
+          { "type": "exact", "value": "sh", "field": "comm" },
+          { "type": "exact", "value": "dash", "field": "comm" },
+          { "type": "exact", "value": "ksh", "field": "comm" },
+          { "type": "exact", "value": "tcsh", "field": "comm" },
+          { "type": "exact", "value": "csh", "field": "comm" },
+          { "type": "exact", "value": "pwsh", "field": "comm" },
+          { "type": "exact", "value": "nu", "field": "comm", "comment": "Nushell" }
+        ],
+        "examples": [
+          "/bin/bash",
+          "zsh -i",
+          "fish --login"
+        ],
+        "prior_adjustments": {
+          "useful_mult": 0.9,
+          "useful_bad_mult": 1.0,
+          "abandoned_mult": 1.2,
+          "zombie_mult": 1.1
+        },
+        "typical_lifetime": {
+          "typical_min_seconds": 1,
+          "typical_max_seconds": 86400,
+          "stale_after_seconds": 172800,
+          "suspicious_after_seconds": 604800
+        }
+      },
+      "other": {
+        "description": "Catch-all for unrecognized commands. Neutral priors.",
+        "patterns": [],
+        "examples": [],
+        "prior_adjustments": {
+          "useful_mult": 1.0,
+          "useful_bad_mult": 1.0,
+          "abandoned_mult": 1.0,
+          "zombie_mult": 1.0
+        }
+      }
+    }
+  },
+  "cwd_categories": {
+    "order": [
+      "project",
+      "temp",
+      "system",
+      "home",
+      "unknown"
+    ],
+    "default_category": "unknown",
+    "categories": {
+      "project": {
+        "description": "User project directories. Processes here are likely development-related.",
+        "patterns": [
+          { "type": "glob", "value": "*/projects/*", "field": "cmdline" },
+          { "type": "glob", "value": "*/workspace/*", "field": "cmdline" },
+          { "type": "glob", "value": "*/repos/*", "field": "cmdline" },
+          { "type": "glob", "value": "*/src/*", "field": "cmdline" },
+          { "type": "glob", "value": "*/code/*", "field": "cmdline" },
+          { "type": "glob", "value": "*/dev/*", "field": "cmdline" },
+          { "type": "glob", "value": "*/github/*", "field": "cmdline" },
+          { "type": "glob", "value": "*/gitlab/*", "field": "cmdline" },
+          { "type": "regex", "value": "/home/[^/]+/[^/]+/.git", "field": "cmdline", "comment": "Git repo in home" },
+          { "type": "contains", "value": "node_modules", "field": "cmdline" },
+          { "type": "contains", "value": "venv", "field": "cmdline" },
+          { "type": "contains", "value": ".venv", "field": "cmdline" },
+          { "type": "contains", "value": "target/debug", "field": "cmdline", "comment": "Rust build" },
+          { "type": "contains", "value": "target/release", "field": "cmdline", "comment": "Rust build" }
+        ],
+        "examples": [
+          "/home/alice/projects/myapp",
+          "/Users/bob/workspace/api",
+          "/data/repos/frontend"
+        ],
+        "trust_level": "user",
+        "prior_adjustments": {
+          "useful_mult": 1.0,
+          "useful_bad_mult": 1.1,
+          "abandoned_mult": 1.3,
+          "zombie_mult": 1.2
+        }
+      },
+      "temp": {
+        "description": "Temporary directories. Processes here are often transient or test-related.",
+        "patterns": [
+          { "type": "prefix", "value": "/tmp", "field": "cmdline" },
+          { "type": "prefix", "value": "/var/tmp", "field": "cmdline" },
+          { "type": "prefix", "value": "/private/tmp", "field": "cmdline", "comment": "macOS" },
+          { "type": "glob", "value": "*/temp/*", "field": "cmdline" },
+          { "type": "glob", "value": "*/tmp/*", "field": "cmdline" },
+          { "type": "regex", "value": "/run/user/\\d+", "field": "cmdline" }
+        ],
+        "examples": [
+          "/tmp/pytest-1234",
+          "/var/tmp/build-output",
+          "/run/user/1000/tmp"
+        ],
+        "trust_level": "temp",
+        "prior_adjustments": {
+          "useful_mult": 0.8,
+          "useful_bad_mult": 1.2,
+          "abandoned_mult": 1.5,
+          "zombie_mult": 1.8
+        }
+      },
+      "system": {
+        "description": "System directories. Processes here are typically system services.",
+        "patterns": [
+          { "type": "prefix", "value": "/usr", "field": "cmdline" },
+          { "type": "prefix", "value": "/var", "field": "cmdline" },
+          { "type": "prefix", "value": "/etc", "field": "cmdline" },
+          { "type": "prefix", "value": "/opt", "field": "cmdline" },
+          { "type": "prefix", "value": "/lib", "field": "cmdline" },
+          { "type": "prefix", "value": "/sbin", "field": "cmdline" },
+          { "type": "prefix", "value": "/bin", "field": "cmdline" },
+          { "type": "prefix", "value": "/System", "field": "cmdline", "comment": "macOS" },
+          { "type": "prefix", "value": "/Library", "field": "cmdline", "comment": "macOS" },
+          { "type": "exact", "value": "/", "field": "cmdline" }
+        ],
+        "examples": [
+          "/usr/lib/systemd",
+          "/var/log",
+          "/etc/nginx"
+        ],
+        "trust_level": "system",
+        "prior_adjustments": {
+          "useful_mult": 1.3,
+          "useful_bad_mult": 0.5,
+          "abandoned_mult": 0.4,
+          "zombie_mult": 0.6
+        }
+      },
+      "home": {
+        "description": "User home directories (not project subdirectories).",
+        "patterns": [
+          { "type": "regex", "value": "^/home/[^/]+/?$", "field": "cmdline" },
+          { "type": "regex", "value": "^/Users/[^/]+/?$", "field": "cmdline", "comment": "macOS" },
+          { "type": "prefix", "value": "~", "field": "cmdline" },
+          { "type": "glob", "value": "/home/*/.config/*", "field": "cmdline" },
+          { "type": "glob", "value": "/home/*/.local/*", "field": "cmdline" },
+          { "type": "glob", "value": "/home/*/.cache/*", "field": "cmdline" }
+        ],
+        "examples": [
+          "/home/alice",
+          "/Users/bob",
+          "/home/charlie/.config/nvim"
+        ],
+        "trust_level": "user",
+        "prior_adjustments": {
+          "useful_mult": 1.0,
+          "useful_bad_mult": 1.0,
+          "abandoned_mult": 1.1,
+          "zombie_mult": 1.0
+        }
+      },
+      "unknown": {
+        "description": "Catch-all for unrecognized working directories.",
+        "patterns": [],
+        "examples": [],
+        "trust_level": "unknown",
+        "prior_adjustments": {
+          "useful_mult": 1.0,
+          "useful_bad_mult": 1.0,
+          "abandoned_mult": 1.0,
+          "zombie_mult": 1.0
+        }
+      }
+    }
+  },
+  "user_extensions": {
+    "command_categories": {},
+    "cwd_categories": {},
+    "command_order_prepend": [],
+    "cwd_order_prepend": []
+  }
+}
