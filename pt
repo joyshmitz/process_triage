@@ -140,14 +140,23 @@ load_decisions_cache() {
     command -v jq &>/dev/null || return 0
     [[ -s "$DECISIONS_FILE" ]] || return 0
 
+    # Read decisions into cache, handling special chars safely
     while IFS=$'\t' read -r key value; do
-        [[ -n "$key" ]] && DECISION_CACHE["$key"]="$value"
-    done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$DECISIONS_FILE" 2>/dev/null)
+        [[ -z "$key" ]] && continue
+        # Disable -u temporarily to safely assign to associative array
+        set +u
+        DECISION_CACHE["$key"]="$value"
+        set -u
+    done < <(jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$DECISIONS_FILE" 2>/dev/null || true)
 }
 
 get_cached_decision() {
     local pattern=$1
-    echo "${DECISION_CACHE[$pattern]:-unknown}"
+    # Temporarily disable -u to safely handle missing keys and special chars
+    set +u
+    local result="${DECISION_CACHE[$pattern]}"
+    set -u
+    echo "${result:-unknown}"
 }
 
 score_process() {
