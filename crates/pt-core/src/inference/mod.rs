@@ -12,9 +12,11 @@ pub mod impact;
 pub mod kalman;
 pub mod ledger;
 pub mod martingale;
+pub mod mpp;
 pub mod posterior;
 pub mod ppc;
 pub mod robust;
+pub mod robust_stats;
 pub mod sketches;
 pub mod wasserstein;
 
@@ -65,6 +67,9 @@ pub use robust::{
     best_case_expected_loss, select_eta_prequential, worst_case_expected_loss, CredalSet,
     RobustConfig, RobustError, RobustEvidence, RobustGate, RobustResult, TemperedPosterior,
 };
+pub use robust_stats::{
+    summarize as summarize_robust_stats, RobustStatsConfig, RobustStatsError, RobustSummary,
+};
 pub use wasserstein::{
     wasserstein_1d, wasserstein_2_squared, AggregatedDriftEvidence, DriftAction, DriftMonitor,
     DriftResult, DriftSeverity, WassersteinConfig, WassersteinDetector, WassersteinError,
@@ -78,6 +83,10 @@ pub use sketches::{
 pub use martingale::{
     BatchMartingaleAnalyzer, BoundParameters, BoundType, MartingaleAnalyzer, MartingaleConfig,
     MartingaleError, MartingaleEvidence, MartingaleResult, MartingaleUpdateResult,
+};
+pub use mpp::{
+    BatchMppAnalyzer, BurstinessLevel, InterArrivalStats, MarkDistribution, MarkedEvent,
+    MarkedPointProcess, MppConfig, MppEvidence, MppSummary,
 };
 #[cfg(target_os = "linux")]
 pub use impact::{
