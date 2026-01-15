@@ -12,6 +12,7 @@ pub mod cli;
 pub mod collect;
 pub mod config;
 pub mod exit_codes;
+pub mod logging;
 
 // Re-export test utilities for integration tests
 #[cfg(test)]
