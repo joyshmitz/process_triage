@@ -45,7 +45,8 @@ teardown() {
 @test "pt robot plan outputs valid JSON" {
     skip_if_no_jq
 
-    run pt robot plan --format json
+    # Use very high min-age to avoid slow process scanning
+    run pt robot plan --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     # Verify JSON is parseable
@@ -56,7 +57,8 @@ teardown() {
 @test "pt robot plan JSON has required fields" {
     skip_if_no_jq
 
-    run pt robot plan --format json
+    # Use very high min-age to avoid slow process scanning
+    run pt robot plan --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     # Check required top-level fields
@@ -67,7 +69,7 @@ teardown() {
 @test "pt robot plan --deep sets deep=true" {
     skip_if_no_jq
 
-    run pt robot plan --deep --format json
+    run pt robot plan --deep --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     local deep_val
@@ -87,14 +89,14 @@ teardown() {
 }
 
 @test "pt robot plan --format md outputs markdown" {
-    run pt robot plan --format md
+    run pt robot plan --min-age 999999999 --format md
     [ "$status" -eq 0 ]
     assert_contains "$output" "# pt robot plan" "markdown should have header"
     assert_contains "$output" "| rec |" "markdown should have table"
 }
 
 @test "pt robot plan --md outputs markdown" {
-    run pt robot plan --md
+    run pt robot plan --min-age 999999999 --md
     [ "$status" -eq 0 ]
     assert_contains "$output" "# pt robot plan" "markdown should have header"
 }
@@ -102,7 +104,7 @@ teardown() {
 @test "pt robot plan --only kill filters to KILL recommendations" {
     skip_if_no_jq
 
-    run pt robot plan --only kill --format json
+    run pt robot plan --only kill --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     # All candidates should be KILL (or empty)
@@ -114,7 +116,7 @@ teardown() {
 @test "pt robot plan --only review filters to REVIEW recommendations" {
     skip_if_no_jq
 
-    run pt robot plan --only review --format json
+    run pt robot plan --only review --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     # All candidates should be REVIEW (or empty)
@@ -126,7 +128,7 @@ teardown() {
 @test "pt robot plan --limit restricts candidate count" {
     skip_if_no_jq
 
-    run pt robot plan --limit 5 --format json
+    run pt robot plan --limit 5 --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     local count
@@ -137,7 +139,7 @@ teardown() {
 @test "pt robot plan system info includes user" {
     skip_if_no_jq
 
-    run pt robot plan --format json
+    run pt robot plan --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     local user
@@ -148,7 +150,7 @@ teardown() {
 @test "pt robot plan summary counts are non-negative" {
     skip_if_no_jq
 
-    run pt robot plan --format json
+    run pt robot plan --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     local candidates kill_count review_count spare_count
@@ -278,7 +280,7 @@ teardown() {
 @test "pt robot plan mode is robot_plan" {
     skip_if_no_jq
 
-    run pt robot plan --format json
+    run pt robot plan --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     local mode
@@ -315,7 +317,7 @@ teardown() {
 @test "pt robot plan generated_at is ISO8601" {
     skip_if_no_jq
 
-    run pt robot plan --format json
+    run pt robot plan --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     local timestamp
@@ -332,7 +334,7 @@ teardown() {
 @test "pt robot plan candidates have complete process info" {
     skip_if_no_jq
 
-    run pt robot plan --format json
+    run pt robot plan --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     local candidate_count
@@ -348,7 +350,7 @@ teardown() {
 @test "pt robot plan preselected matches KILL recommendation" {
     skip_if_no_jq
 
-    run pt robot plan --format json
+    run pt robot plan --min-age 999999999 --format json
     [ "$status" -eq 0 ]
 
     # All KILL recommendations should be preselected=true

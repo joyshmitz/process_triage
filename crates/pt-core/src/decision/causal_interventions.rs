@@ -90,6 +90,20 @@ pub fn apply_outcome(
     updated
 }
 
+/// Apply a batch of outcomes to priors, returning updated priors.
+pub fn apply_outcomes(priors: &Priors, outcomes: &[InterventionOutcome], eta: f64) -> Priors {
+    let mut updated = priors.clone();
+    let Some(interventions) = priors.causal_interventions.as_ref() else {
+        return updated;
+    };
+    let mut current = interventions.clone();
+    for outcome in outcomes {
+        current = apply_outcome(&current, outcome, eta);
+    }
+    updated.causal_interventions = Some(current);
+    updated
+}
+
 /// Get per-class recovery table for an action if configured.
 pub fn recovery_table(priors: &Priors, action: Action) -> Option<RecoveryTable> {
     let interventions = priors.causal_interventions.as_ref()?;
@@ -439,6 +453,65 @@ mod tests {
             .expect("beta");
         assert!((updated_beta.alpha - 2.0).abs() <= 1e-12);
         assert!((updated_beta.beta - 1.0).abs() <= 1e-12);
+    }
+
+    #[test]
+    fn apply_outcomes_updates_priors() {
+        let priors = Priors {
+            schema_version: "1.0.0".to_string(),
+            description: None,
+            created_at: None,
+            updated_at: None,
+            host_profile: None,
+            classes: Classes {
+                useful: default_class(),
+                useful_bad: default_class(),
+                abandoned: default_class(),
+                zombie: default_class(),
+            },
+            hazard_regimes: vec![],
+            semi_markov: None,
+            change_point: None,
+            causal_interventions: Some(CausalInterventions {
+                pause: Some(InterventionPriors {
+                    useful: Some(BetaParams { alpha: 1.0, beta: 1.0 }),
+                    useful_bad: None,
+                    abandoned: None,
+                    zombie: None,
+                }),
+                throttle: None,
+                kill: None,
+                restart: None,
+            }),
+            command_categories: None,
+            state_flags: None,
+            hierarchical: None,
+            robust_bayes: None,
+            error_rate: None,
+            bocpd: None,
+        };
+        let outcomes = vec![
+            InterventionOutcome {
+                action: Action::Pause,
+                class: ProcessClass::Useful,
+                recovered: true,
+                weight: 1.0,
+            },
+            InterventionOutcome {
+                action: Action::Pause,
+                class: ProcessClass::Useful,
+                recovered: false,
+                weight: 1.0,
+            },
+        ];
+        let updated = apply_outcomes(&priors, &outcomes, 1.0);
+        let updated_beta = updated
+            .causal_interventions
+            .and_then(|c| c.pause)
+            .and_then(|p| p.useful)
+            .expect("beta");
+        assert!((updated_beta.alpha - 2.0).abs() <= 1e-12);
+        assert!((updated_beta.beta - 2.0).abs() <= 1e-12);
     }
 
     fn default_class() -> ClassPriors {

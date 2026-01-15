@@ -1,7 +1,7 @@
 //! Test utilities for pt-core.
 //!
 //! This module provides test infrastructure including:
-//! - Test logging with timestamps
+//! - Test logging with structured JSONL output
 //! - Fixture loading helpers
 //! - Common assertions
 //! - Tempdir management
@@ -12,30 +12,6 @@ use std::time::Instant;
 // ============================================================================
 // Macros (must be defined first for use in this module)
 // ============================================================================
-
-/// Log a message to stderr with timestamp (for test output).
-///
-/// This macro writes to stderr so it appears in test output when using
-/// `cargo test -- --nocapture` or when tests fail.
-#[macro_export]
-macro_rules! test_log {
-    ($($arg:tt)*) => {{
-        use std::time::SystemTime;
-        let now = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap_or_default();
-        let secs = now.as_secs() % 86400; // Time of day
-        let hours = secs / 3600;
-        let mins = (secs % 3600) / 60;
-        let secs = secs % 60;
-        let millis = now.subsec_millis();
-        eprintln!(
-            "[{:02}:{:02}:{:02}.{:03}] {}",
-            hours, mins, secs, millis,
-            format!($($arg)*)
-        );
-    }};
-}
 
 /// Assert that a Result is Ok and return the value.
 #[macro_export]
@@ -202,8 +178,8 @@ mod tests {
 
     #[test]
     fn test_log_macro() {
-        test_log!("Test message: {}", 42);
-        test_log!("Another message");
+        crate::test_log!("Test message: {}", 42);
+        crate::test_log!("Another message");
     }
 
     #[test]

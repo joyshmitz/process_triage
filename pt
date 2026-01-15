@@ -481,6 +481,65 @@ check_write_permission() {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Self-update execution
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Perform the actual update: download, verify, validate, replace
+do_update() {
+    local version="$1"
+    local script_path
+
+    # Get path to currently running script
+    script_path=$(get_script_path)
+
+    # Check we can write to target directory
+    if ! check_write_permission "$script_path"; then
+        return 1
+    fi
+
+    # Create temp file IN SAME DIRECTORY (required for atomic mv)
+    local temp_file
+    temp_file=$(mktemp "${script_path}.update.XXXXXX")
+
+    # Cleanup on exit
+    trap 'rm -f "$temp_file" 2>/dev/null' EXIT
+
+    # Download
+    log_step "Downloading pt v${version}..."
+    local download_url="${RELEASES_URL}/download/v${version}/pt"
+    if ! curl -fsSL --connect-timeout 10 --max-time 120 "$download_url" -o "$temp_file"; then
+        log_error "Download failed"
+        log_error "URL: $download_url"
+        return 1
+    fi
+
+    # Verify checksum
+    if ! verify_update_checksum "$temp_file" "$version"; then
+        return 1
+    fi
+
+    # Validate script
+    if ! validate_script "$temp_file"; then
+        log_error "Script validation failed, aborting update"
+        return 1
+    fi
+
+    # Atomic replacement
+    log_step "Installing update..."
+    if ! atomic_replace "$temp_file" "$script_path"; then
+        return 1
+    fi
+
+    log_success "Updated to pt v${version}"
+    log_info "Run 'pt --version' to verify."
+
+    # Clear trap (file was moved, not deleted)
+    trap - EXIT
+
+    return 0
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Gum wrapper functions with ANSI fallback
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -2032,6 +2091,55 @@ cmd_clear() {
     fi
 }
 
+cmd_update() {
+    local check_only=false
+    local force=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --check|-c) check_only=true; shift ;;
+            --force|-f) force=true; shift ;;
+            *) log_error "Unknown option: $1"; return 1 ;;
+        esac
+    done
+
+    log_step "Checking for updates..."
+    local latest
+    latest=$(get_latest_version) || {
+        log_error "Could not check for updates"
+        log_debug "Network error or no releases found"
+        return 1
+    }
+
+    if ! version_gt "$latest" "$VERSION"; then
+        log_success "Already running latest version ($VERSION)"
+        return 0
+    fi
+
+    log_info "Update available: $VERSION → $latest"
+
+    if $check_only; then
+        return 0
+    fi
+
+    if ! $force; then
+        if [[ -t 0 ]]; then
+            printf "Update to v%s? [y/N] " "$latest"
+            local reply
+            read -r reply
+            case "$reply" in
+                [Yy]*) ;;
+                *) log_info "Update cancelled"; return 0 ;;
+            esac
+        else
+            log_error "Run with --force for non-interactive update"
+            return 1
+        fi
+    fi
+
+    do_update "$latest"
+}
+
 cmd_help() {
     cat << 'EOF'
 pt - Process Triage v2.0.0
@@ -2044,6 +2152,9 @@ USAGE
     pt scan deep    Show candidates (deep scan)
     pt history      Show past decisions
     pt clear        Clear decision history
+    pt update       Check for and install updates
+    pt update --check   Check only, don't install
+    pt update --force   Update without confirmation
     pt robot        Agent/robot plan/explain/apply (JSON/MD output)
     pt agent        Alias for pt robot
     pt help         Show this help
@@ -2126,6 +2237,10 @@ main() {
             ensure_gum
             ensure_config
             cmd_clear
+            ;;
+        update)
+            shift
+            cmd_update "$@"
             ;;
         help|-h|--help)
             cmd_help

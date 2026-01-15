@@ -19,4 +19,8 @@ pub use fdr_selection::{
     by_correction_factor, select_fdr, CandidateSelection, FdrCandidate, FdrError, FdrMethod,
     FdrSelectionResult, TargetIdentity,
 };
-pub use causal_interventions::{expected_recovery, recovery_for_class, recovery_table, ProcessClass, RecoveryTable};
+pub use causal_interventions::{
+    apply_outcome, apply_outcomes, expected_recovery, expected_recovery_by_action,
+    expected_recovery_for_action, recovery_for_class, recovery_table, InterventionOutcome,
+    ProcessClass, RecoveryExpectation, RecoveryTable,
+};
