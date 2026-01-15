@@ -1,0 +1,172 @@
+use pt_core::action::{SignalActionRunner};
+use pt_core::action::executor::{ActionRunner};
+use pt_core::plan::{PlanAction, ActionRationale, ActionTimeouts};
+use pt_core::decision::Action as PlanActionType;
+use pt_core::test_utils::ProcessHarness;
+use pt_common::{ProcessId, StartId, IdentityQuality, ProcessIdentity};
+use std::time::Duration;
+
+fn empty_rationale() -> ActionRationale {
+    ActionRationale {
+        expected_loss: None,
+        expected_recovery: None,
+        expected_recovery_stddev: None,
+        posterior_odds_abandoned_vs_useful: None,
+        sprt_boundary: None,
+    }
+}
+
+#[test]
+fn test_signal_kill_real() {
+    if !ProcessHarness::is_available() { return; }
+    let harness = ProcessHarness::default();
+    // Use a long sleep so we have time to kill it
+    let proc = harness.spawn_sleep(60).expect("spawn");
+    let pid = proc.pid();
+
+    // Create a SignalActionRunner
+    let runner = SignalActionRunner::with_defaults();
+
+    // Create a kill action plan
+    let action = PlanAction {
+        action_id: "test-kill".to_string(),
+        action: PlanActionType::Kill,
+        target: ProcessIdentity {
+            pid: ProcessId(pid),
+            start_id: StartId("mock".to_string()),
+            uid: 1000,
+            pgid: None,
+            sid: None,
+            quality: IdentityQuality::Full,
+        },
+        order: 0,
+        stage: 0,
+        timeouts: ActionTimeouts::default(),
+        pre_checks: vec![],
+        rationale: empty_rationale(),
+        on_success: vec![],
+        on_failure: vec![],
+        blocked: false,
+    };
+
+    // Execute kill
+    let result = runner.execute(&action);
+    assert!(result.is_ok(), "kill failed: {:?}", result);
+
+    // Verify process is gone
+    std::thread::sleep(Duration::from_millis(100));
+    
+    // Check if running using signal 0
+    // If it's a zombie, kill(0) returns success (0).
+    // So we should check if verify() succeeds.
+    
+    let verify = runner.verify(&action);
+    assert!(verify.is_ok(), "Verify failed: process still alive/running? {:?}", verify);
+}
+
+#[test]
+fn test_signal_pause_resume_real() {
+    if !ProcessHarness::is_available() { return; }
+    let harness = ProcessHarness::default();
+    let proc = harness.spawn_sleep(60).expect("spawn");
+    let pid = proc.pid();
+
+    let runner = SignalActionRunner::with_defaults();
+
+    let pause_action = PlanAction {
+        action_id: "test-pause".to_string(),
+        action: PlanActionType::Pause,
+        target: ProcessIdentity {
+            pid: ProcessId(pid),
+            start_id: StartId("mock".to_string()),
+            uid: 1000,
+            pgid: None,
+            sid: None,
+            quality: IdentityQuality::Full,
+        },
+        order: 0,
+        stage: 0,
+        timeouts: ActionTimeouts::default(),
+        pre_checks: vec![],
+        rationale: empty_rationale(),
+        on_success: vec![],
+        on_failure: vec![],
+        blocked: false,
+    };
+
+    // Pause
+    let result = runner.execute(&pause_action);
+    assert!(result.is_ok(), "pause failed: {:?}", result);
+
+    // Check state (Linux only)
+    #[cfg(target_os = "linux")]
+    {
+        std::thread::sleep(Duration::from_millis(100));
+        let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid)).unwrap();
+        // State is 3rd field. T = stopped.
+        assert!(stat.contains(") T ") || stat.contains(") t "), "Process should be stopped (T): {}", stat);
+    }
+
+    // Resume
+    let result = runner.resume(pid, false, None);
+    assert!(result.is_ok(), "resume failed: {:?}", result);
+
+    #[cfg(target_os = "linux")]
+    {
+        std::thread::sleep(Duration::from_millis(50));
+        let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid)).unwrap();
+        assert!(stat.contains(") S ") || stat.contains(") R "), "Process should be running (S/R): {}", stat);
+    }
+}
+
+#[test]
+fn test_zombie_verification_real() {
+    if !ProcessHarness::is_available() { return; }
+    let harness = ProcessHarness::default();
+    
+    // Spawn a process that exits immediately -> Zombie
+    let proc = harness.spawn_shell("true").expect("spawn true");
+    let pid = proc.pid();
+    
+    // Wait until it becomes zombie
+    let mut is_zombie = false;
+    for _ in 0..20 {
+        if let Ok(stat) = std::fs::read_to_string(format!("/proc/{}/stat", pid)) {
+            if stat.contains(") Z ") {
+                is_zombie = true;
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    
+    let runner = SignalActionRunner::with_defaults();
+    let action = PlanAction {
+        action_id: "test-kill-zombie".to_string(),
+        action: PlanActionType::Kill, 
+        target: ProcessIdentity {
+            pid: ProcessId(pid),
+            start_id: StartId("mock".to_string()),
+            uid: 1000,
+            pgid: None,
+            sid: None,
+            quality: IdentityQuality::Full,
+        },
+        order: 0,
+        stage: 0,
+        timeouts: ActionTimeouts::default(),
+        pre_checks: vec![],
+        rationale: empty_rationale(),
+        on_success: vec![],
+        on_failure: vec![],
+        blocked: false,
+    };
+
+    // Execute kill on zombie should succeed (no-op or ignored signal)
+    let result = runner.execute(&action);
+    assert!(result.is_ok(), "Kill on zombie failed: {:?}", result);
+    
+    // Verify should succeed (Z count as dead)
+    let result = runner.verify(&action);
+    assert!(result.is_ok(), "Verify on zombie failed: {:?}", result);
+}

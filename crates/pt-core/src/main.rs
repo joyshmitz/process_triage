@@ -10,9 +10,11 @@
 use clap::{Args, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
 use pt_core::config::{load_config, ConfigError, ConfigOptions};
+use pt_core::events::{JsonlWriter, ProgressEmitter};
 use pt_core::exit_codes::ExitCode;
 use pt_core::session::{SessionContext, SessionManifest, SessionMode, SessionState, SessionStore};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 /// Process Triage Core - Intelligent process classification and cleanup
 #[derive(Parser)]
@@ -569,11 +571,19 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
         );
     }
 
+    let progress: Option<Arc<dyn ProgressEmitter>> = match global.format {
+        OutputFormat::Json | OutputFormat::Jsonl => {
+            Some(Arc::new(JsonlWriter::new(std::io::stderr())))
+        }
+        _ => None,
+    };
+
     // Configure scan options
     let options = QuickScanOptions {
         pids: vec![],                  // Empty = all processes
         include_kernel_threads: false, // Default to false for quick scan
         timeout: global.timeout.map(std::time::Duration::from_secs),
+        progress,
     };
 
     // Perform scan

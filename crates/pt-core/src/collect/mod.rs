@@ -33,14 +33,18 @@ pub mod tick_delta;
 pub mod tool_runner;
 mod types;
 
+#[cfg(test)]
+mod real_tests;
+
 #[cfg(target_os = "linux")]
 pub use deep_scan::{
     deep_scan, DeepScanError, DeepScanMetadata, DeepScanOptions, DeepScanRecord, DeepScanResult,
 };
 #[cfg(target_os = "linux")]
 pub use network::{
-    collect_network_info, ListenPort, NetworkInfo, SocketCounts, TcpConnection, TcpState,
-    UdpSocket, UnixSocket, UnixSocketState, UnixSocketType,
+    collect_network_info, parse_proc_net_tcp, parse_proc_net_udp, parse_proc_net_unix, ListenPort,
+    NetworkInfo, SocketCounts, TcpConnection, TcpState, UdpSocket, UnixSocket, UnixSocketState,
+    UnixSocketType,
 };
 #[cfg(target_os = "linux")]
 pub use proc_parsers::{
