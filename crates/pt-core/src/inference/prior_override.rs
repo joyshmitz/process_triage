@@ -280,9 +280,10 @@ pub fn resolve_priors(context: &PriorContext<'_>) -> ResolvedPriors {
     let mut priors = context.global_priors.clone();
     let mut source_info = PriorSourceInfo::default();
 
-    // Apply signature priors if available
+    // Apply signature priors if available (check if priors are not empty)
     if let Some(sig_match) = context.signature_match {
-        if let Some(ref sig_priors) = sig_match.signature.priors {
+        let sig_priors = &sig_match.signature.priors;
+        if !sig_priors.is_empty() {
             let overrides = apply_signature_priors(&mut priors, sig_priors);
 
             if overrides.has_any() {
@@ -291,11 +292,7 @@ pub fn resolve_priors(context: &PriorContext<'_>) -> ResolvedPriors {
                     signature_name: Some(sig_match.signature.name.clone()),
                     match_level: Some(match_level_to_string(&sig_match.level)),
                     match_score: Some(sig_match.score),
-                    category: sig_match
-                        .signature
-                        .category
-                        .as_ref()
-                        .map(|c| format!("{:?}", c)),
+                    category: Some(format!("{:?}", sig_match.signature.category)),
                     applied_overrides: Some(overrides),
                 };
             }
@@ -330,7 +327,7 @@ pub fn compute_posterior_with_overrides(
     evidence: &super::Evidence,
 ) -> Result<(super::PosteriorResult, PriorSourceInfo), super::PosteriorError> {
     let resolved = resolve_priors(context);
-    let result = super::compute_posterior(evidence, &resolved.priors)?;
+    let result = super::compute_posterior(&resolved.priors, evidence)?;
     Ok((result, resolved.source_info))
 }
 
@@ -338,11 +335,29 @@ pub fn compute_posterior_with_overrides(
 mod tests {
     use super::*;
     use crate::config::priors::Priors;
-    use crate::supervision::signature::{MatchDetails, SupervisorSignature};
+    use crate::supervision::signature::{MatchDetails, ProcessExpectations, SignaturePatterns, SupervisorSignature};
     use crate::supervision::SupervisorCategory;
 
     fn default_priors() -> Priors {
         Priors::default()
+    }
+
+    fn make_test_signature(
+        name: &str,
+        category: SupervisorCategory,
+        priors: SignaturePriors,
+    ) -> SupervisorSignature {
+        SupervisorSignature {
+            name: name.to_string(),
+            category,
+            patterns: SignaturePatterns::default(),
+            confidence_weight: 0.9,
+            notes: None,
+            builtin: false,
+            priors,
+            expectations: ProcessExpectations::default(),
+            priority: 0,
+        }
     }
 
     #[test]
@@ -366,21 +381,16 @@ mod tests {
         let original_useful = global.classes.useful.prior_prob;
         let original_zombie = global.classes.zombie.prior_prob;
 
-        let signature = SupervisorSignature {
-            name: "test-process".to_string(),
-            category: Some(SupervisorCategory::Ci),
-            confidence_weight: 0.9,
-            notes: None,
-            patterns: Default::default(),
-            expected_lifetime: None,
-            expected_cpu: None,
-            priors: Some(SignaturePriors {
+        let signature = make_test_signature(
+            "test-process",
+            SupervisorCategory::Ci,
+            SignaturePriors {
                 useful: Some(BetaParams::new(10.0, 1.0)), // mean ~0.91
                 useful_bad: None,
                 abandoned: None,
                 zombie: Some(BetaParams::new(1.0, 10.0)), // mean ~0.09
-            }),
-        };
+            },
+        );
 
         let details = MatchDetails::default();
         let sig_match = SignatureMatch::new(&signature, MatchLevel::CommandOnly, details);
@@ -419,21 +429,16 @@ mod tests {
     fn test_user_overrides_highest_priority() {
         let global = default_priors();
 
-        let signature = SupervisorSignature {
-            name: "test-process".to_string(),
-            category: None,
-            confidence_weight: 0.9,
-            notes: None,
-            patterns: Default::default(),
-            expected_lifetime: None,
-            expected_cpu: None,
-            priors: Some(SignaturePriors {
+        let signature = make_test_signature(
+            "test-process",
+            SupervisorCategory::Agent,
+            SignaturePriors {
                 useful: Some(BetaParams::new(10.0, 1.0)), // mean ~0.91
                 useful_bad: None,
                 abandoned: None,
                 zombie: None,
-            }),
-        };
+            },
+        );
 
         let details = MatchDetails::default();
         let sig_match = SignatureMatch::new(&signature, MatchLevel::ExactCommand, details);
@@ -487,5 +492,30 @@ mod tests {
             match_level_to_string(&MatchLevel::CommandOnly),
             "command_only"
         );
+    }
+
+    #[test]
+    fn test_empty_signature_priors_not_applied() {
+        let global = default_priors();
+
+        // Signature with empty priors
+        let signature = make_test_signature(
+            "empty-priors",
+            SupervisorCategory::Other,
+            SignaturePriors::default(),
+        );
+
+        let details = MatchDetails::default();
+        let sig_match = SignatureMatch::new(&signature, MatchLevel::CommandOnly, details);
+
+        let context = PriorContext {
+            global_priors: &global,
+            signature_match: Some(&sig_match),
+            user_overrides: None,
+        };
+
+        let resolved = resolve_priors(&context);
+        // Should still be Global since no priors were overridden
+        assert_eq!(resolved.source_info.source, PriorSource::Global);
     }
 }

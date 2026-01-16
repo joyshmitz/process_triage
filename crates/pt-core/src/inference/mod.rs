@@ -24,6 +24,7 @@ pub mod martingale;
 pub mod mpp;
 pub mod posterior;
 pub mod ppc;
+pub mod prior_override;
 pub mod robust;
 pub mod robust_stats;
 pub mod sketches;
@@ -120,6 +121,10 @@ pub use posterior::{
 pub use ppc::{
     AggregatedPpcEvidence, BatchPpcChecker, FallbackAction, PpcChecker, PpcConfig, PpcError,
     PpcEvidence, PpcResult, StatisticCheck, TestStatistic,
+};
+pub use prior_override::{
+    compute_posterior_with_overrides, resolve_priors, AppliedOverrides, OverriddenPrior,
+    PriorContext, PriorSource, PriorSourceInfo, ResolvedPriors, UserPriorOverrides,
 };
 pub use robust::{
     best_case_expected_loss, minimax_expected_loss_gate, select_eta_prequential,
