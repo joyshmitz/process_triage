@@ -551,9 +551,16 @@ main() {
     local target
     if target=$(detect_arch); then
         log_step "Downloading pt-core (${target})..."
-        local core_url="${RELEASES_URL}/download/v${version}/pt-core-${target}"
-        if download "$core_url" "$temp_dir/pt-core"; then
-            install_binary "$temp_dir/pt-core" "$dest" "pt-core"
+        local archive_name="pt-core-${target}-${version}.tar.gz"
+        local core_url="${RELEASES_URL}/download/v${version}/${archive_name}"
+        
+        if download "$core_url" "$temp_dir/$archive_name"; then
+            # Extract
+            if tar -xzf "$temp_dir/$archive_name" -C "$temp_dir" pt-core; then
+                install_binary "$temp_dir/pt-core" "$dest" "pt-core"
+            else
+                log_warn "Failed to extract pt-core from archive"
+            fi
         else
             log_warn "Failed to download pt-core binary for $target"
             log_warn "You may need to install Rust and run: cargo install pt-core"
