@@ -17,6 +17,8 @@ use pt_common::{ProcessId, StartId};
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tracing::{debug, span, Level};
@@ -106,6 +108,23 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
         .spawn()
         .map_err(|e| QuickScanError::CommandFailed(e.to_string()))?;
 
+    let pid = child.id();
+    let timeout = options.timeout.unwrap_or(Duration::from_secs(10));
+    let finished = Arc::new(AtomicBool::new(false));
+    let finished_clone = finished.clone();
+
+    // Spawn watchdog thread
+    thread::spawn(move || {
+        thread::sleep(timeout);
+        if !finished_clone.load(Ordering::Relaxed) {
+            debug!("Quick scan timed out, killing ps process {}", pid);
+            #[cfg(unix)]
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
+        }
+    });
+
     let stdout = child
         .stdout
         .take()
@@ -167,6 +186,9 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
             }
         }
     }
+
+    // Mark as finished before waiting, so we don't race with PID reuse
+    finished.store(true, Ordering::Relaxed);
 
     // Wait for child process to avoid leaving zombies
     let _ = child.wait();
