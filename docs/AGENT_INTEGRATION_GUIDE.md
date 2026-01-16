@@ -123,6 +123,19 @@ pt robot apply --pids 1234,5678 --yes --format json
 pt robot explain --pid 1234 --format json
 ```
 
+#### Tail Progress Events (JSONL)
+
+```bash
+# Stream progress events for a session (follow mode)
+pt agent tail --session pt-20260115-143022-a7xq --follow
+```
+
+Progress events are persisted under the session directory:
+
+```
+~/.local/share/process_triage/sessions/<session_id>/logs/session.jsonl
+```
+
 ### 🚧 Planned: Session-Based Workflows
 
 The following session-based workflows are part of the target contract but not yet implemented:
