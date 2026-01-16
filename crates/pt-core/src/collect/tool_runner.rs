@@ -401,7 +401,10 @@ impl ToolRunner {
 
                     handles
                         .into_iter()
-                        .map(|h| h.join().unwrap())
+                        .map(|h| h.join().unwrap_or_else(|_| {
+                            error!("tool execution thread panicked");
+                            Err(ToolError::SpawnFailed("thread panicked".to_string()))
+                        }))
                         .collect::<Vec<_>>()
                 })
             })
