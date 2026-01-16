@@ -1,6 +1,7 @@
 //! Decision theory utilities (expected loss, thresholds, FDR control, policy enforcement).
 
 pub mod alpha_investing;
+pub mod active_sensing;
 pub mod causal_interventions;
 pub mod composite_test;
 pub mod cvar;
@@ -10,12 +11,33 @@ pub mod enforcer;
 pub mod expected_loss;
 pub mod fdr_selection;
 pub mod load_aware;
+pub mod martingale_gates;
 pub mod myopic_policy;
 pub mod robot_constraints;
+pub mod submodular;
+pub mod sequential;
+pub mod time_bound;
 pub mod voi;
 
 pub use alpha_investing::{
     AlphaInvestingPolicy, AlphaInvestingStore, AlphaUpdate, AlphaWealthState,
+};
+pub use active_sensing::{
+    allocate_probes, ActiveSensingError, ActiveSensingPlan, ActiveSensingPolicy, ProbeBudget,
+    ProbeCandidate, ProbeOpportunity,
+};
+pub use martingale_gates::{
+    apply_martingale_gates, fdr_method_from_policy, resolve_alpha, AlphaSource,
+    MartingaleGateCandidate, MartingaleGateConfig, MartingaleGateError, MartingaleGateResult,
+    MartingaleGateSummary,
+};
+pub use time_bound::{
+    apply_time_bound, compute_t_max, resolve_fallback_action, TMaxDecision, TMaxInput,
+    TimeBoundOutcome,
+};
+pub use sequential::{
+    decide_sequential, prioritize_by_esn, EsnCandidate, EsnPriority, SequentialDecision,
+    SequentialLedgerEntry, SequentialError,
 };
 pub use causal_interventions::{
     apply_outcome, apply_outcomes, expected_recovery, expected_recovery_by_action,
@@ -55,6 +77,10 @@ pub use voi::{
 pub use dro::{
     apply_dro_gate, compute_adaptive_epsilon, compute_wasserstein_dro, decide_with_dro,
     is_de_escalation, DroError, DroLoss, DroOutcome, DroTrigger,
+};
+pub use submodular::{
+    coverage_marginal_gain, coverage_utility, greedy_select_k, greedy_select_with_budget,
+    FeatureKey, ProbeProfile, SelectionResult,
 };
 pub use composite_test::{
     glr_bernoulli, mixture_sprt_bernoulli, mixture_sprt_beta_sequential, mixture_sprt_multiclass,

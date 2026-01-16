@@ -84,6 +84,15 @@ impl AlphaInvestingPolicy {
             alpha_earn,
         })
     }
+
+    /// Compute the alpha spend for a given wealth value.
+    pub fn alpha_spend_for_wealth(&self, wealth: f64) -> f64 {
+        if wealth <= 0.0 {
+            return 0.0;
+        }
+        let spend = self.alpha_spend * wealth;
+        spend.min(wealth)
+    }
 }
 
 impl AlphaInvestingStore {
@@ -143,7 +152,7 @@ impl AlphaInvestingStore {
             }
         };
 
-        let alpha_spend = choose_alpha_spend(state.wealth, &policy_cfg);
+        let alpha_spend = policy_cfg.alpha_spend_for_wealth(state.wealth);
         let reward = policy_cfg.alpha_earn * discoveries as f64;
         let next = (state.wealth - alpha_spend + reward).max(0.0);
 
@@ -184,14 +193,6 @@ impl AlphaInvestingStore {
         fs::rename(tmp_path, &self.state_path)?;
         Ok(())
     }
-}
-
-fn choose_alpha_spend(wealth: f64, policy: &AlphaInvestingPolicy) -> f64 {
-    if wealth <= 0.0 {
-        return 0.0;
-    }
-    let spend = policy.alpha_spend * wealth;
-    spend.min(wealth)
 }
 
 enum LockState {
@@ -298,7 +299,7 @@ mod tests {
         let cfg = AlphaInvestingPolicy::from_policy(&policy).expect("policy");
         let update = {
             let wealth_prev = 0.05;
-            let alpha_spend = choose_alpha_spend(wealth_prev, &cfg);
+            let alpha_spend = cfg.alpha_spend_for_wealth(wealth_prev);
             let discoveries = 3u32;
             let reward = cfg.alpha_earn * discoveries as f64;
             let wealth_next = (wealth_prev - alpha_spend + reward).max(0.0);

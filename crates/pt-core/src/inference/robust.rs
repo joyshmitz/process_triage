@@ -907,19 +907,24 @@ pub fn worst_case_expected_loss(
         return f64::INFINITY;
     }
 
-    // Worst case: assign highest probability to highest loss classes
+    // 1. Start with minimum required probability for each class
+    let mut probs: Vec<f64> = credal_sets.iter().map(|c| c.lower).collect();
+    let current_sum: f64 = probs.iter().sum();
+    let mut remaining_prob = (1.0 - current_sum).max(0.0);
+
+    // 2. Sort classes by loss (highest first for worst case)
+    // We store indices to update the correct probabilities
     let mut indexed: Vec<(usize, f64)> =
         loss_row.iter().enumerate().map(|(i, &l)| (i, l)).collect();
     indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let mut worst_loss = 0.0;
-    let mut remaining_prob = 1.0;
-
-    for (idx, loss) in indexed {
+    // 3. Greedily assign remaining probability to highest loss classes
+    // respecting upper bounds
+    for (idx, _) in indexed {
         let credal = &credal_sets[idx];
-        // Assign as much probability as possible to this class
-        let assign = credal.upper.min(remaining_prob);
-        worst_loss += assign * loss;
+        let capacity = credal.upper - credal.lower;
+        let assign = capacity.min(remaining_prob);
+        probs[idx] += assign;
         remaining_prob -= assign;
 
         if remaining_prob <= 1e-10 {
@@ -927,7 +932,12 @@ pub fn worst_case_expected_loss(
         }
     }
 
-    worst_loss
+    // 4. Compute expected loss
+    loss_row
+        .iter()
+        .zip(probs.iter())
+        .map(|(l, p)| l * p)
+        .sum()
 }
 
 /// Compute best-case expected loss over a credal set.
@@ -936,19 +946,22 @@ pub fn best_case_expected_loss(loss_row: &[f64], credal_sets: &[CredalSet]) -> f
         return f64::INFINITY;
     }
 
-    // Best case: assign highest probability to lowest loss classes
+    // 1. Start with minimum required probability for each class
+    let mut probs: Vec<f64> = credal_sets.iter().map(|c| c.lower).collect();
+    let current_sum: f64 = probs.iter().sum();
+    let mut remaining_prob = (1.0 - current_sum).max(0.0);
+
+    // 2. Sort classes by loss (lowest first for best case)
     let mut indexed: Vec<(usize, f64)> =
         loss_row.iter().enumerate().map(|(i, &l)| (i, l)).collect();
     indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
-    let mut best_loss = 0.0;
-    let mut remaining_prob = 1.0;
-
-    for (idx, loss) in indexed {
+    // 3. Greedily assign remaining probability to lowest loss classes
+    for (idx, _) in indexed {
         let credal = &credal_sets[idx];
-        // Assign as much probability as possible to this class
-        let assign = credal.upper.min(remaining_prob);
-        best_loss += assign * loss;
+        let capacity = credal.upper - credal.lower;
+        let assign = capacity.min(remaining_prob);
+        probs[idx] += assign;
         remaining_prob -= assign;
 
         if remaining_prob <= 1e-10 {
@@ -956,7 +969,12 @@ pub fn best_case_expected_loss(loss_row: &[f64], credal_sets: &[CredalSet]) -> f
         }
     }
 
-    best_loss
+    // 4. Compute expected loss
+    loss_row
+        .iter()
+        .zip(probs.iter())
+        .map(|(l, p)| l * p)
+        .sum()
 }
 
 /// Select optimal η using prequential validation.
@@ -1356,9 +1374,9 @@ mod tests {
         // Four classes with varying losses
         let losses = [0.0, 0.3, 0.8, 1.0]; // useful, useful_bad, abandoned, zombie
         let credals = [
-            CredalSet::interval(0.2, 0.6),
-            CredalSet::interval(0.1, 0.3),
-            CredalSet::interval(0.1, 0.4),
+            CredalSet::interval(0.2, 0.5),
+            CredalSet::interval(0.2, 0.4),
+            CredalSet::interval(0.2, 0.4),
             CredalSet::interval(0.0, 0.2),
         ];
         let class_names = ["useful", "useful_bad", "abandoned", "zombie"];
@@ -1473,7 +1491,7 @@ mod tests {
 
         let keep_losses = [0.0, 0.1];
         let kill_losses = [1.0, 0.0];
-        let credals = [CredalSet::interval(0.7, 0.9), CredalSet::interval(0.1, 0.3)];
+        let credals = [CredalSet::interval(0.4, 0.6), CredalSet::interval(0.4, 0.6)];
 
         let action_losses: Vec<(&str, &[f64])> =
             vec![("keep", &keep_losses[..]), ("kill", &kill_losses[..])];

@@ -337,8 +337,8 @@ impl Default for Priors {
                         beta: 1.0,
                     },
                     runtime_gamma: Some(GammaParams {
-                        shape: 2.0,
-                        rate: 0.0001,
+                        shape: 0.8,
+                        rate: 0.000001,
                     }),
                     orphan_beta: BetaParams {
                         alpha: 1.0,
@@ -398,11 +398,11 @@ impl Default for Priors {
                     prior_prob: 0.20,
                     cpu_beta: BetaParams {
                         alpha: 1.0,
-                        beta: 8.0,
+                        beta: 3.0,
                     },
                     runtime_gamma: Some(GammaParams {
-                        shape: 1.0,
-                        rate: 0.00001,
+                        shape: 0.8,
+                        rate: 0.000001,
                     }),
                     orphan_beta: BetaParams {
                         alpha: 6.0,
@@ -428,9 +428,11 @@ impl Default for Priors {
                 },
                 zombie: ClassPriors {
                     prior_prob: 0.05,
+                    // Zombies are detected by state_flag (Z), not CPU alone.
+                    // Beta(1,5) mildly favors low CPU but doesn't dominate abandoned.
                     cpu_beta: BetaParams {
                         alpha: 1.0,
-                        beta: 100.0,
+                        beta: 5.0,
                     },
                     runtime_gamma: Some(GammaParams {
                         shape: 0.5,
@@ -448,9 +450,10 @@ impl Default for Priors {
                         alpha: 1.0,
                         beta: 50.0,
                     },
+                    // io_active Beta(1,10) mildly favors inactive but doesn't dominate.
                     io_active_beta: Some(BetaParams {
                         alpha: 1.0,
-                        beta: 100.0,
+                        beta: 10.0,
                     }),
                     hazard_gamma: Some(GammaParams {
                         shape: 0.5,
@@ -463,7 +466,85 @@ impl Default for Priors {
             semi_markov: None,
             change_point: None,
             causal_interventions: None,
-            command_categories: None,
+            command_categories: Some(CommandCategories {
+                category_names: vec![
+                    "test".to_string(),
+                    "devserver".to_string(),
+                    "agent".to_string(),
+                    "server".to_string(),
+                    "daemon".to_string(),
+                    "build".to_string(),
+                    "editor".to_string(),
+                    "shell".to_string(),
+                    "database".to_string(),
+                    "vcs".to_string(),
+                    "package_manager".to_string(),
+                    "container".to_string(),
+                    "unknown".to_string(),
+                ],
+                useful: Some(DirichletParams {
+                    // High priors for server, daemon, database
+                    // Moderate priors for agent - let evidence signals decide
+                    alpha: vec![
+                        20.0,   // test
+                        50.0,   // devserver
+                        15.0,   // agent (moderate - evidence signals determine outcome)
+                        2000.0, // server (very strong protection)
+                        2000.0, // daemon (very strong protection)
+                        30.0,   // build
+                        40.0,   // editor
+                        10.0,   // shell
+                        80.0,   // database
+                        10.0,   // vcs
+                        10.0,   // package_manager
+                        40.0,   // container
+                        1.0,    // unknown
+                    ],
+                }),
+                useful_bad: Some(DirichletParams {
+                    alpha: vec![
+                        5.0, 10.0, 1.0, 10.0, 5.0, 5.0, 5.0, 5.0, 5.0, 2.0, 2.0, 5.0, 1.0,
+                    ],
+                }),
+                abandoned: Some(DirichletParams {
+                    // Higher priors for shell, editor
+                    // Moderate for agent - let evidence signals decide
+                    // Very low for server, daemon (should never be abandoned)
+                    alpha: vec![
+                        5.0,   // test
+                        10.0,  // devserver
+                        25.0,  // agent (moderate boost - evidence decides)
+                        0.01,  // server (extremely low - servers almost never abandoned)
+                        0.01,  // daemon (extremely low - daemons almost never abandoned)
+                        5.0,   // build
+                        10.0,  // editor
+                        20.0,  // shell
+                        2.0,   // database
+                        2.0,   // vcs
+                        2.0,   // package_manager
+                        5.0,   // container
+                        1.0,   // unknown
+                    ],
+                }),
+                zombie: Some(DirichletParams {
+                    // Low for most categories, extremely low for server/daemon
+                    alpha: vec![
+                        1.0,    // test
+                        1.0,    // devserver
+                        0.5,    // agent (agents don't become zombies easily)
+                        0.001,  // server (essentially never zombies)
+                        0.001,  // daemon (essentially never zombies)
+                        1.0,    // build
+                        1.0,    // editor
+                        1.0,    // shell
+                        1.0,    // database
+                        1.0,    // vcs
+                        1.0,    // package_manager
+                        1.0,    // container
+                        1.0,    // unknown
+                    ],
+                }),
+            }),
             state_flags: Some(StateFlags {
                 flag_names: vec![
                     "R".to_string(),
