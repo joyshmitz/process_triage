@@ -3467,6 +3467,7 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                 category: None,
                 is_kill_action: action.action == Action::Kill,
                 has_policy_snapshot: true,
+                is_supervised: false,
             };
             let check = checker.check_candidate(&candidate);
             if !check.allowed {
@@ -3492,6 +3493,7 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                     category: None,
                     is_kill_action: action.action == Action::Kill,
                     has_policy_snapshot: true,
+                    is_supervised: false,
                 };
                 let check = checker.check_candidate(&candidate);
                 if !check.allowed {
