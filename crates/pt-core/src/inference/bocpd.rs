@@ -136,7 +136,7 @@ fn default_hazard_rate() -> f64 {
 }
 
 fn default_max_run_length() -> usize {
-    200
+    1000
 }
 
 impl Default for BocpdConfig {
@@ -336,10 +336,19 @@ impl SufficientStats {
                 let scale_sq = beta * (kappa + 1.0) / (alpha * kappa);
                 let scale = scale_sq.sqrt();
 
+                if scale <= 0.0 || !scale.is_finite() {
+                    return f64::NEG_INFINITY;
+                }
+
                 // Log PDF of Student-t
                 let z = (x - mu) / scale;
                 let log_gamma_half_nu_plus_half = ln_gamma((nu + 1.0) / 2.0);
                 let log_gamma_half_nu = ln_gamma(nu / 2.0);
+                
+                if !log_gamma_half_nu_plus_half.is_finite() || !log_gamma_half_nu.is_finite() {
+                    return f64::NEG_INFINITY;
+                }
+
                 let log_pdf = log_gamma_half_nu_plus_half
                     - log_gamma_half_nu
                     - 0.5 * (nu * std::f64::consts::PI).ln()
@@ -354,9 +363,22 @@ impl SufficientStats {
                 let p = *beta / (*beta + 1.0);
                 let r = *alpha;
 
+                // Validate inputs for log_pmf
+                if x < 0.0 || r <= 0.0 || p <= 0.0 || p >= 1.0 {
+                    return f64::NEG_INFINITY;
+                }
+
                 // Log PMF of negative binomial
                 // P(x) = C(x+r-1, x) * p^r * (1-p)^x
-                let log_pmf = ln_gamma(x + r) - ln_gamma(x + 1.0) - ln_gamma(r)
+                let term1 = ln_gamma(x + r);
+                let term2 = ln_gamma(x + 1.0);
+                let term3 = ln_gamma(r);
+
+                if !term1.is_finite() || !term2.is_finite() || !term3.is_finite() {
+                    return f64::NEG_INFINITY;
+                }
+
+                let log_pmf = term1 - term2 - term3
                     + r * p.ln()
                     + x * (1.0 - p).ln();
 
@@ -445,6 +467,33 @@ impl BocpdDetector {
 
     /// Update with a new observation.
     pub fn update(&mut self, observation: f64) -> BocpdUpdateResult {
+        // Guard against invalid observations
+        if !observation.is_finite() {
+            // Return current state without update if observation is invalid
+            let posterior: Vec<f64> = self.log_run_length_dist.iter().map(|x| x.exp()).collect();
+            let change_point_probability = posterior.first().copied().unwrap_or(0.0);
+            let map_run_length = posterior
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let expected_run_length: f64 = posterior
+                .iter()
+                .enumerate()
+                .map(|(r, &p)| r as f64 * p)
+                .sum();
+
+            return BocpdUpdateResult {
+                step: self.step,
+                change_point_probability,
+                map_run_length,
+                expected_run_length,
+                log_evidence: self.cum_log_evidence,
+                run_length_posterior: posterior,
+            };
+        }
+
         let h = self.config.hazard_rate;
         let log_h = h.ln();
         let log_1_minus_h = (1.0 - h).ln();
@@ -697,7 +746,11 @@ fn log_sum_exp(xs: &[f64]) -> f64 {
         return f64::NEG_INFINITY;
     }
 
-    let sum_exp: f64 = xs.iter().map(|x| (x - max_x).exp()).sum();
+    let sum_exp: f64 = xs
+        .iter()
+        .map(|x| (x - max_x).exp())
+        .filter(|x| x.is_finite())
+        .sum();
 
     max_x + sum_exp.ln()
 }
