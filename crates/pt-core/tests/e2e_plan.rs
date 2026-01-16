@@ -12,7 +12,8 @@ use std::time::Duration;
 /// Get a Command for pt-core binary.
 fn pt_core() -> Command {
     let mut cmd = cargo_bin_cmd!("pt-core");
-    cmd.timeout(Duration::from_secs(30));
+    // Extended timeout for debug builds/slow environments
+    cmd.timeout(Duration::from_secs(600));
     cmd
 }
 

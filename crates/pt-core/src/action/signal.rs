@@ -320,16 +320,20 @@ impl ActionRunner for SignalActionRunner {
 /// Live identity provider that validates against /proc.
 #[cfg(target_os = "linux")]
 pub struct LiveIdentityProvider {
-    boot_id: String,
+    boot_id: &'static str,
 }
 
 #[cfg(target_os = "linux")]
 impl LiveIdentityProvider {
     pub fn new() -> Self {
-        let boot_id = std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
-            .ok()
-            .map(|s| s.trim().to_string())
-            .unwrap_or_else(|| "unknown".to_string());
+        use std::sync::OnceLock;
+        static BOOT_ID: OnceLock<String> = OnceLock::new();
+        let boot_id = BOOT_ID.get_or_init(|| {
+            std::fs::read_to_string("/proc/sys/kernel/random/boot_id")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .unwrap_or_else(|| "unknown".to_string())
+        });
         Self { boot_id }
     }
 
