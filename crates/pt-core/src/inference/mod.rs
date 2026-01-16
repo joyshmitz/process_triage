@@ -103,8 +103,8 @@ pub use kl_surprisal::{
     KlSurprisalResult, ReferenceClass,
 };
 pub use ledger::{
-    default_glyph_map, get_glyph, BayesFactorEntry, Classification, Confidence, Direction,
-    EvidenceLedger, FeatureGlyph,
+    build_process_explanation, default_glyph_map, get_glyph, BayesFactorEntry, Classification,
+    Confidence, Direction, EvidenceLedger, FeatureGlyph,
 };
 pub use martingale::{
     BatchMartingaleAnalyzer, BoundParameters, BoundType, MartingaleAnalyzer, MartingaleConfig,

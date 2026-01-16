@@ -198,7 +198,7 @@ pub struct ExpectedLoss {
 }
 
 /// SPRT-style boundary information.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SprtBoundary {
     pub log_odds_threshold: f64,
     pub numerator: f64,
@@ -212,6 +212,18 @@ pub struct DecisionRationale {
     pub tie_break: bool,
     pub disabled_actions: Vec<DisabledAction>,
     pub used_recovery_preference: bool,
+    /// Raw posterior scores used for decision (useful for debug/audit).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub posterior: Option<ClassScores>,
+    /// Estimated memory usage (MB) for blast radius context.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory_mb: Option<f64>,
+    /// Whether the decision was influenced by a known signature match.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub has_known_signature: Option<bool>,
+    /// Command category (e.g. "test", "dev") if detected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
 }
 
 /// Decision output for a single candidate.
@@ -291,6 +303,10 @@ pub fn decide_action(
             tie_break,
             disabled_actions: disabled,
             used_recovery_preference: false,
+            posterior: Some(*posterior),
+            memory_mb: None,
+            has_known_signature: None,
+            category: None,
         },
         risk_sensitive: None,
         dro: None,
@@ -367,6 +383,10 @@ pub fn decide_action_with_recovery(
             tie_break,
             disabled_actions: disabled,
             used_recovery_preference,
+            posterior: Some(*posterior),
+            memory_mb: None,
+            has_known_signature: None,
+            category: None,
         },
         risk_sensitive: None,
         dro: None,

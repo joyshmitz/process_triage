@@ -5,7 +5,7 @@
 
 use crate::config::priors::{ClassPriors, CommandCategories, DirichletParams, Priors, StateFlags};
 use pt_math::{log_beta, log_beta_pdf, log_gamma, normalize_log_probs};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Evidence for CPU activity.
@@ -31,7 +31,7 @@ pub struct Evidence {
 }
 
 /// Per-class scores for the 4-state model.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ClassScores {
     pub useful: f64,
     pub useful_bad: f64,

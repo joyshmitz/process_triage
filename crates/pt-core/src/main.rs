@@ -434,6 +434,15 @@ struct AgentExplainArgs {
     what_if: bool,
 }
 
+use pt_core::plan::Plan;
+use pt_core::decision::{RuntimeRobotConstraints, ConstraintChecker, RobotCandidate};
+#[cfg(target_os = "linux")]
+use pt_core::action::{ActionRunner, IdentityProvider, LiveIdentityProvider, SignalActionRunner, SignalConfig};
+
+use pt_core::plan::Plan;
+use pt_core::decision::{RuntimeRobotConstraints, ConstraintChecker, RobotCandidate};
+use pt_core::action::{LiveIdentityProvider, SignalActionRunner, SignalConfig, ActionRunner, IdentityProvider};
+
 #[derive(Args, Debug)]
 struct AgentApplyArgs {
     /// Session ID (required)
@@ -443,6 +452,10 @@ struct AgentApplyArgs {
     /// PIDs to act on (default: all recommended)
     #[arg(long, value_delimiter = ',')]
     pids: Vec<u32>,
+
+    /// Specific targets with identity (pid:start_id)
+    #[arg(long, value_delimiter = ',')]
+    targets: Vec<String>,
 
     /// Skip safety gate confirmations
     #[arg(long)]
@@ -455,6 +468,46 @@ struct AgentApplyArgs {
     /// Only consider processes older than threshold (seconds)
     #[arg(long)]
     min_age: Option<u64>,
+
+    /// Minimum posterior probability required (e.g. 0.99)
+    #[arg(long)]
+    min_posterior: Option<f64>,
+
+    /// Max blast radius per action (MB)
+    #[arg(long)]
+    max_blast_radius: Option<f64>,
+
+    /// Max total blast radius for the run (MB)
+    #[arg(long)]
+    max_total_blast_radius: Option<f64>,
+
+    /// Max kills per run
+    #[arg(long)]
+    max_kills: Option<u32>,
+
+    /// Require known signature match
+    #[arg(long)]
+    require_known_signature: bool,
+
+    /// Only act on specific categories
+    #[arg(long, value_delimiter = ',')]
+    only_categories: Vec<String>,
+
+    /// Exclude specific categories
+    #[arg(long, value_delimiter = ',')]
+    exclude_categories: Vec<String>,
+
+    /// Abort if unknown error/condition
+    #[arg(long)]
+    abort_on_unknown: bool,
+}
+
+fn config_options(global: &GlobalOpts) -> ConfigOptions {
+    ConfigOptions {
+        config_dir: global.config.as_ref().map(PathBuf::from),
+        priors_path: None,
+        policy_path: None,
+    }
 }
 
 #[derive(Args, Debug)]
@@ -3267,7 +3320,7 @@ fn build_process_explanation(
                     "bf": bf.bf,
                     "delta_bits": bf.delta_bits,
                     "direction": format!("{}", bf.direction),
-                    "strength": bf.strength.label(),
+                    "strength": bf.strength.clone(),
                 })
             })
             .collect();
@@ -3305,6 +3358,16 @@ fn state_to_flag(state: pt_core::collect::ProcessState) -> Option<usize> {
 }
 
 fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
+    // Load configuration
+    let config = match load_config(&config_options(global)) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("agent apply: config error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    // Open session store and session
     let store = match SessionStore::from_env() {
         Ok(store) => store,
         Err(e) => {
@@ -3319,17 +3382,203 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
             return ExitCode::ArgsError;
         }
     };
-    if let Err(e) = store.open(&sid) {
-        eprintln!("agent apply: {}", e);
+    let handle = match store.open(&sid) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("agent apply: {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    // Load the plan from decision/plan.json
+    let plan_path = handle.dir.join("decision").join("plan.json");
+    if !plan_path.exists() {
+        eprintln!("agent apply: no plan.json found for session {}", sid);
         return ExitCode::ArgsError;
     }
-    output_stub_with_session(
-        global,
-        &sid,
-        "agent apply",
-        "Agent apply mode not yet implemented",
-    );
-    ExitCode::Clean
+    let plan_content = match std::fs::read_to_string(&plan_path) {
+        Ok(content) => content,
+        Err(e) => {
+            eprintln!("agent apply: failed to read {}: {}", plan_path.display(), e);
+            return ExitCode::IoError;
+        }
+    };
+    let plan: Plan = match serde_json::from_str(&plan_content) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("agent apply: invalid plan.json: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    // Determine which actions to apply
+    let target_pids: Vec<u32> = if args.recommended {
+        plan.actions.iter().filter(|a| !a.blocked).map(|a| a.target.pid.0).collect()
+    } else if !args.pids.is_empty() {
+        args.pids.clone()
+    } else if !args.targets.is_empty() {
+        args.targets.iter().filter_map(|t| t.split(':').next().and_then(|p| p.parse().ok())).collect()
+    } else {
+        eprintln!("agent apply: must specify --recommended, --pids, or --targets");
+        return ExitCode::ArgsError;
+    };
+
+    if target_pids.is_empty() {
+        output_apply_nothing(global, &sid);
+        return ExitCode::Clean;
+    }
+
+    let actions_to_apply: Vec<_> = plan.actions.iter().filter(|a| target_pids.contains(&a.target.pid.0)).collect();
+    if actions_to_apply.is_empty() {
+        output_apply_nothing(global, &sid);
+        return ExitCode::Clean;
+    }
+
+    // Check --yes requirement
+    if !args.yes && !global.dry_run && !global.shadow {
+        let err = serde_json::json!({"session_id": sid.0, "error": "confirmation_required", "message": "--yes flag required for execution"});
+        println!("{}", serde_json::to_string_pretty(&err).unwrap());
+        return ExitCode::PolicyBlocked;
+    }
+
+    // Build robot constraints from policy + CLI overrides
+    let constraints = RuntimeRobotConstraints::from_policy(&config.policy.robot_mode)
+        .with_min_posterior(args.min_posterior)
+        .with_max_blast_radius_mb(args.max_blast_radius)
+        .with_max_total_blast_radius_mb(args.max_total_blast_radius)
+        .with_max_kills(args.max_kills)
+        .with_require_known_signature(if args.require_known_signature { Some(true) } else { None })
+        .with_allow_categories(if args.only_categories.is_empty() { None } else { Some(args.only_categories.clone()) })
+        .with_exclude_categories(args.exclude_categories.clone());
+
+    let checker = ConstraintChecker::new(constraints.clone());
+    let constraints_summary = constraints.active_constraints_summary();
+    let _ = handle.update_state(SessionState::Executing);
+
+    let mut outcomes: Vec<serde_json::Value> = Vec::new();
+    let mut succeeded = 0usize;
+    let mut failed = 0usize;
+    let mut skipped = 0usize;
+    let mut blocked_by_constraints = 0usize;
+
+    // Handle dry-run/shadow mode or execute
+    if global.dry_run || global.shadow {
+        for action in &actions_to_apply {
+            let candidate = RobotCandidate {
+                posterior: action.rationale.posterior_odds_abandoned_vs_useful,
+                memory_mb: None,
+                has_known_signature: false,
+                category: None,
+                is_kill_action: action.action == Action::Kill,
+                has_policy_snapshot: true,
+            };
+            let check = checker.check_candidate(&candidate);
+            if !check.allowed {
+                blocked_by_constraints += 1;
+                outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "blocked_by_constraints"}));
+            } else {
+                skipped += 1;
+                outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": if global.dry_run { "dry_run" } else { "shadow" }}));
+            }
+        }
+    } else {
+        #[cfg(target_os = "linux")]
+        {
+            let identity_provider = LiveIdentityProvider::new();
+            let signal_runner = SignalActionRunner::new(SignalConfig::default());
+
+            for action in &actions_to_apply {
+                let start = std::time::Instant::now();
+                let candidate = RobotCandidate {
+                    posterior: action.rationale.posterior_odds_abandoned_vs_useful,
+                    memory_mb: None,
+                    has_known_signature: false,
+                    category: None,
+                    is_kill_action: action.action == Action::Kill,
+                    has_policy_snapshot: true,
+                };
+                let check = checker.check_candidate(&candidate);
+                if !check.allowed {
+                    blocked_by_constraints += 1;
+                    outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "blocked_by_constraints", "time_ms": start.elapsed().as_millis()}));
+                    if args.abort_on_unknown { break; }
+                    continue;
+                }
+                match identity_provider.revalidate(&action.target) {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        failed += 1;
+                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "identity_mismatch", "time_ms": start.elapsed().as_millis()}));
+                        if args.abort_on_unknown { break; }
+                        continue;
+                    }
+                    Err(_) => {
+                        failed += 1;
+                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "identity_check_failed", "time_ms": start.elapsed().as_millis()}));
+                        if args.abort_on_unknown { break; }
+                        continue;
+                    }
+                }
+                match signal_runner.execute(action) {
+                    Ok(()) => {
+                        if action.action == Action::Kill {
+                            checker.record_action(0, true);
+                        }
+                        succeeded += 1;
+                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "success", "time_ms": start.elapsed().as_millis()}));
+                    }
+                    Err(e) => {
+                        failed += 1;
+                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "failed", "error": format!("{:?}", e), "time_ms": start.elapsed().as_millis()}));
+                        if args.abort_on_unknown { break; }
+                    }
+                }
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            for action in &actions_to_apply {
+                skipped += 1;
+                outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "unsupported_platform"}));
+            }
+        }
+    }
+
+    // Write outcomes
+    let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
+    let _ = std::fs::create_dir_all(handle.dir.join("action"));
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&outcomes_path) {
+        use std::io::Write;
+        for o in &outcomes { let _ = writeln!(file, "{}", o); }
+    }
+
+    let final_state = if failed > 0 { SessionState::Failed } else { SessionState::Completed };
+    let _ = handle.update_state(final_state);
+
+    let result = serde_json::json!({
+        "session_id": sid.0,
+        "mode": "robot_apply",
+        "summary": {"attempted": actions_to_apply.len(), "succeeded": succeeded, "failed": failed, "skipped": skipped, "blocked_by_constraints": blocked_by_constraints},
+        "outcomes": outcomes,
+        "constraints_summary": constraints_summary
+    });
+    match global.format {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result).unwrap()),
+        OutputFormat::Summary => println!("[{}] apply: {} ok, {} fail, {} skip, {} blocked", sid, succeeded, failed, skipped, blocked_by_constraints),
+        _ => println!("# apply\nSession: {}\nSucceeded: {}\nFailed: {}", sid, succeeded, failed),
+    }
+
+    if blocked_by_constraints > 0 && succeeded == 0 && failed == 0 { ExitCode::PolicyBlocked }
+    else if failed > 0 { ExitCode::PartialFail }
+    else { ExitCode::ActionsOk }
+}
+
+fn output_apply_nothing(global: &GlobalOpts, sid: &SessionId) {
+    let result = serde_json::json!({"session_id": sid.0, "mode": "robot_apply", "note": "nothing_to_do", "summary": {"attempted": 0}});
+    match global.format {
+        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result).unwrap()),
+        _ => println!("[{}] apply: nothing to do", sid),
+    }
 }
 
 fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
