@@ -3,6 +3,7 @@
 //! This module provides the evidence collection layer for process triage:
 //! - Quick scan via ps parsing (fast, universal)
 //! - Deep scan via /proc inspection (detailed, Linux-only)
+//! - macOS-specific collection via lsof/launchctl (macOS-only)
 //! - Network connection collection
 //! - Cgroup and resource limit collection
 //! - Systemd unit detection
@@ -11,6 +12,14 @@
 //!
 //! The collection layer produces structured records that feed into the
 //! inference engine for classification.
+//!
+//! # Platform Support
+//! - Linux: Full support via /proc filesystem
+//! - macOS: Collection via BSD tools (ps, lsof, launchctl)
+//!
+//! ## Platform-specific modules
+//! - `deep_scan`: Linux-only, uses /proc
+//! - `macos`: macOS-only, uses BSD tools and SIP detection
 
 #[cfg(target_os = "linux")]
 pub mod cgroup;
@@ -34,6 +43,9 @@ pub mod tool_runner;
 mod types;
 #[cfg(target_os = "linux")]
 pub mod user_intent;
+
+#[cfg(target_os = "macos")]
+pub mod macos;
 
 #[cfg(test)]
 mod real_tests;
@@ -111,4 +123,12 @@ pub use user_intent::{
     collect_user_intent, collect_user_intent_batch, IntentEvidence, IntentMetadata,
     IntentSignalType, PrivacyMode, ScoringMethod, UserIntentConfig, UserIntentFeatures,
     UserIntentProvenance, USER_INTENT_SCHEMA_VERSION,
+};
+
+// Re-export macOS collection types
+#[cfg(target_os = "macos")]
+pub use macos::{
+    collect_environ, collect_lsof_info, detect_launchd_service, detect_sip_status, macos_scan,
+    LaunchdService, MacOsCapabilities, MacOsNetworkConnection, MacOsScanError, MacOsScanMetadata,
+    MacOsScanOptions, MacOsScanRecord, MacOsScanResult, OpenFile, SipStatus,
 };
