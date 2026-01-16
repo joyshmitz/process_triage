@@ -29,8 +29,9 @@ pub use enforcer::{
     ProcessCandidate, ViolationKind,
 };
 pub use expected_loss::{
-    decide_action, decide_action_with_recovery, Action, ActionFeasibility, DecisionError,
-    DecisionOutcome, DecisionRationale, DisabledAction, ExpectedLoss, SprtBoundary,
+    apply_risk_sensitive_control, decide_action, decide_action_with_recovery, Action,
+    ActionFeasibility, DecisionError, DecisionOutcome, DecisionRationale, DisabledAction,
+    ExpectedLoss, SprtBoundary,
 };
 pub use fdr_selection::{
     by_correction_factor, select_fdr, CandidateSelection, FdrCandidate, FdrError, FdrMethod,

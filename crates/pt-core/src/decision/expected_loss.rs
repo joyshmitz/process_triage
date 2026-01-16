@@ -3,6 +3,7 @@
 use crate::config::policy::{LossMatrix, LossRow, Policy};
 use crate::config::priors::Priors;
 use crate::decision::causal_interventions::{expected_recovery_by_action, RecoveryExpectation};
+use crate::decision::cvar::{decide_with_cvar, CvarTrigger, RiskSensitiveOutcome};
 use crate::inference::ClassScores;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -221,6 +222,9 @@ pub struct DecisionOutcome {
     pub posterior_odds_abandoned_vs_useful: Option<f64>,
     pub recovery_expectations: Option<Vec<RecoveryExpectation>>,
     pub rationale: DecisionRationale,
+    /// Risk-sensitive (CVaR) decision information, if applied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_sensitive: Option<RiskSensitiveOutcome>,
 }
 
 /// Errors raised during decisioning.
@@ -284,6 +288,7 @@ pub fn decide_action(
             disabled_actions: disabled,
             used_recovery_preference: false,
         },
+        risk_sensitive: None,
     })
 }
 
@@ -358,7 +363,96 @@ pub fn decide_action_with_recovery(
             disabled_actions: disabled,
             used_recovery_preference,
         },
+        risk_sensitive: None,
     })
+}
+
+/// Apply risk-sensitive (CVaR) adjustment to a decision outcome.
+///
+/// This function takes an existing decision and applies CVaR-based
+/// risk-sensitive control when trigger conditions are met.
+///
+/// # Arguments
+/// * `outcome` - The base decision outcome (from decide_action or decide_action_with_recovery)
+/// * `posterior` - Class probabilities
+/// * `policy` - Policy containing loss matrix
+/// * `trigger` - Conditions that determine whether CVaR should be applied
+/// * `alpha` - CVaR confidence level (e.g., 0.95 for worst 5% tail)
+///
+/// # Returns
+/// The decision outcome with risk_sensitive field populated if CVaR was applied.
+pub fn apply_risk_sensitive_control(
+    mut outcome: DecisionOutcome,
+    posterior: &ClassScores,
+    policy: &Policy,
+    trigger: &CvarTrigger,
+    alpha: f64,
+) -> DecisionOutcome {
+    if !trigger.should_apply() {
+        outcome.risk_sensitive = Some(RiskSensitiveOutcome {
+            applied: false,
+            reason: "no_trigger".to_string(),
+            original_action: outcome.optimal_action,
+            risk_adjusted_action: outcome.optimal_action,
+            cvar_losses: vec![],
+            alpha,
+            action_changed: false,
+        });
+        return outcome;
+    }
+
+    // Get feasible actions from the expected loss results
+    let feasible_actions: Vec<Action> = outcome
+        .expected_loss
+        .iter()
+        .map(|e| e.action)
+        .collect();
+
+    if feasible_actions.is_empty() {
+        outcome.risk_sensitive = Some(RiskSensitiveOutcome {
+            applied: false,
+            reason: "no_feasible_actions".to_string(),
+            original_action: outcome.optimal_action,
+            risk_adjusted_action: outcome.optimal_action,
+            cvar_losses: vec![],
+            alpha,
+            action_changed: false,
+        });
+        return outcome;
+    }
+
+    // Compute CVaR for all feasible actions
+    match decide_with_cvar(
+        posterior,
+        policy,
+        &feasible_actions,
+        alpha,
+        outcome.optimal_action,
+        &trigger.reason(),
+    ) {
+        Ok(risk_outcome) => {
+            // Update optimal action if CVaR recommends a different one
+            if risk_outcome.action_changed {
+                outcome.optimal_action = risk_outcome.risk_adjusted_action;
+                outcome.rationale.chosen_action = risk_outcome.risk_adjusted_action;
+            }
+            outcome.risk_sensitive = Some(risk_outcome);
+        }
+        Err(_) => {
+            // CVaR computation failed, keep original decision
+            outcome.risk_sensitive = Some(RiskSensitiveOutcome {
+                applied: false,
+                reason: "cvar_computation_failed".to_string(),
+                original_action: outcome.optimal_action,
+                risk_adjusted_action: outcome.optimal_action,
+                cvar_losses: vec![],
+                alpha,
+                action_changed: false,
+            });
+        }
+    }
+
+    outcome
 }
 
 fn validate_posterior(posterior: &ClassScores) -> Result<(), DecisionError> {

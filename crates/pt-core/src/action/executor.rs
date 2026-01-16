@@ -327,6 +327,7 @@ mod tests {
                 disabled_actions: vec![],
                 used_recovery_preference: false,
             },
+            risk_sensitive: None,
         };
         let bundle = DecisionBundle {
             session_id: SessionId("pt-20260115-120000-abcd".to_string()),
