@@ -491,11 +491,7 @@ impl KlSurprisalAnalyzer {
     ///
     /// # Returns
     /// KL divergence in nats (natural log base).
-    pub fn kl_divergence_bernoulli(
-        &self,
-        p: f64,
-        q: f64,
-    ) -> Result<f64, KlSurprisalError> {
+    pub fn kl_divergence_bernoulli(&self, p: f64, q: f64) -> Result<f64, KlSurprisalError> {
         if q <= 0.0 || q >= 1.0 {
             return Err(KlSurprisalError::InvalidReferenceProbability { value: q });
         }
@@ -504,11 +500,7 @@ impl KlSurprisalAnalyzer {
         let p = p.clamp(min_p, 1.0 - min_p);
 
         // D_KL(p || q) = p * ln(p/q) + (1-p) * ln((1-p)/(1-q))
-        let term1 = if p > min_p {
-            p * (p / q).ln()
-        } else {
-            0.0
-        };
+        let term1 = if p > min_p { p * (p / q).ln() } else { 0.0 };
 
         let term2 = if (1.0 - p) > min_p {
             (1.0 - p) * ((1.0 - p) / (1.0 - q)).ln()
@@ -520,7 +512,10 @@ impl KlSurprisalAnalyzer {
 
         if !kl.is_finite() {
             return Err(KlSurprisalError::NumericalError {
-                details: format!("KL computation produced non-finite result: p={}, q={}", p, q),
+                details: format!(
+                    "KL computation produced non-finite result: p={}, q={}",
+                    p, q
+                ),
             });
         }
 
@@ -829,8 +824,9 @@ pub fn kl_divergence_discrete(p: &[f64], q: &[f64]) -> Result<f64, KlSurprisalEr
         if pi > min_prob {
             if qi <= 0.0 {
                 return Err(KlSurprisalError::NumericalError {
-                    details: "Reference distribution has zero probability where observed is nonzero"
-                        .to_string(),
+                    details:
+                        "Reference distribution has zero probability where observed is nonzero"
+                            .to_string(),
                 });
             }
             kl += pi * (pi / qi.max(min_prob)).ln();
@@ -898,7 +894,10 @@ mod tests {
         }
 
         let result = analyzer.analyze(0.5);
-        assert!(matches!(result, Err(KlSurprisalError::InsufficientData { .. })));
+        assert!(matches!(
+            result,
+            Err(KlSurprisalError::InsufficientData { .. })
+        ));
     }
 
     #[test]
@@ -918,7 +917,10 @@ mod tests {
     fn test_kl_divergence_same_distribution() {
         let analyzer = KlSurprisalAnalyzer::default();
         let kl = analyzer.kl_divergence_bernoulli(0.5, 0.5).unwrap();
-        assert!(kl < 1e-10, "KL divergence should be ~0 for identical distributions");
+        assert!(
+            kl < 1e-10,
+            "KL divergence should be ~0 for identical distributions"
+        );
     }
 
     #[test]
@@ -927,7 +929,10 @@ mod tests {
 
         // D_KL(0.8 || 0.5) should be positive
         let kl = analyzer.kl_divergence_bernoulli(0.8, 0.5).unwrap();
-        assert!(kl > 0.0, "KL divergence should be positive for different distributions");
+        assert!(
+            kl > 0.0,
+            "KL divergence should be positive for different distributions"
+        );
 
         // Known analytical value:
         // D_KL(0.8 || 0.5) = 0.8 * ln(0.8/0.5) + 0.2 * ln(0.2/0.5)
@@ -964,7 +969,13 @@ mod tests {
         for p in [0.1, 0.3, 0.5, 0.7, 0.9] {
             for q in [0.1, 0.3, 0.5, 0.7, 0.9] {
                 let kl = analyzer.kl_divergence_bernoulli(p, q).unwrap();
-                assert!(kl >= 0.0, "KL divergence must be non-negative: p={}, q={}, kl={}", p, q, kl);
+                assert!(
+                    kl >= 0.0,
+                    "KL divergence must be non-negative: p={}, q={}, kl={}",
+                    p,
+                    q,
+                    kl
+                );
             }
         }
     }
@@ -979,7 +990,10 @@ mod tests {
         }
 
         let result = analyzer.analyze(0.5).unwrap();
-        assert!(result.kl_divergence < 0.01, "KL should be small when rates match");
+        assert!(
+            result.kl_divergence < 0.01,
+            "KL should be small when rates match"
+        );
         assert!(!result.is_abnormal);
         assert_eq!(result.severity, AbnormalitySeverity::Normal);
     }
@@ -998,7 +1012,10 @@ mod tests {
 
         // Reference rate 30%
         let result = analyzer.analyze(0.3).unwrap();
-        assert!(result.kl_divergence > 0.5, "KL should be large for significant deviation");
+        assert!(
+            result.kl_divergence > 0.5,
+            "KL should be large for significant deviation"
+        );
         assert!(result.is_abnormal);
         assert!(result.severity >= AbnormalitySeverity::Moderate);
         assert_eq!(result.direction, DeviationDirection::Higher);
@@ -1086,7 +1103,10 @@ mod tests {
 
         // Effective rate should be biased toward successes
         let result = analyzer.analyze(0.5).unwrap();
-        assert!(result.observed_rate > 0.7, "Weighted rate should favor high-weight successes");
+        assert!(
+            result.observed_rate > 0.7,
+            "Weighted rate should favor high-weight successes"
+        );
     }
 
     #[test]
@@ -1161,20 +1181,50 @@ mod tests {
 
     #[test]
     fn test_severity_from_kl() {
-        assert_eq!(AbnormalitySeverity::from_kl_divergence(0.05), AbnormalitySeverity::Normal);
-        assert_eq!(AbnormalitySeverity::from_kl_divergence(0.2), AbnormalitySeverity::Mild);
-        assert_eq!(AbnormalitySeverity::from_kl_divergence(0.5), AbnormalitySeverity::Moderate);
-        assert_eq!(AbnormalitySeverity::from_kl_divergence(1.0), AbnormalitySeverity::Severe);
-        assert_eq!(AbnormalitySeverity::from_kl_divergence(2.0), AbnormalitySeverity::Critical);
+        assert_eq!(
+            AbnormalitySeverity::from_kl_divergence(0.05),
+            AbnormalitySeverity::Normal
+        );
+        assert_eq!(
+            AbnormalitySeverity::from_kl_divergence(0.2),
+            AbnormalitySeverity::Mild
+        );
+        assert_eq!(
+            AbnormalitySeverity::from_kl_divergence(0.5),
+            AbnormalitySeverity::Moderate
+        );
+        assert_eq!(
+            AbnormalitySeverity::from_kl_divergence(1.0),
+            AbnormalitySeverity::Severe
+        );
+        assert_eq!(
+            AbnormalitySeverity::from_kl_divergence(2.0),
+            AbnormalitySeverity::Critical
+        );
     }
 
     #[test]
     fn test_severity_from_tail_bound() {
-        assert_eq!(AbnormalitySeverity::from_tail_bound(0.5), AbnormalitySeverity::Normal);
-        assert_eq!(AbnormalitySeverity::from_tail_bound(0.05), AbnormalitySeverity::Mild);
-        assert_eq!(AbnormalitySeverity::from_tail_bound(0.005), AbnormalitySeverity::Moderate);
-        assert_eq!(AbnormalitySeverity::from_tail_bound(0.0005), AbnormalitySeverity::Severe);
-        assert_eq!(AbnormalitySeverity::from_tail_bound(0.00005), AbnormalitySeverity::Critical);
+        assert_eq!(
+            AbnormalitySeverity::from_tail_bound(0.5),
+            AbnormalitySeverity::Normal
+        );
+        assert_eq!(
+            AbnormalitySeverity::from_tail_bound(0.05),
+            AbnormalitySeverity::Mild
+        );
+        assert_eq!(
+            AbnormalitySeverity::from_tail_bound(0.005),
+            AbnormalitySeverity::Moderate
+        );
+        assert_eq!(
+            AbnormalitySeverity::from_tail_bound(0.0005),
+            AbnormalitySeverity::Severe
+        );
+        assert_eq!(
+            AbnormalitySeverity::from_tail_bound(0.00005),
+            AbnormalitySeverity::Critical
+        );
     }
 
     #[test]

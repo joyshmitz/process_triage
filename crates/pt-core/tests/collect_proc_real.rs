@@ -11,8 +11,10 @@ fn test_proc_io_real() {
     }
     let harness = ProcessHarness::default();
     // Spawn a process that does IO (echo)
-    let proc = harness.spawn_shell("echo hello > /dev/null").expect("spawn");
-    
+    let proc = harness
+        .spawn_shell("echo hello > /dev/null")
+        .expect("spawn");
+
     // Give it time to run
     std::thread::sleep(std::time::Duration::from_millis(50));
 
@@ -21,7 +23,7 @@ fn test_proc_io_real() {
         // On Linux, parse_io should return something or None (if permissions)
         let io = collect::parse_io(proc.pid());
         if let Some(stats) = io {
-            // It might be 0 if the kernel hasn't flushed stats or if echo was too fast, 
+            // It might be 0 if the kernel hasn't flushed stats or if echo was too fast,
             // but the call shouldn't panic.
             // Also depends on if we can read /proc/<pid>/io (requires ptrace usually).
             // If we spawned it, we own it, so we should be able to read it.
@@ -34,10 +36,12 @@ fn test_proc_io_real() {
 
 #[test]
 fn test_proc_schedstat_real() {
-    if !ProcessHarness::is_available() { return; }
+    if !ProcessHarness::is_available() {
+        return;
+    }
     let harness = ProcessHarness::default();
     let proc = harness.spawn_busy().expect("spawn busy");
-    
+
     std::thread::sleep(std::time::Duration::from_millis(100));
 
     #[cfg(target_os = "linux")]
@@ -52,7 +56,9 @@ fn test_proc_schedstat_real() {
 
 #[test]
 fn test_proc_fd_real() {
-    if !ProcessHarness::is_available() { return; }
+    if !ProcessHarness::is_available() {
+        return;
+    }
     let harness = ProcessHarness::default();
     // Spawn sleep; stdio are /dev/null (devices)
     let proc = harness.spawn_sleep(10).expect("spawn");
@@ -72,7 +78,9 @@ fn test_proc_fd_real() {
 
 #[test]
 fn test_proc_statm_real() {
-    if !ProcessHarness::is_available() { return; }
+    if !ProcessHarness::is_available() {
+        return;
+    }
     let harness = ProcessHarness::default();
     let proc = harness.spawn_sleep(1).expect("spawn");
 

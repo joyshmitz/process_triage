@@ -361,7 +361,8 @@ impl TmuxInfo {
 #[cfg(target_os = "linux")]
 pub fn detect_tmux_session(pid: u32) -> Option<TmuxInfo> {
     let env = read_environ(pid).ok()?;
-    env.get("TMUX").and_then(|v| TmuxInfo::from_tmux_env(v.as_str()))
+    env.get("TMUX")
+        .and_then(|v| TmuxInfo::from_tmux_env(v.as_str()))
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -406,7 +407,8 @@ impl ScreenInfo {
 #[cfg(target_os = "linux")]
 pub fn detect_screen_session(pid: u32) -> Option<ScreenInfo> {
     let env = read_environ(pid).ok()?;
-    env.get("STY").and_then(|v| ScreenInfo::from_sty_env(v.as_str()))
+    env.get("STY")
+        .and_then(|v| ScreenInfo::from_sty_env(v.as_str()))
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -540,10 +542,17 @@ impl SessionAnalyzer {
             protection_types.push(SessionProtectionType::SessionLeader);
             evidence.push(SessionEvidence {
                 protection_type: SessionProtectionType::SessionLeader,
-                description: format!("PID {} is session leader (SID={})", target_pid, target_stat.session),
+                description: format!(
+                    "PID {} is session leader (SID={})",
+                    target_pid, target_stat.session
+                ),
                 weight: 1.0,
             });
-            debug!(target_pid, session = target_stat.session, "target is session leader");
+            debug!(
+                target_pid,
+                session = target_stat.session,
+                "target is session leader"
+            );
         }
 
         // Check 2: Same session as pt?
@@ -557,7 +566,11 @@ impl SessionAnalyzer {
                 ),
                 weight: 0.95,
             });
-            debug!(target_pid, session = pt_stat.session, "target in same session as pt");
+            debug!(
+                target_pid,
+                session = pt_stat.session,
+                "target in same session as pt"
+            );
         }
 
         // Check 3: Parent shell of pt?
@@ -721,7 +734,11 @@ impl SessionAnalyzer {
                         ),
                         weight: 0.9,
                     });
-                    debug!(target_pid, pgid = pt_stat.tpgid, "target in pt's foreground group");
+                    debug!(
+                        target_pid,
+                        pgid = pt_stat.tpgid,
+                        "target in pt's foreground group"
+                    );
                 }
             }
         }
@@ -741,7 +758,8 @@ impl SessionAnalyzer {
             SessionResult::not_protected()
         };
 
-        result = result.with_session_info(target_stat.session, target_stat.pgrp, target_stat.tty_nr);
+        result =
+            result.with_session_info(target_stat.session, target_stat.pgrp, target_stat.tty_nr);
 
         Ok(result)
     }
@@ -801,7 +819,9 @@ impl Default for SessionAnalyzer {
 /// Convenience function for quick session safety check.
 pub fn is_in_protected_session(target_pid: u32, pt_pid: u32) -> SessionResult {
     let mut analyzer = SessionAnalyzer::new();
-    analyzer.analyze(target_pid, pt_pid).unwrap_or_else(|_| SessionResult::not_protected())
+    analyzer
+        .analyze(target_pid, pt_pid)
+        .unwrap_or_else(|_| SessionResult::not_protected())
 }
 
 /// Check if a process is protected from being killed.

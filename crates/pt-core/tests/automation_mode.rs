@@ -94,8 +94,8 @@ mod robot_mode {
             .stdout
             .clone();
 
-        let json: Value =
-            serde_json::from_slice(&output).expect("Robot mode agent plan should produce valid JSON");
+        let json: Value = serde_json::from_slice(&output)
+            .expect("Robot mode agent plan should produce valid JSON");
         assert!(json.get("session_id").is_some());
     }
 

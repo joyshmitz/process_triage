@@ -222,7 +222,9 @@ impl LockGuard {
                         // Try to remove stale lock and acquire
                         match fs::remove_file(path) {
                             Ok(_) => Self::acquire(path),
-                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::acquire(path),
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                                Self::acquire(path)
+                            }
                             Err(_) => Err(AlphaInvestingError::LockUnavailable),
                         }
                     }
@@ -257,9 +259,9 @@ impl LockGuard {
                         // Check error: ESRCH = no such process, EPERM = exists but no permission
                         let err = std::io::Error::last_os_error();
                         match err.raw_os_error() {
-                            Some(code) if code == libc::ESRCH => LockState::Stale,  // Process dead
+                            Some(code) if code == libc::ESRCH => LockState::Stale, // Process dead
                             Some(code) if code == libc::EPERM => LockState::Valid, // Process alive
-                            _ => LockState::Stale,                                  // Unknown error
+                            _ => LockState::Stale,                                 // Unknown error
                         }
                     }
                     #[cfg(not(unix))]

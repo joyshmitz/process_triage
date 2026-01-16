@@ -219,23 +219,23 @@ impl BocpdConfig {
 #[derive(Debug, Clone)]
 enum SufficientStats {
     NormalGamma {
-        n: f64,        // count
-        sum_x: f64,    // sum of observations
-        sum_x2: f64,   // sum of squared observations
-        kappa: f64,    // updated kappa
-        mu: f64,       // updated mu
-        alpha: f64,    // updated alpha
-        beta: f64,     // updated beta
+        n: f64,      // count
+        sum_x: f64,  // sum of observations
+        sum_x2: f64, // sum of squared observations
+        kappa: f64,  // updated kappa
+        mu: f64,     // updated mu
+        alpha: f64,  // updated alpha
+        beta: f64,   // updated beta
     },
     PoissonGamma {
-        n: f64,        // count
-        sum_x: f64,    // sum of counts
-        alpha: f64,    // updated alpha
-        beta: f64,     // updated beta
+        n: f64,     // count
+        sum_x: f64, // sum of counts
+        alpha: f64, // updated alpha
+        beta: f64,  // updated beta
     },
     BetaBernoulli {
-        alpha: f64,    // updated alpha (successes + prior)
-        beta: f64,     // updated beta (failures + prior)
+        alpha: f64, // updated alpha (successes + prior)
+        beta: f64,  // updated beta (failures + prior)
     },
 }
 
@@ -281,7 +281,7 @@ impl SufficientStats {
                 // We update parameters directly from the previous posterior state.
                 let x_minus_mu = x - *mu;
                 let kappa_n = *kappa + 1.0;
-                
+
                 let mu_n = (*kappa * *mu + x) / kappa_n;
                 let alpha_n = *alpha + 0.5;
                 let beta_n = *beta + (*kappa * x_minus_mu * x_minus_mu) / (2.0 * kappa_n);
@@ -305,7 +305,7 @@ impl SufficientStats {
                 // Conjugate update for Poisson-Gamma
                 *n += 1.0;
                 *sum_x += x;
-                *alpha += x;  // Add count to shape
+                *alpha += x; // Add count to shape
                 *beta += 1.0; // Add one observation to rate
             }
             SufficientStats::BetaBernoulli { alpha, beta } => {
@@ -324,7 +324,11 @@ impl SufficientStats {
     fn log_predictive(&self, x: f64) -> f64 {
         match self {
             SufficientStats::NormalGamma {
-                kappa, mu, alpha, beta, ..
+                kappa,
+                mu,
+                alpha,
+                beta,
+                ..
             } => {
                 // Student-t predictive distribution
                 // x | data ~ Student-t(2*alpha, mu, beta*(kappa+1)/(alpha*kappa))
@@ -352,9 +356,7 @@ impl SufficientStats {
 
                 // Log PMF of negative binomial
                 // P(x) = C(x+r-1, x) * p^r * (1-p)^x
-                let log_pmf = ln_gamma(x + r)
-                    - ln_gamma(x + 1.0)
-                    - ln_gamma(r)
+                let log_pmf = ln_gamma(x + r) - ln_gamma(x + 1.0) - ln_gamma(r)
                     + r * p.ln()
                     + x * (1.0 - p).ln();
 
@@ -554,10 +556,7 @@ impl BocpdDetector {
     }
 
     /// Get detected change points from a sequence of results.
-    pub fn detect_change_points(
-        results: &[BocpdUpdateResult],
-        threshold: f64,
-    ) -> Vec<ChangePoint> {
+    pub fn detect_change_points(results: &[BocpdUpdateResult], threshold: f64) -> Vec<ChangePoint> {
         let mut change_points = Vec::new();
 
         for result in results {
@@ -645,12 +644,7 @@ pub struct BocpdEvidence {
 impl BocpdEvidence {
     /// Create evidence from batch results.
     pub fn from_batch(batch: &BatchResult, window_size: usize) -> Self {
-        let recent_results: Vec<_> = batch
-            .results
-            .iter()
-            .rev()
-            .take(window_size)
-            .collect();
+        let recent_results: Vec<_> = batch.results.iter().rev().take(window_size).collect();
 
         let recent_change = recent_results
             .first()
@@ -807,11 +801,11 @@ mod tests {
     #[test]
     fn test_poisson_gamma_detects_change() {
         let config = BocpdConfig {
-            hazard_rate: 0.1,  // Higher hazard for faster detection
+            hazard_rate: 0.1, // Higher hazard for faster detection
             max_run_length: 50,
             emission_model: EmissionModel::PoissonGamma {
                 alpha: 1.0,
-                beta: 0.2,  // Prior mean = 5
+                beta: 0.2, // Prior mean = 5
             },
         };
 

@@ -474,8 +474,10 @@ impl MartingaleAnalyzer {
             None
         };
 
-        let time_uniform_radius =
-            self.time_uniform_radius(self.config.confidence_level, self.config.default_increment_bound);
+        let time_uniform_radius = self.time_uniform_radius(
+            self.config.confidence_level,
+            self.config.default_increment_bound,
+        );
 
         // Combined tail bound is the tightest available
         let mut tail_probability = azuma_tail;
@@ -605,7 +607,12 @@ impl BatchMartingaleAnalyzer {
     }
 
     /// Update a stream with bounded increment.
-    pub fn update_bounded(&mut self, id: &str, increment: f64, bound: f64) -> MartingaleUpdateResult {
+    pub fn update_bounded(
+        &mut self,
+        id: &str,
+        increment: f64,
+        bound: f64,
+    ) -> MartingaleUpdateResult {
         let analyzer = self
             .analyzers
             .entry(id.to_string())

@@ -53,23 +53,33 @@ impl NetworkSnapshot {
 
         // TCP
         if let Some(entries) = parse_proc_net_tcp("/proc/net/tcp", false) {
-            for e in entries { snapshot.tcp_by_inode.insert(e.inode, e); }
+            for e in entries {
+                snapshot.tcp_by_inode.insert(e.inode, e);
+            }
         }
         if let Some(entries) = parse_proc_net_tcp("/proc/net/tcp6", true) {
-            for e in entries { snapshot.tcp_by_inode.insert(e.inode, e); }
+            for e in entries {
+                snapshot.tcp_by_inode.insert(e.inode, e);
+            }
         }
 
         // UDP
         if let Some(entries) = parse_proc_net_udp("/proc/net/udp", false) {
-            for e in entries { snapshot.udp_by_inode.insert(e.inode, e); }
+            for e in entries {
+                snapshot.udp_by_inode.insert(e.inode, e);
+            }
         }
         if let Some(entries) = parse_proc_net_udp("/proc/net/udp6", true) {
-            for e in entries { snapshot.udp_by_inode.insert(e.inode, e); }
+            for e in entries {
+                snapshot.udp_by_inode.insert(e.inode, e);
+            }
         }
 
         // Unix
         if let Some(entries) = parse_proc_net_unix("/proc/net/unix") {
-            for e in entries { snapshot.unix_by_inode.insert(e.inode, e); }
+            for e in entries {
+                snapshot.unix_by_inode.insert(e.inode, e);
+            }
         }
 
         snapshot

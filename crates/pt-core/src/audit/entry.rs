@@ -384,13 +384,16 @@ mod tests {
 
     #[test]
     fn test_audit_context_with_session() {
-        let ctx = AuditContext::new("run-12345", "host-abc")
-            .with_session_id("pt-20260115-143022-a7xq");
+        let ctx =
+            AuditContext::new("run-12345", "host-abc").with_session_id("pt-20260115-143022-a7xq");
 
         assert_eq!(ctx.session_id, Some("pt-20260115-143022-a7xq".to_string()));
 
         let entry = AuditEntry::new(&ctx, AuditEventType::Action, "Kill executed", "prev");
-        assert_eq!(entry.session_id, Some("pt-20260115-143022-a7xq".to_string()));
+        assert_eq!(
+            entry.session_id,
+            Some("pt-20260115-143022-a7xq".to_string())
+        );
     }
 
     #[test]

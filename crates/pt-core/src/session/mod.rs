@@ -141,7 +141,10 @@ impl SessionManifest {
     pub fn record_state(&mut self, state: SessionState) {
         let now = Utc::now().to_rfc3339();
         self.state = state;
-        self.state_history.push(StateTransition { state, ts: now.clone() });
+        self.state_history.push(StateTransition {
+            state,
+            ts: now.clone(),
+        });
         self.timing.updated_at = Some(now);
     }
 }
@@ -165,7 +168,12 @@ pub struct SessionOs {
 }
 
 impl SessionContext {
-    pub fn new(session_id: &SessionId, host_id: String, run_id: String, label: Option<String>) -> Self {
+    pub fn new(
+        session_id: &SessionId,
+        host_id: String,
+        run_id: String,
+        label: Option<String>,
+    ) -> Self {
         Self {
             schema_version: SCHEMA_VERSION.to_string(),
             session_id: session_id.0.clone(),
@@ -266,7 +274,10 @@ impl SessionStore {
             std::fs::create_dir_all(&p).map_err(|e| SessionError::Io { path: p, source: e })?;
         }
 
-        let handle = SessionHandle { id: session_id, dir };
+        let handle = SessionHandle {
+            id: session_id,
+            dir,
+        };
         handle.write_manifest(manifest)?;
         Ok(handle)
     }
@@ -287,7 +298,10 @@ impl SessionStore {
     /// List sessions with optional filtering.
     ///
     /// Returns sessions sorted by creation time (newest first).
-    pub fn list_sessions(&self, options: &ListSessionsOptions) -> Result<Vec<SessionSummary>, SessionError> {
+    pub fn list_sessions(
+        &self,
+        options: &ListSessionsOptions,
+    ) -> Result<Vec<SessionSummary>, SessionError> {
         let mut summaries = Vec::new();
 
         // If sessions root doesn't exist, return empty list
@@ -408,7 +422,10 @@ impl SessionStore {
 
         for session in sessions {
             // Preserve sessions that might be in use
-            if matches!(session.state, SessionState::Executing | SessionState::Planned | SessionState::Scanning) {
+            if matches!(
+                session.state,
+                SessionState::Executing | SessionState::Planned | SessionState::Scanning
+            ) {
                 result.preserved_count += 1;
                 continue;
             }
@@ -539,4 +556,3 @@ fn write_json_pretty<T: Serialize>(path: &Path, value: &T) -> Result<(), Session
         source: e,
     })
 }
-

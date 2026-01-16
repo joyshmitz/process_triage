@@ -228,7 +228,9 @@ impl HawkesDetector {
         // Initialize parameters
         // Simple initialization based on data
         let empirical_rate = n as f64 / time_span.max(1e-10);
-        let mut mu = empirical_rate.max(self.config.mu_min).min(self.config.mu_max);
+        let mut mu = empirical_rate
+            .max(self.config.mu_min)
+            .min(self.config.mu_max);
         let mut alpha = self.config.alpha_init;
         let mut beta = self.config.beta_init;
 
@@ -301,13 +303,7 @@ impl HawkesDetector {
     /// Returns (responsibilities, intensities) where:
     /// - responsibilities[i] = P(event i was background) for each event
     /// - intensities[i] = λ(t_i) at each event time
-    fn e_step(
-        &self,
-        events: &[f64],
-        mu: f64,
-        alpha: f64,
-        beta: f64,
-    ) -> (Vec<f64>, Vec<f64>) {
+    fn e_step(&self, events: &[f64], mu: f64, alpha: f64, beta: f64) -> (Vec<f64>, Vec<f64>) {
         let n = events.len();
         let mut responsibilities = vec![0.0; n];
         let mut intensities = vec![0.0; n];
@@ -601,8 +597,9 @@ pub fn summarize_cross_excitation(
             if name_i == name_j {
                 continue;
             }
-            if let Some((_, _, score)) =
-                pairs.iter().find(|(src, dst, _)| src == name_i && dst == name_j)
+            if let Some((_, _, score)) = pairs
+                .iter()
+                .find(|(src, dst, _)| src == name_i && dst == name_j)
             {
                 sink_total += *score;
             }
@@ -613,12 +610,24 @@ pub fn summarize_cross_excitation(
     let dominant_source = source_scores
         .iter()
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .and_then(|(name, score)| if *score > 0.0 { Some(name.clone()) } else { None });
+        .and_then(|(name, score)| {
+            if *score > 0.0 {
+                Some(name.clone())
+            } else {
+                None
+            }
+        });
 
     let dominant_sink = sink_scores
         .iter()
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
-        .and_then(|(name, score)| if *score > 0.0 { Some(name.clone()) } else { None });
+        .and_then(|(name, score)| {
+            if *score > 0.0 {
+                Some(name.clone())
+            } else {
+                None
+            }
+        });
 
     CrossExcitationSummary {
         pairs,
@@ -881,7 +890,11 @@ mod tests {
 
         // All intensities should be positive
         for &intensity in &intensities {
-            assert!(intensity > 0.0, "Intensity should be positive: {}", intensity);
+            assert!(
+                intensity > 0.0,
+                "Intensity should be positive: {}",
+                intensity
+            );
         }
 
         // Responsibilities should be in [0, 1]

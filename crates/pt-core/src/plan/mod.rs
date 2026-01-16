@@ -612,10 +612,10 @@ fn action_tier(action: Action) -> u8 {
         Action::Pause => 1,
         Action::Resume => 1, // Same tier as Pause (reversible)
         Action::Throttle => 1,
-        Action::Freeze => 1,         // Reversible via Unfreeze
-        Action::Unfreeze => 1,       // Same tier as Freeze (reversible)
-        Action::Quarantine => 1,     // Reversible via Unquarantine
-        Action::Unquarantine => 1,   // Same tier as Quarantine (reversible)
+        Action::Freeze => 1,       // Reversible via Unfreeze
+        Action::Unfreeze => 1,     // Same tier as Freeze (reversible)
+        Action::Quarantine => 1,   // Reversible via Unquarantine
+        Action::Unquarantine => 1, // Same tier as Quarantine (reversible)
         Action::Restart => 2,
         Action::Kill => 3,
     }
@@ -681,12 +681,7 @@ mod tests {
     }
 
     /// Helper to create a candidate with optional state info
-    fn candidate(
-        pid: u32,
-        action: Action,
-        keep_loss: f64,
-        action_loss: f64,
-    ) -> DecisionCandidate {
+    fn candidate(pid: u32, action: Action, keep_loss: f64, action_loss: f64) -> DecisionCandidate {
         DecisionCandidate {
             identity: identity(pid),
             ppid: None,
@@ -705,14 +700,11 @@ mod tests {
             session_id: SessionId("pt-20260115-120000-abcd".to_string()),
             policy: Policy::default(),
             generated_at: Some("2026-01-15T12:00:00Z".to_string()),
-            candidates: vec![
-                candidate(10, Action::Pause, 10.0, 1.0),
-                {
-                    let mut c = candidate(20, Action::Pause, 10.0, 1.0);
-                    c.blocked_reasons = vec!["policy blocked".to_string()];
-                    c
-                },
-            ],
+            candidates: vec![candidate(10, Action::Pause, 10.0, 1.0), {
+                let mut c = candidate(20, Action::Pause, 10.0, 1.0);
+                c.blocked_reasons = vec!["policy blocked".to_string()];
+                c
+            }],
         };
         let plan = generate_plan(&bundle);
         assert_eq!(plan.pre_toggled.len(), 1);
@@ -782,10 +774,7 @@ mod tests {
         assert_eq!(action.action, Action::Restart);
         assert_eq!(action.routing, ActionRouting::ZombieToParent);
         assert!(action.original_zombie_target.is_some());
-        assert_eq!(
-            action.original_zombie_target.as_ref().unwrap().pid.0,
-            42
-        );
+        assert_eq!(action.original_zombie_target.as_ref().unwrap().pid.0, 42);
     }
 
     #[test]

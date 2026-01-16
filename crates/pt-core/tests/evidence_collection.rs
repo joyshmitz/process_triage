@@ -34,7 +34,11 @@ fn quick_scan_collects_current_process() {
     // Current process should be in the scan
     let self_pid = std::process::id();
     let found = result.processes.iter().any(|p| p.pid.0 == self_pid);
-    assert!(found, "Current process (pid={}) not found in scan", self_pid);
+    assert!(
+        found,
+        "Current process (pid={}) not found in scan",
+        self_pid
+    );
 }
 
 #[test]
@@ -251,17 +255,11 @@ fn quick_scan_distinguishes_kernel_thread_from_user_process() {
         .iter()
         .find(|p| p.ppid.0 == 2 || (p.pid.0 == 2 && p.ppid.0 == 0));
 
-    let user_process = result
-        .processes
-        .iter()
-        .find(|p| p.ppid.0 > 2 && p.uid > 0);
+    let user_process = result.processes.iter().find(|p| p.ppid.0 > 2 && p.uid > 0);
 
     if let (Some(kt), Some(up)) = (kernel_thread, user_process) {
         // Key differentiator: kernel threads have ppid 0 or 2, user processes don't
-        assert!(
-            kt.ppid.0 <= 2,
-            "Kernel thread should have ppid <= 2"
-        );
+        assert!(kt.ppid.0 <= 2, "Kernel thread should have ppid <= 2");
         assert!(
             up.ppid.0 > 2,
             "User process should have ppid > 2 (not init or kthreadd)"
@@ -299,10 +297,7 @@ fn process_record_includes_start_id_for_toctou_protection() {
     // Verify start_id is populated
     // start_id format is: <boot_id>:<start_time_ticks>:<pid>
     let start_id_str = &proc_record.start_id.0;
-    assert!(
-        !start_id_str.is_empty(),
-        "start_id should be populated"
-    );
+    assert!(!start_id_str.is_empty(), "start_id should be populated");
 
     // Verify start_id contains expected components (colon-separated)
     let parts: Vec<&str> = start_id_str.split(':').collect();
@@ -481,10 +476,7 @@ fn quick_scan_captures_process_group_members() {
 
     // Find parent process
     let parent_record = result.processes.iter().find(|p| p.pid.0 == parent_pid);
-    assert!(
-        parent_record.is_some(),
-        "Parent process should be in scan"
-    );
+    assert!(parent_record.is_some(), "Parent process should be in scan");
 
     // Get PGID from parent
     if let Some(parent_rec) = parent_record {

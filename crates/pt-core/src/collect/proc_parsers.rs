@@ -238,10 +238,7 @@ impl CriticalFileCategory {
     pub fn is_hard_block(&self) -> bool {
         matches!(
             self,
-            Self::SqliteWal
-                | Self::GitLock
-                | Self::GitRebase
-                | Self::SystemPackageLock
+            Self::SqliteWal | Self::GitLock | Self::GitRebase | Self::SystemPackageLock
         )
     }
 }
@@ -1012,7 +1009,10 @@ nice                                         :                    0
 
         // Real process must have non-zero memory stats
         assert!(stats.size > 0, "process should have non-zero size");
-        assert!(stats.resident > 0, "process should have non-zero resident pages");
+        assert!(
+            stats.resident > 0,
+            "process should have non-zero resident pages"
+        );
 
         crate::test_log!(
             DEBUG,
@@ -1249,7 +1249,7 @@ nice                                         :                    0
 
     #[test]
     fn test_nomock_proc_snapshot_integration() {
-        use crate::test_utils::{ProcessHarness, ProcSnapshot};
+        use crate::test_utils::{ProcSnapshot, ProcessHarness};
 
         if !ProcessHarness::is_available() {
             return;
@@ -1387,9 +1387,8 @@ nice                                         :                    0
 
     #[test]
     fn test_detect_critical_file_npm_staging() {
-        let cf =
-            detect_critical_file(15, "/home/user/project/node_modules/.staging/lodash-abc123")
-                .unwrap();
+        let cf = detect_critical_file(15, "/home/user/project/node_modules/.staging/lodash-abc123")
+            .unwrap();
         assert_eq!(cf.category, CriticalFileCategory::NodePackageLock);
         assert_eq!(cf.strength, DetectionStrength::Hard);
         assert_eq!(cf.rule_id, "npm_staging");
@@ -1453,21 +1452,29 @@ nice                                         :                    0
     #[test]
     fn test_critical_file_category_remediation_hints() {
         // Verify all categories have non-empty remediation hints
-        assert!(!CriticalFileCategory::SqliteWal.remediation_hint().is_empty());
+        assert!(!CriticalFileCategory::SqliteWal
+            .remediation_hint()
+            .is_empty());
         assert!(!CriticalFileCategory::GitLock.remediation_hint().is_empty());
-        assert!(!CriticalFileCategory::GitRebase.remediation_hint().is_empty());
+        assert!(!CriticalFileCategory::GitRebase
+            .remediation_hint()
+            .is_empty());
         assert!(!CriticalFileCategory::SystemPackageLock
             .remediation_hint()
             .is_empty());
         assert!(!CriticalFileCategory::NodePackageLock
             .remediation_hint()
             .is_empty());
-        assert!(!CriticalFileCategory::CargoLock.remediation_hint().is_empty());
+        assert!(!CriticalFileCategory::CargoLock
+            .remediation_hint()
+            .is_empty());
         assert!(!CriticalFileCategory::DatabaseWrite
             .remediation_hint()
             .is_empty());
         assert!(!CriticalFileCategory::AppLock.remediation_hint().is_empty());
-        assert!(!CriticalFileCategory::OpenWrite.remediation_hint().is_empty());
+        assert!(!CriticalFileCategory::OpenWrite
+            .remediation_hint()
+            .is_empty());
     }
 
     #[test]
@@ -1477,7 +1484,7 @@ nice                                         :                    0
         assert!(CriticalFileCategory::GitLock.is_hard_block());
         assert!(CriticalFileCategory::GitRebase.is_hard_block());
         assert!(CriticalFileCategory::SystemPackageLock.is_hard_block());
-        
+
         // Database write is Soft because it's a heuristic (might be read-only access despite FD flags)
         assert!(!CriticalFileCategory::DatabaseWrite.is_hard_block());
 

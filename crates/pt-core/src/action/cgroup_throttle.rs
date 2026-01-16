@@ -129,12 +129,15 @@ impl CpuThrottleActionRunner {
     #[cfg(target_os = "linux")]
     fn execute_throttle(&self, action: &PlanAction) -> Result<(), ActionError> {
         let pid = action.target.pid.0;
-        debug!(pid, fraction = self.config.target_fraction, "executing CPU throttle");
+        debug!(
+            pid,
+            fraction = self.config.target_fraction,
+            "executing CPU throttle"
+        );
 
         // Collect cgroup details for the target process
-        let cgroup_details = collect_cgroup_details(pid).ok_or_else(|| {
-            ActionError::Failed(format!("failed to read cgroup for pid {}", pid))
-        })?;
+        let cgroup_details = collect_cgroup_details(pid)
+            .ok_or_else(|| ActionError::Failed(format!("failed to read cgroup for pid {}", pid)))?;
 
         // Try cgroup v2 first
         if cgroup_details.version == CgroupVersion::V2
@@ -274,7 +277,10 @@ impl CpuThrottleActionRunner {
 
         // Re-collect cgroup details to verify
         let cgroup_details = collect_cgroup_details(pid).ok_or_else(|| {
-            ActionError::Failed(format!("failed to read cgroup for verification, pid {}", pid))
+            ActionError::Failed(format!(
+                "failed to read cgroup for verification, pid {}",
+                pid
+            ))
         })?;
 
         let expected_quota = self.config.quota_us();
@@ -374,8 +380,7 @@ impl CpuThrottleActionRunner {
     ) -> Result<(), ActionError> {
         match metadata.source {
             CpuLimitSource::CgroupV2CpuMax => {
-                let cpu_max_path =
-                    format!("/sys/fs/cgroup{}/cpu.max", metadata.cgroup_path);
+                let cpu_max_path = format!("/sys/fs/cgroup{}/cpu.max", metadata.cgroup_path);
                 let value = match (metadata.previous_quota_us, metadata.previous_period_us) {
                     (Some(q), Some(p)) if q > 0 => format!("{} {}", q, p),
                     (None, Some(p)) | (_, Some(p)) => format!("max {}", p),
@@ -408,9 +413,8 @@ impl CpuThrottleActionRunner {
                 }
 
                 let quota_value = metadata.previous_quota_us.unwrap_or(-1);
-                fs::write(&quota_path, quota_value.to_string()).map_err(|e| {
-                    ActionError::Failed(format!("failed to restore quota: {}", e))
-                })?;
+                fs::write(&quota_path, quota_value.to_string())
+                    .map_err(|e| ActionError::Failed(format!("failed to restore quota: {}", e)))?;
 
                 info!(
                     quota_path = %quota_path,
@@ -423,8 +427,7 @@ impl CpuThrottleActionRunner {
                 // No previous limits - set to unlimited
                 warn!("no previous limits in reversal metadata, setting to unlimited");
                 // Try v2 first
-                let cpu_max_path =
-                    format!("/sys/fs/cgroup{}/cpu.max", metadata.cgroup_path);
+                let cpu_max_path = format!("/sys/fs/cgroup{}/cpu.max", metadata.cgroup_path);
                 if Path::new(&cpu_max_path).exists() {
                     fs::write(&cpu_max_path, "max 100000").map_err(|e| {
                         ActionError::Failed(format!("failed to restore to unlimited: {}", e))
@@ -442,13 +445,18 @@ impl ActionRunner for CpuThrottleActionRunner {
         match action.action {
             Action::Throttle => self.execute_throttle(action),
             Action::Keep => Ok(()),
-            Action::Pause | Action::Resume | Action::Kill | Action::Renice | Action::Restart
-            | Action::Freeze | Action::Unfreeze | Action::Quarantine | Action::Unquarantine => {
-                Err(ActionError::Failed(format!(
-                    "{:?} is not a throttle action",
-                    action.action
-                )))
-            }
+            Action::Pause
+            | Action::Resume
+            | Action::Kill
+            | Action::Renice
+            | Action::Restart
+            | Action::Freeze
+            | Action::Unfreeze
+            | Action::Quarantine
+            | Action::Unquarantine => Err(ActionError::Failed(format!(
+                "{:?} is not a throttle action",
+                action.action
+            ))),
         }
     }
 
@@ -456,10 +464,15 @@ impl ActionRunner for CpuThrottleActionRunner {
         match action.action {
             Action::Throttle => self.verify_throttle(action),
             Action::Keep => Ok(()),
-            Action::Pause | Action::Resume | Action::Kill | Action::Renice | Action::Restart
-            | Action::Freeze | Action::Unfreeze | Action::Quarantine | Action::Unquarantine => {
-                Ok(())
-            }
+            Action::Pause
+            | Action::Resume
+            | Action::Kill
+            | Action::Renice
+            | Action::Restart
+            | Action::Freeze
+            | Action::Unfreeze
+            | Action::Quarantine
+            | Action::Unquarantine => Ok(()),
         }
     }
 }

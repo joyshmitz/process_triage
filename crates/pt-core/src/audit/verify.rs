@@ -139,11 +139,10 @@ pub fn verify_log(path: &Path) -> Result<VerificationResult, AuditError> {
             continue;
         }
 
-        let entry: AuditEntry =
-            serde_json::from_str(&line).map_err(|e| AuditError::Parse {
-                line: line_num,
-                source: e,
-            })?;
+        let entry: AuditEntry = serde_json::from_str(&line).map_err(|e| AuditError::Parse {
+            line: line_num,
+            source: e,
+        })?;
 
         // Check schema version
         if entry.schema_version != AUDIT_SCHEMA_VERSION {
@@ -316,7 +315,8 @@ mod tests {
             let mut log = AuditLog::open_or_create_with_config(config.clone()).unwrap();
             let ctx = AuditContext::new("run-test", "host-test");
 
-            log.log_scan(&ctx, "started", None, None, None, None).unwrap();
+            log.log_scan(&ctx, "started", None, None, None, None)
+                .unwrap();
             log.log_scan(&ctx, "completed", Some(100), Some(5), None, Some(500))
                 .unwrap();
             log.log_action(&ctx, 1234, None, "kill", true, None, Some("SIGTERM"), false)
@@ -344,7 +344,8 @@ mod tests {
             let mut log = AuditLog::open_or_create_with_config(config).unwrap();
             let ctx = AuditContext::new("run-test", "host-test");
 
-            log.log_scan(&ctx, "started", None, None, None, None).unwrap();
+            log.log_scan(&ctx, "started", None, None, None, None)
+                .unwrap();
             log.log_scan(&ctx, "completed", Some(100), Some(5), None, None)
                 .unwrap();
         }

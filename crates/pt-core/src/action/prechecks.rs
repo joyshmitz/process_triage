@@ -8,17 +8,17 @@
 //! - `CheckSupervisor`: Check for supervisor/systemd management
 //! - `CheckSessionSafety`: Verify session safety (not session leader, etc.)
 
-use crate::collect::protected::ProtectedFilter;
 #[cfg(target_os = "linux")]
 use crate::collect::parse_io;
+use crate::collect::protected::ProtectedFilter;
 use crate::collect::systemd::{collect_systemd_unit, SystemdUnit, SystemdUnitType};
 use crate::collect::ProcessState;
 use crate::config::policy::{DataLossGates, Guardrails};
-use crate::supervision::session::{SessionAnalyzer, SessionConfig, SessionProtectionType};
-use std::fmt;
 use crate::plan::PreCheck;
+use crate::supervision::session::{SessionAnalyzer, SessionConfig, SessionProtectionType};
 use serde::Serialize;
 use std::collections::HashSet;
+use std::fmt;
 use std::time::Duration;
 use thiserror::Error;
 use tracing::{debug, trace};
@@ -101,11 +101,9 @@ impl SupervisorInfo {
         let unit_type = unit.unit_type;
 
         let recommended_action = match unit_type {
-            SystemdUnitType::Service => {
-                SupervisorAction::RestartUnit {
-                    command: format!("systemctl restart {}", unit_name),
-                }
-            }
+            SystemdUnitType::Service => SupervisorAction::RestartUnit {
+                command: format!("systemctl restart {}", unit_name),
+            },
             SystemdUnitType::Scope => {
                 // Scopes are usually user sessions - stop is appropriate
                 SupervisorAction::StopUnit {
@@ -157,10 +155,7 @@ impl SupervisorInfo {
                 )
             }
             SupervisorAction::KillProcess => {
-                format!(
-                    "managed by {} - may respawn after kill",
-                    self.supervisor
-                )
+                format!("managed by {} - may respawn after kill", self.supervisor)
             }
         }
     }
@@ -523,7 +518,10 @@ impl LivePreCheckProvider {
     /// Returns the kernel function name where the process is blocked (if in sleep state).
     fn read_wchan(&self, pid: u32) -> Option<String> {
         let wchan_path = format!("/proc/{pid}/wchan");
-        let wchan = std::fs::read_to_string(&wchan_path).ok()?.trim().to_string();
+        let wchan = std::fs::read_to_string(&wchan_path)
+            .ok()?
+            .trim()
+            .to_string();
 
         // "0" means not blocked, return None in that case
         if wchan == "0" || wchan.is_empty() {
@@ -605,7 +603,6 @@ impl LivePreCheckProvider {
 
         None
     }
-
 }
 
 #[cfg(target_os = "linux")]
@@ -701,7 +698,11 @@ impl PreCheckProvider for LivePreCheckProvider {
         if self.config.block_if_recent_io_seconds > 0 {
             let window = Duration::from_secs(self.config.block_if_recent_io_seconds);
             if self.has_recent_io(pid, window) {
-                debug!(pid, window_s = self.config.block_if_recent_io_seconds, "process has recent I/O activity");
+                debug!(
+                    pid,
+                    window_s = self.config.block_if_recent_io_seconds,
+                    "process has recent I/O activity"
+                );
                 return PreCheckResult::Blocked {
                     check: PreCheck::CheckDataLossGate,
                     reason: format!(
@@ -780,8 +781,10 @@ impl PreCheckProvider for LivePreCheckProvider {
                 Ok(result) => {
                     if result.is_protected {
                         // Build a descriptive reason based on protection types
-                        let protection_desc: Vec<&str> = result.protection_types.iter().map(|p| {
-                            match p {
+                        let protection_desc: Vec<&str> = result
+                            .protection_types
+                            .iter()
+                            .map(|p| match p {
                                 SessionProtectionType::SessionLeader => "session leader",
                                 SessionProtectionType::SameSession => "same session as pt",
                                 SessionProtectionType::ParentShell => "parent shell of pt",
@@ -790,10 +793,12 @@ impl PreCheckProvider for LivePreCheckProvider {
                                 SessionProtectionType::ScreenServer => "screen server",
                                 SessionProtectionType::ScreenClient => "screen client",
                                 SessionProtectionType::SshChain => "SSH connection chain",
-                                SessionProtectionType::ForegroundGroup => "foreground process group",
+                                SessionProtectionType::ForegroundGroup => {
+                                    "foreground process group"
+                                }
                                 SessionProtectionType::TtyController => "TTY controller",
-                            }
-                        }).collect();
+                            })
+                            .collect();
 
                         let reason = if let Some(r) = result.reason {
                             r
@@ -925,7 +930,10 @@ mod tests {
         assert_eq!(info.supervisor, "supervisord");
         assert!(info.unit_name.is_none());
         assert!(!info.is_main_process);
-        assert!(matches!(info.recommended_action, SupervisorAction::KillProcess));
+        assert!(matches!(
+            info.recommended_action,
+            SupervisorAction::KillProcess
+        ));
     }
 
     #[test]

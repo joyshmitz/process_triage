@@ -174,11 +174,13 @@ impl ContainerSupervisionAnalyzer {
     }
 
     /// Analyze a process for container supervision.
-    pub fn analyze(&self, pid: u32) -> Result<ContainerSupervisionResult, ContainerSupervisionError> {
+    pub fn analyze(
+        &self,
+        pid: u32,
+    ) -> Result<ContainerSupervisionResult, ContainerSupervisionError> {
         // Get cgroup details for the process
-        let cgroup_details = collect_cgroup_details(pid).ok_or_else(|| {
-            ContainerSupervisionError::ProcessNotFound(pid)
-        })?;
+        let cgroup_details = collect_cgroup_details(pid)
+            .ok_or_else(|| ContainerSupervisionError::ProcessNotFound(pid))?;
 
         // Get cgroup path to analyze
         let cgroup_path = self.get_cgroup_path(&cgroup_details);
@@ -220,7 +222,9 @@ impl ContainerSupervisionAnalyzer {
                 // Add evidence for K8s detection
                 result.evidence.push(SupervisionEvidence {
                     evidence_type: EvidenceType::Environment,
-                    description: "Process has Kubernetes environment variables (KUBERNETES_SERVICE_HOST)".to_string(),
+                    description:
+                        "Process has Kubernetes environment variables (KUBERNETES_SERVICE_HOST)"
+                            .to_string(),
                     weight: 0.3,
                 });
             }
@@ -283,17 +287,14 @@ impl ContainerSupervisionAnalyzer {
             )
         };
 
-        let mut evidence = vec![
-            SupervisionEvidence {
-                evidence_type: EvidenceType::Ancestry,
-                description: format!(
-                    "Cgroup path {} indicates {} container",
-                    cgroup_path,
-                    runtime_name
-                ),
-                weight: 0.9,
-            },
-        ];
+        let mut evidence = vec![SupervisionEvidence {
+            evidence_type: EvidenceType::Ancestry,
+            description: format!(
+                "Cgroup path {} indicates {} container",
+                cgroup_path, runtime_name
+            ),
+            weight: 0.9,
+        }];
 
         // Add K8s-specific evidence
         if info.kubernetes.is_some() {
@@ -389,7 +390,9 @@ impl ContainerSupervisionAnalyzer {
                         action_type: ContainerActionType::Stop,
                         command: format!("docker stop {}", container_id),
                         is_safe: false,
-                        warning: Some("Stopping container may affect dependent services.".to_string()),
+                        warning: Some(
+                            "Stopping container may affect dependent services.".to_string(),
+                        ),
                     })
                 } else {
                     Some(ContainerAction {
@@ -406,7 +409,9 @@ impl ContainerSupervisionAnalyzer {
                         action_type: ContainerActionType::Stop,
                         command: format!("podman stop {}", container_id),
                         is_safe: false,
-                        warning: Some("Stopping container may affect dependent services.".to_string()),
+                        warning: Some(
+                            "Stopping container may affect dependent services.".to_string(),
+                        ),
                     })
                 } else {
                     Some(ContainerAction {
@@ -417,22 +422,18 @@ impl ContainerSupervisionAnalyzer {
                     })
                 }
             }
-            ContainerRuntime::Containerd => {
-                Some(ContainerAction {
-                    action_type: ContainerActionType::Inspect,
-                    command: format!("ctr container info {}", container_id),
-                    is_safe: true,
-                    warning: None,
-                })
-            }
-            ContainerRuntime::Lxc => {
-                Some(ContainerAction {
-                    action_type: ContainerActionType::Inspect,
-                    command: format!("lxc info {}", container_id),
-                    is_safe: true,
-                    warning: None,
-                })
-            }
+            ContainerRuntime::Containerd => Some(ContainerAction {
+                action_type: ContainerActionType::Inspect,
+                command: format!("ctr container info {}", container_id),
+                is_safe: true,
+                warning: None,
+            }),
+            ContainerRuntime::Lxc => Some(ContainerAction {
+                action_type: ContainerActionType::Inspect,
+                command: format!("lxc info {}", container_id),
+                is_safe: true,
+                warning: None,
+            }),
             _ => None,
         }
     }
@@ -458,8 +459,7 @@ pub fn detect_container_supervision(
 pub fn detect_container_supervision_with_actions(
     pid: u32,
 ) -> Result<ContainerSupervisionResult, ContainerSupervisionError> {
-    let analyzer = ContainerSupervisionAnalyzer::new()
-        .with_action_recommendations();
+    let analyzer = ContainerSupervisionAnalyzer::new().with_action_recommendations();
     analyzer.analyze(pid)
 }
 
@@ -624,7 +624,10 @@ mod tests {
                 command = action.command.as_str(),
                 is_safe = action.is_safe
             );
-            assert!(action.is_safe, "Non-destructive mode should only suggest safe actions");
+            assert!(
+                action.is_safe,
+                "Non-destructive mode should only suggest safe actions"
+            );
         }
     }
 }

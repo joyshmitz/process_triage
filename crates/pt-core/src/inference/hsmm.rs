@@ -171,7 +171,11 @@ impl GammaDuration {
     /// For small d with α > 1, hazard increases; with α < 1, hazard decreases.
     pub fn hazard_rate(&self, duration: f64) -> f64 {
         if duration <= 0.0 {
-            return if self.shape <= 1.0 { f64::INFINITY } else { 0.0 };
+            return if self.shape <= 1.0 {
+                f64::INFINITY
+            } else {
+                0.0
+            };
         }
 
         // Use the approximation: for Gamma, h(d) ≈ β for large d
@@ -287,10 +291,10 @@ impl Default for HsmmConfig {
 
             // Transition probabilities (rows must sum to 1, diagonal = 0)
             transition_probs: [
-                [0.0, 0.3, 0.5, 0.2],  // From Useful
-                [0.4, 0.0, 0.4, 0.2],  // From UsefulBad
-                [0.2, 0.1, 0.0, 0.7],  // From Abandoned
-                [0.3, 0.2, 0.5, 0.0],  // From Zombie (rare escape to useful states)
+                [0.0, 0.3, 0.5, 0.2], // From Useful
+                [0.4, 0.0, 0.4, 0.2], // From UsefulBad
+                [0.2, 0.1, 0.0, 0.7], // From Abandoned
+                [0.3, 0.2, 0.5, 0.0], // From Zombie (rare escape to useful states)
             ],
 
             // Initial probabilities (most processes start useful)
@@ -306,7 +310,7 @@ impl Default for HsmmConfig {
 
             // Emission variances
             emission_vars: [
-                [0.1, 0.1, 0.1, 0.2],  // Useful: some variance
+                [0.1, 0.1, 0.1, 0.2],    // Useful: some variance
                 [0.15, 0.15, 0.15, 0.2], // UsefulBad
                 [0.05, 0.05, 0.1, 0.1],  // Abandoned: tighter
                 [0.02, 0.02, 0.1, 0.05], // Zombie: very tight
@@ -368,10 +372,10 @@ impl HsmmConfig {
     pub fn short_lived() -> Self {
         Self {
             duration_priors: [
-                GammaDuration::new(2.0, 0.05),  // Useful: mean 40
-                GammaDuration::new(1.5, 0.1),   // UsefulBad: mean 15
-                GammaDuration::new(2.0, 0.02),  // Abandoned: mean 100
-                GammaDuration::new(3.0, 0.1),   // Zombie: mean 30
+                GammaDuration::new(2.0, 0.05), // Useful: mean 40
+                GammaDuration::new(1.5, 0.1),  // UsefulBad: mean 15
+                GammaDuration::new(2.0, 0.02), // Abandoned: mean 100
+                GammaDuration::new(3.0, 0.1),  // Zombie: mean 30
             ],
             ..Default::default()
         }
@@ -381,10 +385,10 @@ impl HsmmConfig {
     pub fn long_running() -> Self {
         Self {
             duration_priors: [
-                GammaDuration::new(4.0, 0.001),  // Useful: mean 4000
-                GammaDuration::new(2.0, 0.005),  // UsefulBad: mean 400
-                GammaDuration::new(3.0, 0.002),  // Abandoned: mean 1500
-                GammaDuration::new(5.0, 0.01),   // Zombie: mean 500
+                GammaDuration::new(4.0, 0.001), // Useful: mean 4000
+                GammaDuration::new(2.0, 0.005), // UsefulBad: mean 400
+                GammaDuration::new(3.0, 0.002), // Abandoned: mean 1500
+                GammaDuration::new(5.0, 0.01),  // Zombie: mean 500
             ],
             initial_probs: [0.85, 0.1, 0.03, 0.02], // Services more likely useful
             ..Default::default()
@@ -615,7 +619,11 @@ impl HsmmAnalyzer {
             let diff = observation[f] - mean;
 
             // Gaussian log-likelihood
-            log_prob += -0.5 * (diff * diff / var + var.ln() + std::f64::consts::LN_2 + std::f64::consts::PI.ln());
+            log_prob += -0.5
+                * (diff * diff / var
+                    + var.ln()
+                    + std::f64::consts::LN_2
+                    + std::f64::consts::PI.ln());
         }
 
         log_prob.exp().max(self.config.min_probability)
@@ -625,7 +633,9 @@ impl HsmmAnalyzer {
     fn duration_prob(&self, duration: usize, state: HsmmState) -> f64 {
         let s = state.index();
         let d = duration as f64;
-        self.duration_posteriors[s].survival(d).max(self.config.min_probability)
+        self.duration_posteriors[s]
+            .survival(d)
+            .max(self.config.min_probability)
     }
 
     /// Process a single observation.
@@ -956,7 +966,10 @@ impl HsmmEvidence {
             enabled: true,
             current_state: result.current_state,
             current_state_prob: result.current_state_prob,
-            state_probs: *result.state_posteriors.last().unwrap_or(&config.initial_probs),
+            state_probs: *result
+                .state_posteriors
+                .last()
+                .unwrap_or(&config.initial_probs),
             state_fractions,
             num_switches: result.switches.len(),
             current_duration: result.duration_stats[result.current_state.index()]
@@ -1060,8 +1073,7 @@ fn ln_gamma(x: f64) -> f64 {
     } else {
         // Stirling's approximation
         let x2 = x * x;
-        (x - 0.5) * x.ln() - x + 0.5 * (2.0 * std::f64::consts::PI).ln()
-            + 1.0 / (12.0 * x)
+        (x - 0.5) * x.ln() - x + 0.5 * (2.0 * std::f64::consts::PI).ln() + 1.0 / (12.0 * x)
             - 1.0 / (360.0 * x2 * x)
             + 1.0 / (1260.0 * x2 * x2 * x)
     }
@@ -1507,9 +1519,9 @@ mod tests {
     fn test_is_stuck_detection() {
         let mut config = HsmmConfig::default();
         // Configure zombie state to be easily detected: very specific profile
-        config.emission_means[0] = [0.5, 0.5, 0.3, 0.3];  // Useful: active
-        config.emission_means[1] = [0.8, 0.7, 0.6, 0.4];  // UsefulBad: high resources
-        config.emission_means[2] = [0.1, 0.1, 0.3, 0.7];  // Abandoned: low activity, old
+        config.emission_means[0] = [0.5, 0.5, 0.3, 0.3]; // Useful: active
+        config.emission_means[1] = [0.8, 0.7, 0.6, 0.4]; // UsefulBad: high resources
+        config.emission_means[2] = [0.1, 0.1, 0.3, 0.7]; // Abandoned: low activity, old
         config.emission_means[3] = [0.0, 0.0, 0.1, 0.99]; // Zombie: zero activity, very old
         config.emission_vars = [[0.005; 4]; 4]; // Very tight variances
         config.duration_priors[3] = GammaDuration::new(2.0, 0.5); // Mean duration 4

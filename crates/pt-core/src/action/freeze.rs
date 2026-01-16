@@ -56,9 +56,8 @@ impl FreezeActionRunner {
     /// Returns the path to `/sys/fs/cgroup{unified_path}/cgroup.freeze`
     /// if the process is in a cgroup v2 hierarchy.
     fn get_freeze_path(&self, pid: u32) -> Result<String, ActionError> {
-        let details = collect_cgroup_details(pid).ok_or_else(|| {
-            ActionError::Failed(format!("cannot read cgroup for PID {pid}"))
-        })?;
+        let details = collect_cgroup_details(pid)
+            .ok_or_else(|| ActionError::Failed(format!("cannot read cgroup for PID {pid}")))?;
 
         // Require cgroup v2 (unified hierarchy)
         if details.version != CgroupVersion::V2 && details.version != CgroupVersion::Hybrid {
@@ -68,9 +67,9 @@ impl FreezeActionRunner {
             )));
         }
 
-        let unified_path = details.unified_path.ok_or_else(|| {
-            ActionError::Failed("no unified cgroup path found".to_string())
-        })?;
+        let unified_path = details
+            .unified_path
+            .ok_or_else(|| ActionError::Failed("no unified cgroup path found".to_string()))?;
 
         let freeze_path = format!("/sys/fs/cgroup{}/cgroup.freeze", unified_path);
 
@@ -89,9 +88,8 @@ impl FreezeActionRunner {
     ///
     /// Returns `true` if frozen, `false` if running.
     fn read_freeze_state(&self, freeze_path: &str) -> Result<bool, ActionError> {
-        let content = fs::read_to_string(freeze_path).map_err(|e| {
-            ActionError::Failed(format!("cannot read {}: {}", freeze_path, e))
-        })?;
+        let content = fs::read_to_string(freeze_path)
+            .map_err(|e| ActionError::Failed(format!("cannot read {}: {}", freeze_path, e)))?;
 
         match content.trim() {
             "1" => Ok(true),
@@ -111,11 +109,9 @@ impl FreezeActionRunner {
 
         trace!(path = freeze_path, value = value, "writing freeze state");
 
-        fs::write(freeze_path, value).map_err(|e| {
-            match e.kind() {
-                std::io::ErrorKind::PermissionDenied => ActionError::PermissionDenied,
-                _ => ActionError::Failed(format!("cannot write {}: {}", freeze_path, e)),
-            }
+        fs::write(freeze_path, value).map_err(|e| match e.kind() {
+            std::io::ErrorKind::PermissionDenied => ActionError::PermissionDenied,
+            _ => ActionError::Failed(format!("cannot write {}: {}", freeze_path, e)),
         })
     }
 
@@ -195,13 +191,17 @@ impl ActionRunner for FreezeActionRunner {
             Action::Freeze => self.execute_freeze(action),
             Action::Unfreeze => self.execute_unfreeze(action),
             Action::Keep => Ok(()),
-            Action::Pause | Action::Resume | Action::Kill | Action::Throttle
-            | Action::Restart | Action::Renice | Action::Quarantine | Action::Unquarantine => {
-                Err(ActionError::Failed(format!(
-                    "{:?} requires signal/setpriority support, not cgroup freeze",
-                    action.action
-                )))
-            }
+            Action::Pause
+            | Action::Resume
+            | Action::Kill
+            | Action::Throttle
+            | Action::Restart
+            | Action::Renice
+            | Action::Quarantine
+            | Action::Unquarantine => Err(ActionError::Failed(format!(
+                "{:?} requires signal/setpriority support, not cgroup freeze",
+                action.action
+            ))),
         }
     }
 
@@ -210,8 +210,14 @@ impl ActionRunner for FreezeActionRunner {
             Action::Freeze => self.verify_freeze(action),
             Action::Unfreeze => self.verify_unfreeze(action),
             Action::Keep => Ok(()),
-            Action::Pause | Action::Resume | Action::Kill | Action::Throttle
-            | Action::Restart | Action::Renice | Action::Quarantine | Action::Unquarantine => Ok(()),
+            Action::Pause
+            | Action::Resume
+            | Action::Kill
+            | Action::Throttle
+            | Action::Restart
+            | Action::Renice
+            | Action::Quarantine
+            | Action::Unquarantine => Ok(()),
         }
     }
 }
@@ -331,12 +337,7 @@ mod tests {
             if let Ok(path) = path_result {
                 match runner.read_freeze_state(&path) {
                     Ok(frozen) => {
-                        crate::test_log!(
-                            INFO,
-                            "freeze state read",
-                            pid = pid,
-                            frozen = frozen
-                        );
+                        crate::test_log!(INFO, "freeze state read", pid = pid, frozen = frozen);
                         // Our test process should not be frozen
                         assert!(!frozen, "test process should not be frozen");
                     }

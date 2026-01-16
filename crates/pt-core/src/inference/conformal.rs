@@ -768,10 +768,7 @@ mod tests {
 
         // All calibration with high confidence in A
         for _ in 0..5 {
-            classifier.calibrate(
-                "A",
-                &[("A".to_string(), 0.9), ("B".to_string(), 0.1)],
-            );
+            classifier.calibrate("A", &[("A".to_string(), 0.9), ("B".to_string(), 0.1)]);
         }
 
         // Test with high A probability -> should include A
@@ -955,7 +952,7 @@ mod tests {
         // Symmetric residuals
         for _ in 0..10 {
             regressor.calibrate(10.0, 11.0); // +1
-            regressor.calibrate(10.0, 9.0);  // -1
+            regressor.calibrate(10.0, 9.0); // -1
         }
 
         let interval = regressor.predict(10.0);

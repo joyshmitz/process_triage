@@ -137,8 +137,7 @@ impl DependencyScaling {
     ///          w_shm × (shared_memory / max_shared_memory)
     /// ```
     pub fn compute_impact_score(&self, factors: &DependencyFactors) -> f64 {
-        let child_normalized =
-            (factors.child_count as f64 / self.max_children as f64).min(1.0);
+        let child_normalized = (factors.child_count as f64 / self.max_children as f64).min(1.0);
         let conn_normalized =
             (factors.established_connections as f64 / self.max_connections as f64).min(1.0);
         let listen_normalized =
@@ -355,15 +354,15 @@ impl Default for CriticalFileInflation {
             // Maximum cap
             max_inflation: 100.0,
             // Category weights (danger level)
-            sqlite_wal_weight: 2.0,       // Very dangerous - active DB write
-            git_lock_weight: 1.5,         // Dangerous - repo operation
-            git_rebase_weight: 2.0,       // Very dangerous - complex git state
+            sqlite_wal_weight: 2.0, // Very dangerous - active DB write
+            git_lock_weight: 1.5,   // Dangerous - repo operation
+            git_rebase_weight: 2.0, // Very dangerous - complex git state
             system_package_lock_weight: 2.5, // Very dangerous - system state
-            node_package_lock_weight: 1.5,   // Dangerous - package install
-            cargo_lock_weight: 1.5,          // Dangerous - package install
-            database_write_weight: 1.5,      // Dangerous - data writes
-            app_lock_weight: 1.0,            // Moderate - application locks
-            open_write_weight: 0.5,          // Lower - generic writes
+            node_package_lock_weight: 1.5, // Dangerous - package install
+            cargo_lock_weight: 1.5, // Dangerous - package install
+            database_write_weight: 1.5, // Dangerous - data writes
+            app_lock_weight: 1.0,   // Moderate - application locks
+            open_write_weight: 0.5, // Lower - generic writes
         }
     }
 }
@@ -497,17 +496,12 @@ pub fn compute_critical_file_inflation(
         .count();
     let soft_count = critical_files.len() - hard_count;
 
-    let mut categories: Vec<CriticalFileCategory> = critical_files
-        .iter()
-        .map(|f| f.category.clone())
-        .collect();
+    let mut categories: Vec<CriticalFileCategory> =
+        critical_files.iter().map(|f| f.category.clone()).collect();
     categories.sort_by_key(|c| format!("{:?}", c));
     categories.dedup();
 
-    let mut rule_ids: Vec<String> = critical_files
-        .iter()
-        .map(|f| f.rule_id.clone())
-        .collect();
+    let mut rule_ids: Vec<String> = critical_files.iter().map(|f| f.rule_id.clone()).collect();
     rule_ids.sort();
     rule_ids.dedup();
 
@@ -602,7 +596,12 @@ mod tests {
         };
 
         let impact = config.compute_impact_score(&factors);
-        assert!(impact <= config.max_impact, "Impact {} > max {}", impact, config.max_impact);
+        assert!(
+            impact <= config.max_impact,
+            "Impact {} > max {}",
+            impact,
+            config.max_impact
+        );
     }
 
     #[test]
@@ -611,17 +610,22 @@ mod tests {
         let base_loss = 100.0;
 
         let factors = DependencyFactors {
-            child_count: 10,  // 0.1 * 0.5 = 0.05
-            established_connections: 25,  // 0.2 * 0.5 = 0.1
-            listen_ports: 5,  // 0.5 * 0.5 = 0.25
-            open_write_handles: 50,  // 0.3 * 0.5 = 0.15
+            child_count: 10,             // 0.1 * 0.5 = 0.05
+            established_connections: 25, // 0.2 * 0.5 = 0.1
+            listen_ports: 5,             // 0.5 * 0.5 = 0.25
+            open_write_handles: 50,      // 0.3 * 0.5 = 0.15
             shared_memory_segments: 10,  // 0.1 * 0.5 = 0.05
         };
 
         // Expected impact: 0.05 + 0.1 + 0.25 + 0.15 + 0.05 = 0.6
         let scaled = config.scale_loss(base_loss, &factors);
         let expected = base_loss * (1.0 + 0.6);
-        assert!(approx_eq(scaled, expected, 0.01), "Scaled: {}, Expected: {}", scaled, expected);
+        assert!(
+            approx_eq(scaled, expected, 0.01),
+            "Scaled: {}, Expected: {}",
+            scaled,
+            expected
+        );
     }
 
     #[test]
@@ -659,7 +663,11 @@ mod tests {
         assert!(result.impact_score > 0.0);
         assert_eq!(result.original_kill_loss, 100.0);
         assert!(result.scaled_kill_loss > 100.0);
-        assert!(approx_eq(result.scale_factor, 1.0 + result.impact_score, 0.001));
+        assert!(approx_eq(
+            result.scale_factor,
+            1.0 + result.impact_score,
+            0.001
+        ));
     }
 
     #[test]
@@ -676,18 +684,18 @@ mod tests {
     fn test_custom_config() {
         // Test with custom weights that heavily penalize listen ports
         let config = DependencyScaling::new(
-            0.0,  // child
-            0.0,  // conn
-            1.0,  // listen (100% weight)
-            0.0,  // write
-            0.0,  // shm
+            0.0, // child
+            0.0, // conn
+            1.0, // listen (100% weight)
+            0.0, // write
+            0.0, // shm
         );
 
         let factors = DependencyFactors {
-            child_count: 100,  // Should not contribute
-            established_connections: 100,  // Should not contribute
-            listen_ports: 5,  // 5/10 = 0.5
-            open_write_handles: 100,  // Should not contribute
+            child_count: 100,             // Should not contribute
+            established_connections: 100, // Should not contribute
+            listen_ports: 5,              // 5/10 = 0.5
+            open_write_handles: 100,      // Should not contribute
             shared_memory_segments: 100,  // Should not contribute
         };
 
@@ -701,7 +709,7 @@ mod tests {
 
         // Values beyond max should be capped at 1.0 in normalization
         let factors = DependencyFactors {
-            child_count: 100,  // >> 20, capped to 1.0
+            child_count: 100, // >> 20, capped to 1.0
             established_connections: 0,
             listen_ports: 0,
             open_write_handles: 0,
@@ -734,11 +742,8 @@ mod tests {
 
     #[test]
     fn test_result_json_serialization() {
-        let result = compute_dependency_scaling(
-            100.0,
-            &DependencyFactors::new(3, 5, 1, 10, 2),
-            None,
-        );
+        let result =
+            compute_dependency_scaling(100.0, &DependencyFactors::new(3, 5, 1, 10, 2), None);
 
         let json = serde_json::to_string(&result).unwrap();
         assert!(json.contains("impact_score"));

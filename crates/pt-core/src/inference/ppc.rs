@@ -189,11 +189,7 @@ impl From<&PpcResult> for PpcEvidence {
                 .iter()
                 .map(|c| format!("{:?}", c.statistic).to_lowercase())
                 .collect(),
-            min_p_value: result
-                .checks
-                .iter()
-                .map(|c| c.p_value)
-                .fold(1.0, f64::min),
+            min_p_value: result.checks.iter().map(|c| c.p_value).fold(1.0, f64::min),
             confidence_penalty: if result.passed {
                 0.0
             } else {
@@ -506,10 +502,7 @@ impl PpcChecker {
             return 0.0;
         }
 
-        let cov: f64 = data
-            .windows(2)
-            .map(|w| (w[0] - mean) * (w[1] - mean))
-            .sum();
+        let cov: f64 = data.windows(2).map(|w| (w[0] - mean) * (w[1] - mean)).sum();
 
         cov / var
     }
@@ -1067,12 +1060,18 @@ mod tests {
         // Highly autocorrelated: increasing sequence
         let data: Vec<f64> = (0..20).map(|i| i as f64).collect();
         let acf = checker.compute_statistic(&data, TestStatistic::Autocorrelation);
-        assert!(acf > 0.8, "Increasing sequence should have high autocorrelation");
+        assert!(
+            acf > 0.8,
+            "Increasing sequence should have high autocorrelation"
+        );
 
         // Low autocorrelation: alternating
         let data = vec![1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
         let acf = checker.compute_statistic(&data, TestStatistic::Autocorrelation);
-        assert!(acf < 0.0, "Alternating sequence should have negative autocorrelation");
+        assert!(
+            acf < 0.0,
+            "Alternating sequence should have negative autocorrelation"
+        );
     }
 
     #[test]
@@ -1081,7 +1080,10 @@ mod tests {
         // Right-skewed data
         let data = vec![1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 10.0];
         let skew = checker.compute_statistic(&data, TestStatistic::Skewness);
-        assert!(skew > 0.0, "Right-skewed data should have positive skewness");
+        assert!(
+            skew > 0.0,
+            "Right-skewed data should have positive skewness"
+        );
     }
 
     #[test]
@@ -1259,7 +1261,10 @@ mod tests {
         let data = vec![5.0];
 
         assert_eq!(checker.compute_statistic(&data, TestStatistic::Mean), 5.0);
-        assert_eq!(checker.compute_statistic(&data, TestStatistic::Variance), 0.0);
+        assert_eq!(
+            checker.compute_statistic(&data, TestStatistic::Variance),
+            0.0
+        );
         assert_eq!(
             checker.compute_statistic(&data, TestStatistic::Maximum),
             5.0

@@ -201,12 +201,10 @@ pub fn read_ppid(pid: u32) -> Result<u32, NohupError> {
     }
 
     // Field 1 (after state) is ppid
-    fields[1]
-        .parse()
-        .map_err(|_| NohupError::ParseError {
-            pid,
-            message: format!("invalid ppid: {}", fields[1]),
-        })
+    fields[1].parse().map_err(|_| NohupError::ParseError {
+        pid,
+        message: format!("invalid ppid: {}", fields[1]),
+    })
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -471,8 +469,7 @@ impl NohupAnalyzer {
         result.is_background = result.ignores_sighup
             || result.has_nohup_cmd
             || result.has_nohup_output
-            || (result.is_orphaned
-                && (fd_info_suggests_background(pid).unwrap_or(false)));
+            || (result.is_orphaned && (fd_info_suggests_background(pid).unwrap_or(false)));
 
         // Infer intent
         result.inferred_intent = self.infer_intent(&result);
@@ -488,16 +485,13 @@ impl NohupAnalyzer {
         }
 
         // nohup.out active + nohup command = intentional, active
-        if result.has_nohup_cmd
-            && result.nohup_output_activity == Some(NohupOutputActivity::Active)
+        if result.has_nohup_cmd && result.nohup_output_activity == Some(NohupOutputActivity::Active)
         {
             return BackgroundIntent::Intentional;
         }
 
         // nohup.out stale + old orphan = likely forgotten
-        if result.is_orphaned
-            && result.nohup_output_activity == Some(NohupOutputActivity::Stale)
-        {
+        if result.is_orphaned && result.nohup_output_activity == Some(NohupOutputActivity::Stale) {
             return BackgroundIntent::Forgotten;
         }
 

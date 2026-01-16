@@ -17,6 +17,11 @@ pub use causal_interventions::{
     expected_recovery_for_action, recovery_for_class, recovery_table, InterventionOutcome,
     ProcessClass, RecoveryExpectation, RecoveryTable,
 };
+pub use dependency_loss::{
+    compute_critical_file_inflation, compute_dependency_scaling, scale_kill_loss,
+    should_block_kill, CriticalFileInflation, CriticalFileInflationResult, DependencyFactors,
+    DependencyScaling, DependencyScalingResult,
+};
 pub use enforcer::{
     CriticalFilesSummary, EnforcerError, PolicyCheckResult, PolicyEnforcer, PolicyViolation,
     ProcessCandidate, ViolationKind,
@@ -29,17 +34,11 @@ pub use fdr_selection::{
     by_correction_factor, select_fdr, CandidateSelection, FdrCandidate, FdrError, FdrMethod,
     FdrSelectionResult, TargetIdentity,
 };
-pub use dependency_loss::{
-    compute_critical_file_inflation, compute_dependency_scaling, scale_kill_loss,
-    should_block_kill, CriticalFileInflation, CriticalFileInflationResult, DependencyFactors,
-    DependencyScaling, DependencyScalingResult,
-};
 pub use robot_constraints::{
-    ConstraintCheckResult, ConstraintChecker, ConstraintKind, ConstraintMetrics,
-    ConstraintSource, ConstraintSources, ConstraintViolation, RobotCandidate,
-    RuntimeRobotConstraints,
+    ConstraintCheckResult, ConstraintChecker, ConstraintKind, ConstraintMetrics, ConstraintSource,
+    ConstraintSources, ConstraintViolation, RobotCandidate, RuntimeRobotConstraints,
 };
 pub use voi::{
-    compute_voi, select_probe_by_information_gain, ProbeCost, ProbeCostModel,
-    ProbeInformationGain, ProbeType, ProbeVoi, VoiAnalysis, VoiError,
+    compute_voi, select_probe_by_information_gain, ProbeCost, ProbeCostModel, ProbeInformationGain,
+    ProbeType, ProbeVoi, VoiAnalysis, VoiError,
 };

@@ -163,7 +163,10 @@ impl BetaParams {
 
 impl Default for BetaParams {
     fn default() -> Self {
-        Self { alpha: 1.0, beta: 1.0 }
+        Self {
+            alpha: 1.0,
+            beta: 1.0,
+        }
     }
 }
 
@@ -241,7 +244,10 @@ impl BetaStacyModel {
         }
     }
 
-    pub fn update_from_samples(&mut self, samples: &[LifetimeSample]) -> Result<(), BetaStacyError> {
+    pub fn update_from_samples(
+        &mut self,
+        samples: &[LifetimeSample],
+    ) -> Result<(), BetaStacyError> {
         let mut at_risk = vec![0u32; self.bins.len()];
         let mut events = vec![0u32; self.bins.len()];
 
@@ -290,9 +296,18 @@ mod tests {
         let mut model = BetaStacyModel::new(scheme, prior).unwrap();
 
         let samples = vec![
-            LifetimeSample { duration_s: 5.0, event: true },
-            LifetimeSample { duration_s: 12.0, event: true },
-            LifetimeSample { duration_s: 25.0, event: false },
+            LifetimeSample {
+                duration_s: 5.0,
+                event: true,
+            },
+            LifetimeSample {
+                duration_s: 12.0,
+                event: true,
+            },
+            LifetimeSample {
+                duration_s: 25.0,
+                event: false,
+            },
         ];
         model.update_from_samples(&samples).unwrap();
 
@@ -318,9 +333,18 @@ mod tests {
         let prior = BetaParams::new(1.0, 1.0);
         let mut model = BetaStacyModel::new(scheme, prior).unwrap();
         let samples = vec![
-            LifetimeSample { duration_s: 5.0, event: true },
-            LifetimeSample { duration_s: 12.0, event: true },
-            LifetimeSample { duration_s: 25.0, event: false },
+            LifetimeSample {
+                duration_s: 5.0,
+                event: true,
+            },
+            LifetimeSample {
+                duration_s: 12.0,
+                event: true,
+            },
+            LifetimeSample {
+                duration_s: 25.0,
+                event: false,
+            },
         ];
         model.update_from_samples(&samples).unwrap();
 

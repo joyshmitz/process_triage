@@ -72,10 +72,10 @@ impl KalmanConfig {
         Self {
             transition_coef: 1.0,
             observation_coef: 1.0,
-            process_noise: 4.0,       // ~2% std per step
-            observation_noise: 25.0,  // ~5% measurement noise std
+            process_noise: 4.0,      // ~2% std per step
+            observation_noise: 25.0, // ~5% measurement noise std
             initial_mean: 50.0,
-            initial_variance: 400.0,  // ~20% initial uncertainty
+            initial_variance: 400.0, // ~20% initial uncertainty
             auto_tune: false,
         }
     }
@@ -85,8 +85,8 @@ impl KalmanConfig {
         Self {
             transition_coef: 1.0,
             observation_coef: 1.0,
-            process_noise: 0.04,      // Small process noise
-            observation_noise: 0.16,  // Moderate observation noise
+            process_noise: 0.04,     // Small process noise
+            observation_noise: 0.16, // Moderate observation noise
             initial_mean: 1.0,
             initial_variance: 1.0,
             auto_tune: false,
@@ -98,8 +98,8 @@ impl KalmanConfig {
         Self {
             transition_coef: 1.0,
             observation_coef: 1.0,
-            process_noise: 100.0,      // ~10MB std process noise
-            observation_noise: 400.0,  // ~20MB measurement noise
+            process_noise: 100.0,     // ~10MB std process noise
+            observation_noise: 400.0, // ~20MB measurement noise
             initial_mean: 1000.0,
             initial_variance: 10000.0,
             auto_tune: false,
@@ -261,7 +261,10 @@ impl KalmanFilter {
 
         for state in &filter_states {
             let s = c * c * state.predicted_variance + r;
-            log_likelihood += -0.5 * (state.innovation * state.innovation / s + s.ln() + std::f64::consts::TAU.ln() / 2.0);
+            log_likelihood += -0.5
+                * (state.innovation * state.innovation / s
+                    + s.ln()
+                    + std::f64::consts::TAU.ln() / 2.0);
             sum_sq_innovation += state.innovation * state.innovation;
         }
         let mean_squared_innovation = sum_sq_innovation / n as f64;
@@ -277,12 +280,12 @@ impl KalmanFilter {
             let j = a * filtered_variances[t] / p_pred_next.max(1e-10);
 
             // Smoothed mean
-            smoothed_means[t] = filtered_means[t]
-                + j * (smoothed_means[t + 1] - a * filtered_means[t]);
+            smoothed_means[t] =
+                filtered_means[t] + j * (smoothed_means[t + 1] - a * filtered_means[t]);
 
             // Smoothed variance
-            smoothed_variances[t] = filtered_variances[t]
-                + j * j * (smoothed_variances[t + 1] - p_pred_next);
+            smoothed_variances[t] =
+                filtered_variances[t] + j * j * (smoothed_variances[t + 1] - p_pred_next);
 
             // Ensure variance stays positive
             smoothed_variances[t] = smoothed_variances[t].max(1e-10);
@@ -450,13 +453,24 @@ impl KalmanEvidence {
         }
 
         let mean = result.smoothed_means.iter().sum::<f64>() / n as f64;
-        let variance = result.smoothed_means.iter()
+        let variance = result
+            .smoothed_means
+            .iter()
             .map(|x| (x - mean).powi(2))
-            .sum::<f64>() / n as f64;
+            .sum::<f64>()
+            / n as f64;
         let std = variance.sqrt();
 
-        let min = result.smoothed_means.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max = result.smoothed_means.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min = result
+            .smoothed_means
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let max = result
+            .smoothed_means
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
 
         let avg_uncertainty = result.smoothed_stds.iter().sum::<f64>() / n as f64;
 
@@ -628,10 +642,10 @@ mod tests {
 
         // Smoothed uncertainties should generally be smaller than filtered
         // (smoothing uses more information)
-        let avg_filtered_var = result.filtered_variances.iter().sum::<f64>()
-            / result.n_observations as f64;
-        let avg_smoothed_var = result.smoothed_variances.iter().sum::<f64>()
-            / result.n_observations as f64;
+        let avg_filtered_var =
+            result.filtered_variances.iter().sum::<f64>() / result.n_observations as f64;
+        let avg_smoothed_var =
+            result.smoothed_variances.iter().sum::<f64>() / result.n_observations as f64;
 
         assert!(
             avg_smoothed_var <= avg_filtered_var + 1e-6,

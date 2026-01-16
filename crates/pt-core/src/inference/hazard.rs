@@ -204,18 +204,12 @@ impl RegimeState {
             let mean = alpha / beta;
             let std = (alpha / (beta * beta)).sqrt();
             let z = 1.96 * (1.0 - level / 2.0).abs(); // Approximate
-            (
-                (mean - z * std).max(0.0),
-                mean + z * std,
-            )
+            ((mean - z * std).max(0.0), mean + z * std)
         } else {
             // Use simple bounds based on variance
             let mean = alpha / beta;
             let std = (alpha / (beta * beta)).sqrt();
-            (
-                (mean - 2.0 * std).max(0.0),
-                mean + 2.0 * std,
-            )
+            ((mean - 2.0 * std).max(0.0), mean + 2.0 * std)
         }
     }
 }
@@ -360,9 +354,9 @@ impl HazardModel {
 
     /// Get or create the state for a regime.
     fn get_or_create_regime(&mut self, regime: Regime) -> &mut RegimeState {
-        self.regimes.entry(regime).or_insert_with(|| {
-            RegimeState::new(regime, self.priors.get(&regime))
-        })
+        self.regimes
+            .entry(regime)
+            .or_insert_with(|| RegimeState::new(regime, self.priors.get(&regime)))
     }
 
     /// Record exposure time in a specific regime.
@@ -446,7 +440,9 @@ impl HazardModel {
 
         // Sort by cumulative hazard (highest first)
         regime_stats.sort_by(|a, b| {
-            b.cumulative_hazard.partial_cmp(&a.cumulative_hazard).unwrap_or(std::cmp::Ordering::Equal)
+            b.cumulative_hazard
+                .partial_cmp(&a.cumulative_hazard)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Find dominant regime
@@ -671,9 +667,9 @@ mod tests {
     fn test_hazard_model_multiple_regimes() {
         let mut model = HazardModel::new();
 
-        model.record_exposure(Regime::Normal, 3600.0);      // 1 hour normal
-        model.record_exposure(Regime::TtyLost, 1800.0);     // 30 min TTY lost
-        model.record_exposure(Regime::IoFlatline, 900.0);   // 15 min IO flatline
+        model.record_exposure(Regime::Normal, 3600.0); // 1 hour normal
+        model.record_exposure(Regime::TtyLost, 1800.0); // 30 min TTY lost
+        model.record_exposure(Regime::IoFlatline, 900.0); // 15 min IO flatline
 
         let result = model.compute_survival();
 
@@ -795,12 +791,12 @@ mod tests {
         let result = model.compute_survival();
 
         // Orphaned should have higher hazard fraction
-        let orphan_stats = result.regimes.iter()
+        let orphan_stats = result
+            .regimes
+            .iter()
             .find(|s| s.name == "orphaned")
             .unwrap();
-        let normal_stats = result.regimes.iter()
-            .find(|s| s.name == "normal")
-            .unwrap();
+        let normal_stats = result.regimes.iter().find(|s| s.name == "normal").unwrap();
 
         assert!(
             orphan_stats.cumulative_hazard > normal_stats.cumulative_hazard,

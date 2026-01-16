@@ -493,7 +493,10 @@ impl SupervisorActionRunner {
             SupervisorCommand::Delete => "disable", // systemd doesn't "delete" - we disable
         };
 
-        Ok(("systemctl".to_string(), vec![subcmd.to_string(), unit.clone()]))
+        Ok((
+            "systemctl".to_string(),
+            vec![subcmd.to_string(), unit.clone()],
+        ))
     }
 
     fn build_pm2_command(
@@ -557,7 +560,10 @@ impl SupervisorActionRunner {
         };
 
         args.push(container_id.clone());
-        Ok(("docker".to_string(), vec![subcmd.to_string()].into_iter().chain(args).collect()))
+        Ok((
+            "docker".to_string(),
+            vec![subcmd.to_string()].into_iter().chain(args).collect(),
+        ))
     }
 
     fn build_containerd_command(
@@ -573,19 +579,11 @@ impl SupervisorActionRunner {
         // containerd uses ctr
         let args = match action.command {
             SupervisorCommand::Stop | SupervisorCommand::Kill => {
-                vec![
-                    "task".to_string(),
-                    "kill".to_string(),
-                    container_id.clone(),
-                ]
+                vec!["task".to_string(), "kill".to_string(), container_id.clone()]
             }
             SupervisorCommand::Restart => {
                 // containerd doesn't have restart - would need to kill and start
-                vec![
-                    "task".to_string(),
-                    "kill".to_string(),
-                    container_id.clone(),
-                ]
+                vec!["task".to_string(), "kill".to_string(), container_id.clone()]
             }
             SupervisorCommand::Delete => {
                 vec![
@@ -617,7 +615,10 @@ impl SupervisorActionRunner {
         };
 
         args.push(container_id.clone());
-        Ok(("podman".to_string(), vec![subcmd.to_string()].into_iter().chain(args).collect()))
+        Ok((
+            "podman".to_string(),
+            vec![subcmd.to_string()].into_iter().chain(args).collect(),
+        ))
     }
 
     fn build_forever_command(
@@ -740,9 +741,7 @@ impl SupervisorActionRunner {
             .unwrap_or(&action.unit_identifier);
 
         // Check if unit is active via systemctl
-        let output = Command::new("systemctl")
-            .args(["is-active", unit])
-            .output();
+        let output = Command::new("systemctl").args(["is-active", unit]).output();
 
         if let Ok(output) = output {
             let status = String::from_utf8_lossy(&output.stdout);
@@ -760,9 +759,7 @@ impl SupervisorActionRunner {
             .unwrap_or(&action.unit_identifier);
 
         // Check pm2 status
-        let output = Command::new("pm2")
-            .args(["show", name])
-            .output();
+        let output = Command::new("pm2").args(["show", name]).output();
 
         if let Ok(output) = output {
             let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1109,7 +1106,10 @@ mod tests {
         };
 
         let result = runner.execute_supervisor_action(&action);
-        assert!(matches!(result, Err(SupervisorActionError::ProtectedUnit(_))));
+        assert!(matches!(
+            result,
+            Err(SupervisorActionError::ProtectedUnit(_))
+        ));
     }
 
     #[test]

@@ -15,17 +15,20 @@
 //! - Target: <5s for 1000 processes
 //! - Graceful degradation for permission-denied paths
 
+use super::network::{NetworkInfo, NetworkSnapshot};
 use super::proc_parsers::{
     parse_cgroup, parse_environ, parse_fd, parse_io, parse_sched, parse_schedstat, parse_statm,
     parse_wchan, CgroupInfo, FdInfo, IoStats, MemStats, SchedInfo, SchedStats,
 };
-use super::network::{NetworkInfo, NetworkSnapshot};
 use crate::events::{event_names, Phase, ProgressEmitter, ProgressEvent};
 use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use std::sync::{atomic::{AtomicUsize, Ordering}, Arc};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::thread;
 use std::time::Instant;
 use thiserror::Error;
@@ -265,15 +268,18 @@ pub fn deep_scan(options: &DeepScanOptions) -> Result<DeepScanResult, DeepScanEr
 
     const PROGRESS_STEP: usize = 50;
     let scanned_counter = AtomicUsize::new(0);
-    
+
     // Determine parallelism
-    let num_threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).min(16); // Cap threads
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .min(16); // Cap threads
     let chunk_size = (pids.len() + num_threads - 1) / num_threads.max(1);
     let chunks: Vec<_> = pids.chunks(chunk_size).collect();
 
     let (processes, warnings, skipped_count) = thread::scope(|s| {
         let mut handles = Vec::new();
-        
+
         for chunk in chunks {
             let user_cache_ref = &user_cache;
             let network_snapshot_ref = &network_snapshot;
@@ -308,9 +314,12 @@ pub fn deep_scan(options: &DeepScanOptions) -> Result<DeepScanResult, DeepScanEr
                     if current % PROGRESS_STEP == 0 {
                         if let Some(emitter) = progress_ref {
                             emitter.emit(
-                                ProgressEvent::new(event_names::DEEP_SCAN_PROGRESS, Phase::DeepScan)
-                                    .with_progress(current as u64, Some(total_pids))
-                                    .with_detail("skipped", local_skipped), // Local skipped isn't global, but roughly indicative
+                                ProgressEvent::new(
+                                    event_names::DEEP_SCAN_PROGRESS,
+                                    Phase::DeepScan,
+                                )
+                                .with_progress(current as u64, Some(total_pids))
+                                .with_detail("skipped", local_skipped), // Local skipped isn't global, but roughly indicative
                             );
                         }
                     }
@@ -330,7 +339,7 @@ pub fn deep_scan(options: &DeepScanOptions) -> Result<DeepScanResult, DeepScanEr
                 total_skipped += s;
             }
         }
-        
+
         (all_processes, all_warnings, total_skipped)
     });
 
@@ -820,13 +829,7 @@ Gid:	1000	1000	1000	1000
             .map(|s| s.trim().to_string());
         let network_snapshot = NetworkSnapshot::collect();
 
-        let record = scan_process(
-            proc.pid(),
-            true,
-            &user_cache,
-            &boot_id,
-            &network_snapshot,
-        );
+        let record = scan_process(proc.pid(), true, &user_cache, &boot_id, &network_snapshot);
         crate::test_log!(
             INFO,
             "scan_process result",
@@ -867,7 +870,10 @@ Gid:	1000	1000	1000	1000
             pids.contains(&my_pid),
             "list_all_pids should include our own PID"
         );
-        assert!(!pids.is_empty(), "list_all_pids should return at least one PID");
+        assert!(
+            !pids.is_empty(),
+            "list_all_pids should return at least one PID"
+        );
 
         crate::test_log!(
             INFO,

@@ -444,10 +444,10 @@ impl ImmEvidence {
     pub fn log_bf_for_triage(&self) -> f64 {
         // Combine regime change evidence with regime type evidence
         let regime_factor = match self.regime {
-            Regime::Idle => -1.0, // Idle is typically good
-            Regime::Active => 0.0, // Active is neutral
+            Regime::Idle => -1.0,    // Idle is typically good
+            Regime::Active => 0.0,   // Active is neutral
             Regime::Elevated => 1.0, // Elevated suggests problems
-            Regime::Stuck => 2.0, // Stuck strongly suggests problems
+            Regime::Stuck => 2.0,    // Stuck strongly suggests problems
             Regime::Custom(_) => 0.0,
         };
 
@@ -570,8 +570,7 @@ impl ImmAnalyzer {
             let mut p_mixed = 0.0;
             for i in 0..n {
                 let diff = self.state.mode_states[i].state - x_mixed;
-                p_mixed += mixing_probs[i]
-                    * (self.state.mode_states[i].covariance + diff * diff);
+                p_mixed += mixing_probs[i] * (self.state.mode_states[i].covariance + diff * diff);
             }
 
             mixed_states.push(x_mixed);
@@ -602,8 +601,11 @@ impl ImmAnalyzer {
             let p_upd = (1.0 - k) * p_pred;
 
             // Mode likelihood (Gaussian)
-            let likelihood = (-0.5 * (innovation * innovation / s + s.ln() + std::f64::consts::LN_2
-                + std::f64::consts::PI.ln()))
+            let likelihood = (-0.5
+                * (innovation * innovation / s
+                    + s.ln()
+                    + std::f64::consts::LN_2
+                    + std::f64::consts::PI.ln()))
             .exp();
 
             self.state.mode_states[j] = ModeFilterState {
@@ -720,7 +722,8 @@ impl ImmAnalyzer {
         self.innovation_accumulator += innovation.abs();
 
         // Track regime sequence
-        self.regime_sequence.push(Regime::from_index(current_most_likely));
+        self.regime_sequence
+            .push(Regime::from_index(current_most_likely));
 
         Ok(ImmUpdateResult {
             mode_probabilities: new_mode_probs,
@@ -971,7 +974,11 @@ mod tests {
         let observations: Vec<f64> = (0..100)
             .map(|i| {
                 // Alternating big jumps that can't be explained by low process noise
-                if i % 2 == 0 { 10.0 } else { -5.0 }
+                if i % 2 == 0 {
+                    10.0
+                } else {
+                    -5.0
+                }
             })
             .collect();
 

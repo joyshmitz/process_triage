@@ -8,6 +8,7 @@
 
 #![cfg(all(feature = "test-utils", target_os = "linux"))]
 
+use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use pt_core::action::executor::ActionRunner;
 use pt_core::action::{
     can_throttle_process, CpuThrottleActionRunner, CpuThrottleConfig, DEFAULT_PERIOD_US,
@@ -17,7 +18,6 @@ use pt_core::collect::cgroup::{collect_cgroup_details, CgroupVersion};
 use pt_core::decision::Action as PlanActionType;
 use pt_core::plan::{ActionConfidence, ActionRationale, ActionRouting, ActionTimeouts, PlanAction};
 use pt_core::test_utils::ProcessHarness;
-use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use std::fs;
 use std::path::Path;
 use std::time::Duration;
@@ -234,7 +234,12 @@ fn test_throttle_spawned_process() {
     // Execute throttle
     let result = runner.execute(&action);
     if let Err(ref e) = result {
-        pt_core::test_log!(INFO, "throttle execution result", pid = pid, error = format!("{:?}", e).as_str());
+        pt_core::test_log!(
+            INFO,
+            "throttle execution result",
+            pid = pid,
+            error = format!("{:?}", e).as_str()
+        );
         // Permission errors are expected in non-privileged environments
         if matches!(e, pt_core::action::ActionError::PermissionDenied) {
             pt_core::test_log!(INFO, "Skipping verification: permission denied");
@@ -354,7 +359,10 @@ fn test_throttle_nonexistent_process() {
     };
 
     let result = runner.execute(&action);
-    assert!(result.is_err(), "throttling nonexistent process should fail");
+    assert!(
+        result.is_err(),
+        "throttling nonexistent process should fail"
+    );
     pt_core::test_log!(
         INFO,
         "throttle nonexistent result",
@@ -393,7 +401,10 @@ fn test_throttle_wrong_action_type() {
     };
 
     let result = runner.execute(&action);
-    assert!(result.is_err(), "kill action on throttle runner should fail");
+    assert!(
+        result.is_err(),
+        "kill action on throttle runner should fail"
+    );
 }
 
 #[test]

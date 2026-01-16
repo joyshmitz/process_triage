@@ -317,11 +317,15 @@ impl GpdFitter {
     fn select_threshold(&self, observations: &[f64]) -> Result<f64, EvtError> {
         match self.config.threshold_method {
             ThresholdMethod::Fixed => {
-                self.config.fixed_threshold.ok_or(EvtError::InvalidThreshold {
-                    message: "Fixed threshold requested but not set".to_string(),
-                })
+                self.config
+                    .fixed_threshold
+                    .ok_or(EvtError::InvalidThreshold {
+                        message: "Fixed threshold requested but not set".to_string(),
+                    })
             }
-            ThresholdMethod::Quantile => Ok(self.quantile(observations, self.config.threshold_quantile)),
+            ThresholdMethod::Quantile => {
+                Ok(self.quantile(observations, self.config.threshold_quantile))
+            }
             ThresholdMethod::MeanResidualLife => self.mrl_threshold(observations),
         }
     }
@@ -359,7 +363,11 @@ impl GpdFitter {
 
         for q in [0.80, 0.85, 0.90, 0.95] {
             let threshold = self.quantile(observations, q);
-            let exceedances: Vec<f64> = sorted.iter().filter(|&&x| x > threshold).map(|&x| x - threshold).collect();
+            let exceedances: Vec<f64> = sorted
+                .iter()
+                .filter(|&&x| x > threshold)
+                .map(|&x| x - threshold)
+                .collect();
 
             if exceedances.len() >= self.config.min_exceedances {
                 // Compute mean residual life variance
@@ -630,12 +638,17 @@ impl BatchEvtAnalyzer {
 
     /// Add a custom fitter.
     pub fn add_fitter(&mut self, name: &str, config: GpdConfig) {
-        self.fitters.insert(name.to_string(), GpdFitter::new(config));
+        self.fitters
+            .insert(name.to_string(), GpdFitter::new(config));
     }
 
     /// Analyze a metric.
     pub fn analyze(&self, metric: &str, observations: &[f64]) -> Result<GpdResult, EvtError> {
-        let fitter = self.fitters.get(metric).or_else(|| self.fitters.get("default")).unwrap();
+        let fitter = self
+            .fitters
+            .get(metric)
+            .or_else(|| self.fitters.get("default"))
+            .unwrap();
         fitter.fit(observations)
     }
 
@@ -941,7 +954,9 @@ mod tests {
         let analyzer = BatchEvtAnalyzer::new();
 
         // Generate test data
-        let data: Vec<f64> = (0..200).map(|i| (i as f64) * 0.3 + (i % 10) as f64 * 2.0).collect();
+        let data: Vec<f64> = (0..200)
+            .map(|i| (i as f64) * 0.3 + (i % 10) as f64 * 2.0)
+            .collect();
 
         let result = analyzer.analyze("cpu", &data);
         assert!(result.is_ok() || matches!(result, Err(EvtError::InsufficientExceedances { .. })));
@@ -1008,6 +1023,9 @@ mod tests {
         let result = fitter.fit(&data);
 
         // Should fail due to insufficient exceedances
-        assert!(matches!(result, Err(EvtError::InsufficientExceedances { .. })));
+        assert!(matches!(
+            result,
+            Err(EvtError::InsufficientExceedances { .. })
+        ));
     }
 }

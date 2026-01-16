@@ -112,12 +112,12 @@ impl CompiledProtectedPattern {
                 } else {
                     regex_str
                 };
-                Some(
-                    Regex::new(&full_pattern).map_err(|e| ProtectedFilterError::InvalidPattern {
+                Some(Regex::new(&full_pattern).map_err(|e| {
+                    ProtectedFilterError::InvalidPattern {
                         path: path.to_string(),
                         message: e.to_string(),
-                    })?,
-                )
+                    }
+                })?)
             }
             PatternKind::Literal => None, // Use string matching
         };
@@ -329,7 +329,9 @@ impl ProtectedFilter {
     /// Create a filter from policy guardrails struct.
     ///
     /// This is a convenience constructor that extracts fields from the policy types.
-    pub fn from_guardrails(guardrails: &crate::config::policy::Guardrails) -> Result<Self, ProtectedFilterError> {
+    pub fn from_guardrails(
+        guardrails: &crate::config::policy::Guardrails,
+    ) -> Result<Self, ProtectedFilterError> {
         let patterns: Vec<(String, String, bool, Option<String>)> = guardrails
             .protected_patterns
             .iter()
@@ -346,8 +348,16 @@ impl ProtectedFilter {
         Self::new(
             &patterns,
             &guardrails.protected_users,
-            &guardrails.never_kill_pid.iter().map(|&x| x as u32).collect::<Vec<_>>(),
-            &guardrails.never_kill_ppid.iter().map(|&x| x as u32).collect::<Vec<_>>(),
+            &guardrails
+                .never_kill_pid
+                .iter()
+                .map(|&x| x as u32)
+                .collect::<Vec<_>>(),
+            &guardrails
+                .never_kill_ppid
+                .iter()
+                .map(|&x| x as u32)
+                .collect::<Vec<_>>(),
         )
     }
 
@@ -600,7 +610,13 @@ mod tests {
         assert!(filter.is_protected(&record).is_some());
 
         // Should NOT match systemd-logind (due to word boundary)
-        let record = make_test_record(100, 1, "systemd-logind", "/usr/lib/systemd/systemd-logind", "root");
+        let record = make_test_record(
+            100,
+            1,
+            "systemd-logind",
+            "/usr/lib/systemd/systemd-logind",
+            "root",
+        );
         // Note: \b in regex matches word boundaries, so "systemd" in "systemd-logind" would still match
         // because there's a word boundary after systemd and before the hyphen
         assert!(filter.is_protected(&record).is_some());
@@ -677,12 +693,7 @@ mod tests {
 
     #[test]
     fn test_filter_scan_result() {
-        let patterns = vec![(
-            "systemd".to_string(),
-            "literal".to_string(),
-            true,
-            None,
-        )];
+        let patterns = vec![("systemd".to_string(), "literal".to_string(), true, None)];
 
         let filter = ProtectedFilter::new(&patterns, &[], &[], &[]).unwrap();
 
@@ -690,7 +701,13 @@ mod tests {
             processes: vec![
                 make_test_record(1, 0, "systemd", "/usr/lib/systemd/systemd", "root"),
                 make_test_record(100, 1, "bash", "/bin/bash", "testuser"),
-                make_test_record(101, 1, "systemd-logind", "/usr/lib/systemd/systemd-logind", "root"),
+                make_test_record(
+                    101,
+                    1,
+                    "systemd-logind",
+                    "/usr/lib/systemd/systemd-logind",
+                    "root",
+                ),
             ],
             metadata: super::super::types::ScanMetadata {
                 scan_type: "quick".to_string(),
@@ -775,10 +792,30 @@ mod tests {
     fn test_default_protected_services() {
         // Test the default protected patterns from policy.default.json
         let patterns = vec![
-            (r"\b(systemd|journald|logind|dbus-daemon)\b".to_string(), "regex".to_string(), true, Some("core system services".to_string())),
-            (r"\b(sshd|cron|crond)\b".to_string(), "regex".to_string(), true, Some("remote access and schedulers".to_string())),
-            (r"\b(dockerd|containerd)\b".to_string(), "regex".to_string(), true, Some("containers".to_string())),
-            (r"\b(postgres|redis|nginx|elasticsearch)\b".to_string(), "regex".to_string(), true, Some("databases and proxies".to_string())),
+            (
+                r"\b(systemd|journald|logind|dbus-daemon)\b".to_string(),
+                "regex".to_string(),
+                true,
+                Some("core system services".to_string()),
+            ),
+            (
+                r"\b(sshd|cron|crond)\b".to_string(),
+                "regex".to_string(),
+                true,
+                Some("remote access and schedulers".to_string()),
+            ),
+            (
+                r"\b(dockerd|containerd)\b".to_string(),
+                "regex".to_string(),
+                true,
+                Some("containers".to_string()),
+            ),
+            (
+                r"\b(postgres|redis|nginx|elasticsearch)\b".to_string(),
+                "regex".to_string(),
+                true,
+                Some("databases and proxies".to_string()),
+            ),
         ];
 
         let filter = ProtectedFilter::new(&patterns, &[], &[], &[]).unwrap();
@@ -816,7 +853,10 @@ mod tests {
     fn test_truncate_cmd() {
         assert_eq!(truncate_cmd("short", 80), "short");
         assert_eq!(
-            truncate_cmd("this is a very long command line that exceeds the maximum length limit", 30),
+            truncate_cmd(
+                "this is a very long command line that exceeds the maximum length limit",
+                30
+            ),
             "this is a very long command..."
         );
     }

@@ -391,12 +391,17 @@ impl CtwNode {
     /// Check if child exists (for future tree statistics).
     #[allow(dead_code)]
     fn has_child(&self, symbol: usize) -> bool {
-        self.children.get(symbol).map(|c| c.is_some()).unwrap_or(false)
+        self.children
+            .get(symbol)
+            .map(|c| c.is_some())
+            .unwrap_or(false)
     }
 
     /// Get child reference.
     fn child(&self, symbol: usize) -> Option<&CtwNode> {
-        self.children.get(symbol).and_then(|c| c.as_ref().map(|b| b.as_ref()))
+        self.children
+            .get(symbol)
+            .and_then(|c| c.as_ref().map(|b| b.as_ref()))
     }
 
     /// Get mutable child reference (for future tree pruning).
@@ -481,7 +486,14 @@ impl CtwPredictor {
         }
 
         // Traverse from deepest context back to root
-        self.log_weighted_prob_recursive(&self.root, &path, 0, symbol, log_weight, log_1_minus_weight)
+        self.log_weighted_prob_recursive(
+            &self.root,
+            &path,
+            0,
+            symbol,
+            log_weight,
+            log_1_minus_weight,
+        )
     }
 
     /// Recursive helper for log weighted probability.
@@ -504,8 +516,14 @@ impl CtwPredictor {
         // Get child for next context symbol
         let next_symbol = path[depth];
         if let Some(child) = node.child(next_symbol) {
-            let log_child =
-                self.log_weighted_prob_recursive(child, path, depth + 1, symbol, log_weight, log_1_minus_weight);
+            let log_child = self.log_weighted_prob_recursive(
+                child,
+                path,
+                depth + 1,
+                symbol,
+                log_weight,
+                log_1_minus_weight,
+            );
 
             // CTW weighting: 0.5 * P_kt + 0.5 * P_child (in log space)
             log_sum_exp_pair(log_weight + log_kt, log_1_minus_weight + log_child)
@@ -817,9 +835,8 @@ impl CtwEvidence {
     /// Create with default thresholds.
     pub fn from_features_default(features: &CtwFeatures) -> Self {
         Self::from_features(
-            features,
-            0.5,  // Less than 0.5 bits per symbol is predictable
-            0.1,  // More than 0.1 bits regret per symbol is anomalous
+            features, 0.5, // Less than 0.5 bits per symbol is predictable
+            0.1, // More than 0.1 bits regret per symbol is anomalous
         )
     }
 }
@@ -939,7 +956,10 @@ mod tests {
 
         // After many zeros, predicting zero should have low log-loss
         let last = batch.results.last().unwrap();
-        assert!(last.log_loss_bits < 0.5, "Predictable sequence should have low log-loss");
+        assert!(
+            last.log_loss_bits < 0.5,
+            "Predictable sequence should have low log-loss"
+        );
 
         let features = ctw.features();
         assert!(features.avg_logloss_bits < 0.5);
@@ -974,18 +994,13 @@ mod tests {
         let mut ctw = CtwPredictor::new(config);
 
         // A sequence with changing regime
-        let sequence: Vec<usize> = (0..20)
-            .map(|i| if i < 10 { 0 } else { 1 })
-            .collect();
+        let sequence: Vec<usize> = (0..20).map(|i| if i < 10 { 0 } else { 1 }).collect();
         let _ = ctw.process_batch(&sequence);
 
         let features = ctw.features();
 
         // Regret should be finite
-        assert!(
-            features.regret_bits.is_finite(),
-            "Regret should be finite"
-        );
+        assert!(features.regret_bits.is_finite(), "Regret should be finite");
     }
 
     #[test]
@@ -1034,7 +1049,10 @@ mod tests {
         let features = ctw.features();
         let evidence = CtwEvidence::from_features_default(&features);
 
-        assert!(evidence.is_predictable, "Constant sequence should be predictable");
+        assert!(
+            evidence.is_predictable,
+            "Constant sequence should be predictable"
+        );
         assert!(evidence.confidence > 0.0);
         assert_eq!(evidence.observation_count, 20);
     }

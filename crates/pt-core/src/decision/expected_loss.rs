@@ -47,11 +47,11 @@ impl Action {
             Action::Keep => 0,
             Action::Renice => 1,
             Action::Pause => 2,
-            Action::Resume => 2,        // Same rank as Pause (both reversible)
-            Action::Freeze => 2,        // Same rank as Pause (cgroup-level pause)
-            Action::Unfreeze => 2,      // Same rank as Freeze (both reversible)
-            Action::Quarantine => 3,    // Same rank as Throttle (resource restriction)
-            Action::Unquarantine => 3,  // Same rank as Quarantine (both reversible)
+            Action::Resume => 2,       // Same rank as Pause (both reversible)
+            Action::Freeze => 2,       // Same rank as Pause (cgroup-level pause)
+            Action::Unfreeze => 2,     // Same rank as Freeze (both reversible)
+            Action::Quarantine => 3,   // Same rank as Throttle (resource restriction)
+            Action::Unquarantine => 3, // Same rank as Quarantine (both reversible)
             Action::Throttle => 3,
             Action::Restart => 4,
             Action::Kill => 5,
@@ -75,7 +75,10 @@ impl Action {
 
     /// Returns true if this is a follow-up action (not a decision action).
     pub fn is_follow_up(&self) -> bool {
-        matches!(self, Action::Resume | Action::Unfreeze | Action::Unquarantine)
+        matches!(
+            self,
+            Action::Resume | Action::Unfreeze | Action::Unquarantine
+        )
     }
 }
 
@@ -774,17 +777,44 @@ mod tests {
     fn test_from_process_state_zombie_disables_kill_pause_resume_freeze() {
         let feasibility = ActionFeasibility::from_process_state(true, false, None);
 
-        assert!(!feasibility.is_allowed(Action::Kill), "Kill should be disabled for zombie");
-        assert!(!feasibility.is_allowed(Action::Pause), "Pause should be disabled for zombie");
-        assert!(!feasibility.is_allowed(Action::Resume), "Resume should be disabled for zombie");
-        assert!(!feasibility.is_allowed(Action::Freeze), "Freeze should be disabled for zombie");
-        assert!(!feasibility.is_allowed(Action::Unfreeze), "Unfreeze should be disabled for zombie");
+        assert!(
+            !feasibility.is_allowed(Action::Kill),
+            "Kill should be disabled for zombie"
+        );
+        assert!(
+            !feasibility.is_allowed(Action::Pause),
+            "Pause should be disabled for zombie"
+        );
+        assert!(
+            !feasibility.is_allowed(Action::Resume),
+            "Resume should be disabled for zombie"
+        );
+        assert!(
+            !feasibility.is_allowed(Action::Freeze),
+            "Freeze should be disabled for zombie"
+        );
+        assert!(
+            !feasibility.is_allowed(Action::Unfreeze),
+            "Unfreeze should be disabled for zombie"
+        );
 
         // Other actions should still be allowed (they might target parent/supervisor)
-        assert!(feasibility.is_allowed(Action::Keep), "Keep should be allowed for zombie");
-        assert!(feasibility.is_allowed(Action::Restart), "Restart should be allowed (supervisor)");
-        assert!(feasibility.is_allowed(Action::Renice), "Renice should be allowed for zombie");
-        assert!(feasibility.is_allowed(Action::Throttle), "Throttle should be allowed for zombie");
+        assert!(
+            feasibility.is_allowed(Action::Keep),
+            "Keep should be allowed for zombie"
+        );
+        assert!(
+            feasibility.is_allowed(Action::Restart),
+            "Restart should be allowed (supervisor)"
+        );
+        assert!(
+            feasibility.is_allowed(Action::Renice),
+            "Renice should be allowed for zombie"
+        );
+        assert!(
+            feasibility.is_allowed(Action::Throttle),
+            "Throttle should be allowed for zombie"
+        );
 
         // Verify reason messages
         let kill_reason = feasibility
@@ -802,14 +832,32 @@ mod tests {
     fn test_from_process_state_disksleep_disables_kill() {
         let feasibility = ActionFeasibility::from_process_state(false, true, None);
 
-        assert!(!feasibility.is_allowed(Action::Kill), "Kill should be disabled for D-state");
+        assert!(
+            !feasibility.is_allowed(Action::Kill),
+            "Kill should be disabled for D-state"
+        );
 
         // Other actions should still be allowed (including Freeze - cgroup freeze works at cgroup level)
-        assert!(feasibility.is_allowed(Action::Pause), "Pause should be allowed for D-state");
-        assert!(feasibility.is_allowed(Action::Resume), "Resume should be allowed for D-state");
-        assert!(feasibility.is_allowed(Action::Freeze), "Freeze should be allowed for D-state");
-        assert!(feasibility.is_allowed(Action::Unfreeze), "Unfreeze should be allowed for D-state");
-        assert!(feasibility.is_allowed(Action::Keep), "Keep should be allowed for D-state");
+        assert!(
+            feasibility.is_allowed(Action::Pause),
+            "Pause should be allowed for D-state"
+        );
+        assert!(
+            feasibility.is_allowed(Action::Resume),
+            "Resume should be allowed for D-state"
+        );
+        assert!(
+            feasibility.is_allowed(Action::Freeze),
+            "Freeze should be allowed for D-state"
+        );
+        assert!(
+            feasibility.is_allowed(Action::Unfreeze),
+            "Unfreeze should be allowed for D-state"
+        );
+        assert!(
+            feasibility.is_allowed(Action::Keep),
+            "Keep should be allowed for D-state"
+        );
 
         // Verify reason mentions D-state
         let kill_reason = feasibility
@@ -843,7 +891,10 @@ mod tests {
     fn test_from_process_state_normal_allows_all() {
         let feasibility = ActionFeasibility::from_process_state(false, false, None);
 
-        assert!(feasibility.disabled.is_empty(), "Normal process should have no disabled actions");
+        assert!(
+            feasibility.disabled.is_empty(),
+            "Normal process should have no disabled actions"
+        );
         assert!(feasibility.is_allowed(Action::Kill));
         assert!(feasibility.is_allowed(Action::Pause));
         assert!(feasibility.is_allowed(Action::Resume));
@@ -865,9 +916,18 @@ mod tests {
         let merged = state_feasibility.merge(&policy_feasibility);
 
         // Should have both zombie-disabled actions AND policy-disabled actions
-        assert!(!merged.is_allowed(Action::Kill), "Kill should be disabled (zombie)");
-        assert!(!merged.is_allowed(Action::Pause), "Pause should be disabled (zombie)");
-        assert!(!merged.is_allowed(Action::Restart), "Restart should be disabled (policy)");
+        assert!(
+            !merged.is_allowed(Action::Kill),
+            "Kill should be disabled (zombie)"
+        );
+        assert!(
+            !merged.is_allowed(Action::Pause),
+            "Pause should be disabled (zombie)"
+        );
+        assert!(
+            !merged.is_allowed(Action::Restart),
+            "Restart should be disabled (policy)"
+        );
         assert!(merged.is_allowed(Action::Keep), "Keep should be allowed");
     }
 
@@ -900,7 +960,11 @@ mod tests {
             "Zombie process should not be killed directly"
         );
         assert!(
-            constrained.rationale.disabled_actions.iter().any(|d| d.action == Action::Kill),
+            constrained
+                .rationale
+                .disabled_actions
+                .iter()
+                .any(|d| d.action == Action::Kill),
             "Kill should appear in disabled_actions"
         );
     }

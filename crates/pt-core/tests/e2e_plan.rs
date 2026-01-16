@@ -73,8 +73,7 @@ mod plan_basic {
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
             .stderr(
-                predicate::str::contains("\"event\":")
-                    .and(predicate::str::contains("plan_ready")),
+                predicate::str::contains("\"event\":").and(predicate::str::contains("plan_ready")),
             );
     }
 }
@@ -496,7 +495,15 @@ mod inference_safety {
     fn kernel_threads_never_in_candidates() {
         // Run with high candidate limit to get more coverage
         let output = pt_core()
-            .args(["--standalone", "--format", "json", "agent", "plan", "--max-candidates", "200"])
+            .args([
+                "--standalone",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--max-candidates",
+                "200",
+            ])
             .assert()
             .code(predicate::in_iter([0, 1]))
             .get_output()
@@ -531,7 +538,15 @@ mod inference_safety {
     fn zombie_processes_classified_correctly() {
         // Run with high candidate limit
         let output = pt_core()
-            .args(["--standalone", "--format", "json", "agent", "plan", "--max-candidates", "200"])
+            .args([
+                "--standalone",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--max-candidates",
+                "200",
+            ])
             .assert()
             .code(predicate::in_iter([0, 1]))
             .get_output()
@@ -556,10 +571,22 @@ mod inference_safety {
 
                     // Verify zombie posterior is the highest
                     if let Some(posterior) = candidate.get("posterior") {
-                        let zombie_post = posterior.get("zombie").and_then(|z| z.as_f64()).unwrap_or(0.0);
-                        let useful_post = posterior.get("useful").and_then(|z| z.as_f64()).unwrap_or(0.0);
-                        let useful_bad_post = posterior.get("useful_bad").and_then(|z| z.as_f64()).unwrap_or(0.0);
-                        let abandoned_post = posterior.get("abandoned").and_then(|z| z.as_f64()).unwrap_or(0.0);
+                        let zombie_post = posterior
+                            .get("zombie")
+                            .and_then(|z| z.as_f64())
+                            .unwrap_or(0.0);
+                        let useful_post = posterior
+                            .get("useful")
+                            .and_then(|z| z.as_f64())
+                            .unwrap_or(0.0);
+                        let useful_bad_post = posterior
+                            .get("useful_bad")
+                            .and_then(|z| z.as_f64())
+                            .unwrap_or(0.0);
+                        let abandoned_post = posterior
+                            .get("abandoned")
+                            .and_then(|z| z.as_f64())
+                            .unwrap_or(0.0);
 
                         let max_other = useful_post.max(useful_bad_post).max(abandoned_post);
                         assert!(
@@ -576,7 +603,15 @@ mod inference_safety {
     #[test]
     fn candidates_sorted_by_posterior_descending() {
         let output = pt_core()
-            .args(["--standalone", "--format", "json", "agent", "plan", "--max-candidates", "50"])
+            .args([
+                "--standalone",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--max-candidates",
+                "50",
+            ])
             .assert()
             .code(predicate::in_iter([0, 1]))
             .get_output()
@@ -595,10 +630,22 @@ mod inference_safety {
 
             for (i, candidate) in candidates.iter().enumerate() {
                 if let Some(posterior) = candidate.get("posterior") {
-                    let useful = posterior.get("useful").and_then(|z| z.as_f64()).unwrap_or(0.0);
-                    let useful_bad = posterior.get("useful_bad").and_then(|z| z.as_f64()).unwrap_or(0.0);
-                    let abandoned = posterior.get("abandoned").and_then(|z| z.as_f64()).unwrap_or(0.0);
-                    let zombie = posterior.get("zombie").and_then(|z| z.as_f64()).unwrap_or(0.0);
+                    let useful = posterior
+                        .get("useful")
+                        .and_then(|z| z.as_f64())
+                        .unwrap_or(0.0);
+                    let useful_bad = posterior
+                        .get("useful_bad")
+                        .and_then(|z| z.as_f64())
+                        .unwrap_or(0.0);
+                    let abandoned = posterior
+                        .get("abandoned")
+                        .and_then(|z| z.as_f64())
+                        .unwrap_or(0.0);
+                    let zombie = posterior
+                        .get("zombie")
+                        .and_then(|z| z.as_f64())
+                        .unwrap_or(0.0);
 
                     let max_posterior = useful.max(useful_bad).max(abandoned).max(zombie);
 
@@ -639,7 +686,10 @@ mod inference_safety {
             }
 
             // Verify total_processes_scanned is reasonable
-            if let Some(total) = summary.get("total_processes_scanned").and_then(|t| t.as_u64()) {
+            if let Some(total) = summary
+                .get("total_processes_scanned")
+                .and_then(|t| t.as_u64())
+            {
                 assert!(
                     total > 0,
                     "total_processes_scanned should be positive, got {}",
@@ -652,7 +702,15 @@ mod inference_safety {
     #[test]
     fn candidate_json_has_required_fields() {
         let output = pt_core()
-            .args(["--standalone", "--format", "json", "agent", "plan", "--max-candidates", "10"])
+            .args([
+                "--standalone",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--max-candidates",
+                "10",
+            ])
             .assert()
             .code(predicate::in_iter([0, 1]))
             .get_output()
@@ -666,7 +724,8 @@ mod inference_safety {
                 // Required fields from smiw fix
                 assert!(
                     candidate.get("pid").is_some(),
-                    "Candidate {} missing pid field", i
+                    "Candidate {} missing pid field",
+                    i
                 );
                 assert!(
                     candidate.get("ppid").is_some(),
@@ -674,19 +733,23 @@ mod inference_safety {
                 );
                 assert!(
                     candidate.get("state").is_some(),
-                    "Candidate {} missing state field (needed for zombie detection verification)", i
+                    "Candidate {} missing state field (needed for zombie detection verification)",
+                    i
                 );
                 assert!(
                     candidate.get("user").is_some(),
-                    "Candidate {} missing user field", i
+                    "Candidate {} missing user field",
+                    i
                 );
                 assert!(
                     candidate.get("posterior").is_some(),
-                    "Candidate {} missing posterior field", i
+                    "Candidate {} missing posterior field",
+                    i
                 );
                 assert!(
                     candidate.get("classification").is_some(),
-                    "Candidate {} missing classification field", i
+                    "Candidate {} missing classification field",
+                    i
                 );
             }
         }

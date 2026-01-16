@@ -61,7 +61,8 @@ impl ReniceActionRunner {
     #[cfg(unix)]
     fn set_priority(&self, pid: u32, nice_value: i32) -> Result<(), ActionError> {
         // PRIO_PROCESS = 0
-        let result = unsafe { libc::setpriority(libc::PRIO_PROCESS, pid as libc::id_t, nice_value) };
+        let result =
+            unsafe { libc::setpriority(libc::PRIO_PROCESS, pid as libc::id_t, nice_value) };
 
         if result == 0 {
             return Ok(());
@@ -145,13 +146,18 @@ impl ActionRunner for ReniceActionRunner {
         match action.action {
             Action::Renice => self.execute_renice(action),
             Action::Keep => Ok(()),
-            Action::Pause | Action::Resume | Action::Kill | Action::Throttle | Action::Restart
-            | Action::Freeze | Action::Unfreeze | Action::Quarantine | Action::Unquarantine => {
-                Err(ActionError::Failed(format!(
-                    "{:?} requires signal/cgroup support, not renice",
-                    action.action
-                )))
-            }
+            Action::Pause
+            | Action::Resume
+            | Action::Kill
+            | Action::Throttle
+            | Action::Restart
+            | Action::Freeze
+            | Action::Unfreeze
+            | Action::Quarantine
+            | Action::Unquarantine => Err(ActionError::Failed(format!(
+                "{:?} requires signal/cgroup support, not renice",
+                action.action
+            ))),
         }
     }
 
@@ -159,10 +165,15 @@ impl ActionRunner for ReniceActionRunner {
         match action.action {
             Action::Renice => self.verify_renice(action),
             Action::Keep => Ok(()),
-            Action::Pause | Action::Resume | Action::Kill | Action::Throttle | Action::Restart
-            | Action::Freeze | Action::Unfreeze | Action::Quarantine | Action::Unquarantine => {
-                Ok(())
-            }
+            Action::Pause
+            | Action::Resume
+            | Action::Kill
+            | Action::Throttle
+            | Action::Restart
+            | Action::Freeze
+            | Action::Unfreeze
+            | Action::Quarantine
+            | Action::Unquarantine => Ok(()),
         }
     }
 }

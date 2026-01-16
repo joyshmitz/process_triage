@@ -4,7 +4,7 @@ use pt_core::config::Policy;
 use pt_core::decision::{Action, PolicyEnforcer, ProcessCandidate};
 use std::fs;
 
-// We need to bring in temp_dir from test_utils. 
+// We need to bring in temp_dir from test_utils.
 // Note: In integration tests, we need to make sure we can access it.
 // `pt_core::test_utils` is public if feature is enabled.
 
@@ -12,15 +12,15 @@ use std::fs;
 fn test_policy_load_and_enforce_real() {
     // Only run if features enabled (or just use standard tempfile if not)
     // We'll use the one from test_utils to verify the bead requirement.
-    
+
     #[cfg(feature = "test-tempdir")]
     let tmp = pt_core::test_utils::temp_dir();
-    
+
     #[cfg(not(feature = "test-tempdir"))]
     let tmp = tempfile::tempdir().expect("tempdir");
 
     let policy_path = tmp.path().join("policy.json");
-    
+
     let policy_content = r#"{
         "schema_version": "1.0.0",
         "loss_matrix": {
@@ -60,9 +60,9 @@ fn test_policy_load_and_enforce_real() {
     // Load policy from file (real IO)
     let policy_json = fs::read_to_string(&policy_path).expect("read policy");
     let policy: Policy = serde_json::from_str(&policy_json).expect("parse policy");
-    
+
     let enforcer = PolicyEnforcer::new(&policy).expect("create enforcer");
-    
+
     // Test enforcement
     let candidate = ProcessCandidate {
         pid: 123,
@@ -86,7 +86,7 @@ fn test_policy_load_and_enforce_real() {
     };
 
     let result = enforcer.check_action(&candidate, Action::Kill, true); // robot_mode=true
-    
+
     assert!(!result.allowed, "Should be blocked by protected pattern");
     let violation = result.violation.unwrap();
     // ViolationKind is an enum, debug print it

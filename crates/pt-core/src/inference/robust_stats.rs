@@ -169,10 +169,7 @@ fn winsorized_mean(samples: &[f64], fraction: f64) -> Option<f64> {
     }
     let lower = values[trim];
     let upper = values[values.len() - trim - 1];
-    let sum = values
-        .iter()
-        .map(|v| v.clamp(lower, upper))
-        .sum::<f64>();
+    let sum = values.iter().map(|v| v.clamp(lower, upper)).sum::<f64>();
     Some(sum / values.len() as f64)
 }
 

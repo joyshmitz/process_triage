@@ -247,7 +247,12 @@ impl AuditLog {
         } else if success {
             format!("Successfully executed {} on PID {}", action, pid)
         } else {
-            format!("Failed to {} PID {}: {}", action, pid, error.unwrap_or("unknown error"))
+            format!(
+                "Failed to {} PID {}: {}",
+                action,
+                pid,
+                error.unwrap_or("unknown error")
+            )
         };
 
         let details = ActionDetails {
@@ -329,7 +334,11 @@ impl AuditLog {
     }
 
     /// Write a checkpoint entry (for rotation or shutdown).
-    pub fn write_checkpoint(&mut self, ctx: &AuditContext, reason: &str) -> Result<String, AuditError> {
+    pub fn write_checkpoint(
+        &mut self,
+        ctx: &AuditContext,
+        reason: &str,
+    ) -> Result<String, AuditError> {
         // Compute state hash (hash of all entry hashes)
         let state_hash = self.compute_state_hash()?;
 
@@ -364,7 +373,11 @@ impl AuditLog {
         // Generate rotation timestamp
         let timestamp = Utc::now().format("%Y%m%d-%H%M%S").to_string();
         let rotated_name = format!("audit.{}.jsonl", timestamp);
-        let audit_dir = self.config.audit_dir.as_ref().ok_or(AuditError::DataDirUnavailable)?;
+        let audit_dir = self
+            .config
+            .audit_dir
+            .as_ref()
+            .ok_or(AuditError::DataDirUnavailable)?;
         let rotated_path = audit_dir.join(&rotated_name);
 
         // Rename current file
@@ -438,11 +451,10 @@ impl AuditLog {
                 continue;
             }
 
-            let entry: AuditEntry =
-                serde_json::from_str(&line).map_err(|e| AuditError::Parse {
-                    line: count as usize + 1,
-                    source: e,
-                })?;
+            let entry: AuditEntry = serde_json::from_str(&line).map_err(|e| AuditError::Parse {
+                line: count as usize + 1,
+                source: e,
+            })?;
 
             if let Some(hash) = &entry.entry_hash {
                 last_hash = hash.clone();
@@ -477,11 +489,10 @@ impl AuditLog {
                 continue;
             }
 
-            let entry: AuditEntry =
-                serde_json::from_str(&line).map_err(|e| AuditError::Parse {
-                    line: line_num + 1,
-                    source: e,
-                })?;
+            let entry: AuditEntry = serde_json::from_str(&line).map_err(|e| AuditError::Parse {
+                line: line_num + 1,
+                source: e,
+            })?;
 
             if let Some(hash) = &entry.entry_hash {
                 combined.push_str(hash);
@@ -561,8 +572,15 @@ mod tests {
         let first_hash = log.last_hash().to_string();
 
         // Write second entry
-        log.log_scan(&ctx, "completed", Some(100), Some(5), Some("quick"), Some(500))
-            .unwrap();
+        log.log_scan(
+            &ctx,
+            "completed",
+            Some(100),
+            Some(5),
+            Some("quick"),
+            Some(500),
+        )
+        .unwrap();
 
         assert_eq!(log.entry_count(), 2);
         assert_ne!(log.last_hash(), &first_hash);
@@ -591,7 +609,8 @@ mod tests {
             let mut log = AuditLog::open_or_create_with_config(config.clone()).unwrap();
             let ctx = AuditContext::new("run-test", "host-test");
 
-            log.log_scan(&ctx, "started", None, None, None, None).unwrap();
+            log.log_scan(&ctx, "started", None, None, None, None)
+                .unwrap();
             log.log_scan(&ctx, "completed", Some(50), Some(3), None, Some(100))
                 .unwrap();
         }
@@ -610,8 +629,7 @@ mod tests {
         let config = test_config(tmp.path());
 
         let mut log = AuditLog::open_or_create_with_config(config).unwrap();
-        let ctx = AuditContext::new("run-test", "host-test")
-            .with_session_id("pt-20260115-test");
+        let ctx = AuditContext::new("run-test", "host-test").with_session_id("pt-20260115-test");
 
         log.log_action(
             &ctx,
@@ -664,7 +682,8 @@ mod tests {
         let ctx = AuditContext::new("run-test", "host-test");
 
         // Write some entries first
-        log.log_scan(&ctx, "started", None, None, None, None).unwrap();
+        log.log_scan(&ctx, "started", None, None, None, None)
+            .unwrap();
         log.log_scan(&ctx, "completed", Some(50), Some(3), None, None)
             .unwrap();
 
@@ -689,7 +708,8 @@ mod tests {
         let ctx = AuditContext::new("run-test", "host-test");
 
         // Write enough to trigger rotation check (but rotation is manual here)
-        log.log_scan(&ctx, "started", None, None, None, None).unwrap();
+        log.log_scan(&ctx, "started", None, None, None, None)
+            .unwrap();
 
         // Manual rotation
         let rotated_path = log.rotate().unwrap();

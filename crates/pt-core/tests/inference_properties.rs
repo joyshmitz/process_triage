@@ -138,7 +138,8 @@ fn extreme_runtime_is_stable() {
         runtime_seconds: Some(365.0 * 24.0 * 3600.0),
         ..Default::default()
     };
-    let result_extreme = compute_posterior(&priors, &evidence_extreme).expect("extreme runtime failed");
+    let result_extreme =
+        compute_posterior(&priors, &evidence_extreme).expect("extreme runtime failed");
     assert!(result_extreme.posterior.useful.is_finite());
     assert!(result_extreme.posterior.abandoned.is_finite());
 }
@@ -188,7 +189,8 @@ fn consistent_evidence_increases_confidence() {
         ..Default::default()
     };
 
-    let result = compute_posterior(&priors, &abandoned_evidence).expect("abandoned evidence failed");
+    let result =
+        compute_posterior(&priors, &abandoned_evidence).expect("abandoned evidence failed");
 
     // With strong abandoned-like evidence, posterior should favor abandoned over useful
     // (This is a directional test, not exact equality)

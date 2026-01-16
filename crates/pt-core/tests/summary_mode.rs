@@ -25,9 +25,7 @@ fn summary_scan_outputs_one_line() {
     cmd.args(["--format", "summary", "scan"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::is_match(r"^Scanned \d+ processes in \d+ms\s*$").unwrap(),
-        );
+        .stdout(predicate::str::is_match(r"^Scanned \d+ processes in \d+ms\s*$").unwrap());
 }
 
 #[test]
@@ -38,10 +36,7 @@ fn summary_check_outputs_status_line() {
     cmd.args(["--format", "summary", "check"])
         .assert()
         .success()
-        .stdout(
-            predicate::str::is_match(r"^\[pt-[^\]]+\] check: (OK|FAILED)\s*$")
-                .unwrap(),
-        );
+        .stdout(predicate::str::is_match(r"^\[pt-[^\]]+\] check: (OK|FAILED)\s*$").unwrap());
 }
 
 #[test]

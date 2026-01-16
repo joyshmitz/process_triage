@@ -82,10 +82,7 @@ pub fn smooth_values(
             let neighbor_avg = if neighbors[idx].is_empty() {
                 current[idx]
             } else {
-                neighbors[idx]
-                    .iter()
-                    .map(|&j| current[j])
-                    .sum::<f64>()
+                neighbors[idx].iter().map(|&j| current[j]).sum::<f64>()
                     / neighbors[idx].len() as f64
             };
             let updated = (1.0 - config.alpha) * current[idx] + config.alpha * neighbor_avg;

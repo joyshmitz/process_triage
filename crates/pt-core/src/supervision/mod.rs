@@ -59,13 +59,20 @@ pub use ancestry::{
     analyze_supervision, analyze_supervision_batch, AncestryAnalyzer, AncestryConfig,
     AncestryError, ProcessTreeCache,
 };
+pub use app_supervision::{
+    detect_app_supervision, AlternativeAction, AppActionType, AppSupervisionAnalyzer,
+    AppSupervisionError, AppSupervisionResult, AppSupervisorAction, AppSupervisorType,
+};
+pub use container_supervision::{
+    detect_container_supervision, detect_container_supervision_with_actions, ContainerAction,
+    ContainerActionType, ContainerSupervisionAnalyzer, ContainerSupervisionError,
+    ContainerSupervisionResult,
+};
 pub use environ::{
     detect_environ_supervision, read_environ, EnvPattern, EnvironAnalyzer, EnvironDatabase,
     EnvironError, EnvironResult,
 };
-pub use ipc::{
-    detect_ipc_supervision, IpcAnalyzer, IpcDatabase, IpcError, IpcPattern, IpcResult,
-};
+pub use ipc::{detect_ipc_supervision, IpcAnalyzer, IpcDatabase, IpcError, IpcPattern, IpcResult};
 pub use nohup::{
     check_signal_mask, detect_disown, detect_nohup, read_fd_info, read_signal_mask,
     BackgroundIntent, FdInfo, NohupAnalyzer, NohupError, NohupOutputActivity, NohupResult,
@@ -75,6 +82,11 @@ pub use orphan::{
     detect_container, detect_unexpected_reparenting, is_orphaned, NohupSummary, OrphanAnalyzer,
     OrphanError, OrphanResult, ReparentingReason, SupervisionSummary,
 };
+pub use session::{
+    check_session_protection, is_in_protected_session, ScreenInfo, SessionAnalyzer, SessionConfig,
+    SessionError, SessionEvidence, SessionProtectionType, SessionResult, SshConnectionInfo,
+    TmuxInfo,
+};
 pub use signature::{
     SignatureDatabase, SignatureError, SignatureMetadata, SignaturePatterns, SignatureSchema,
     SupervisorSignature, SCHEMA_VERSION,
@@ -82,20 +94,6 @@ pub use signature::{
 pub use types::{
     AncestryEntry, EvidenceType, SupervisionEvidence, SupervisionResult, SupervisorCategory,
     SupervisorDatabase, SupervisorPattern,
-};
-pub use session::{
-    check_session_protection, is_in_protected_session, SessionAnalyzer, SessionConfig,
-    SessionError, SessionEvidence, SessionProtectionType, SessionResult, SshConnectionInfo,
-    TmuxInfo, ScreenInfo,
-};
-pub use container_supervision::{
-    detect_container_supervision, detect_container_supervision_with_actions,
-    ContainerAction, ContainerActionType, ContainerSupervisionAnalyzer,
-    ContainerSupervisionError, ContainerSupervisionResult,
-};
-pub use app_supervision::{
-    detect_app_supervision, AlternativeAction, AppActionType, AppSupervisionAnalyzer,
-    AppSupervisionError, AppSupervisionResult, AppSupervisorAction, AppSupervisorType,
 };
 
 use thiserror::Error;

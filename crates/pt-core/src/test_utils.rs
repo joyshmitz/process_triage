@@ -234,7 +234,10 @@ impl ProcessHarness {
         {
             ProcessHandle::spawn_with_options(
                 "sh",
-                &["-c", "(while :; do :; done) & child_pid=$!; while :; do :; done"],
+                &[
+                    "-c",
+                    "(while :; do :; done) & child_pid=$!; while :; do :; done",
+                ],
                 true, // new_pgrp = true
             )
         }
@@ -261,11 +264,7 @@ impl ProcessHandle {
 
     /// Spawn a process, optionally in its own process group (new session).
     #[cfg(unix)]
-    fn spawn_with_options(
-        program: &str,
-        args: &[&str],
-        new_pgrp: bool,
-    ) -> std::io::Result<Self> {
+    fn spawn_with_options(program: &str, args: &[&str], new_pgrp: bool) -> std::io::Result<Self> {
         use std::os::unix::process::CommandExt;
 
         let mut cmd = std::process::Command::new(program);
@@ -292,14 +291,8 @@ impl ProcessHandle {
     }
 
     #[cfg(not(unix))]
-    fn spawn_with_options(
-        program: &str,
-        args: &[&str],
-        _new_pgrp: bool,
-    ) -> std::io::Result<Self> {
-        let child = std::process::Command::new(program)
-            .args(args)
-            .spawn()?;
+    fn spawn_with_options(program: &str, args: &[&str], _new_pgrp: bool) -> std::io::Result<Self> {
+        let child = std::process::Command::new(program).args(args).spawn()?;
         let pid = child.id();
         Ok(Self {
             pid,
@@ -359,8 +352,7 @@ impl ProcessHandle {
                         if let Ok(stat) = std::fs::read_to_string(stat_path) {
                             if let Some(comm_end) = stat.rfind(')') {
                                 if let Some(after_comm) = stat.get(comm_end + 2..) {
-                                    let fields: Vec<&str> =
-                                        after_comm.split_whitespace().collect();
+                                    let fields: Vec<&str> = after_comm.split_whitespace().collect();
                                     if let Some(pgid_str) = fields.get(2) {
                                         if let Ok(pgid) = pgid_str.parse::<u32>() {
                                             if pgid == target_pgid {
@@ -447,7 +439,9 @@ impl ProcSnapshot {
         let start_time_ticks = parse_start_time_ticks(&stat);
 
         let comm_path = format!("/proc/{pid}/comm");
-        let comm = std::fs::read_to_string(&comm_path).ok().map(|s| s.trim().to_string());
+        let comm = std::fs::read_to_string(&comm_path)
+            .ok()
+            .map(|s| s.trim().to_string());
 
         let status_path = format!("/proc/{pid}/status");
         let status_content = std::fs::read_to_string(&status_path).unwrap_or_default();

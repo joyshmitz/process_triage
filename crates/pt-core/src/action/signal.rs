@@ -291,8 +291,13 @@ impl ActionRunner for SignalActionRunner {
             Action::Resume => self.verify_resume(action),
             Action::Kill => self.verify_kill(action),
             Action::Keep => Ok(()),
-            Action::Throttle | Action::Restart | Action::Renice | Action::Freeze | Action::Unfreeze
-            | Action::Quarantine | Action::Unquarantine => Ok(()),
+            Action::Throttle
+            | Action::Restart
+            | Action::Renice
+            | Action::Freeze
+            | Action::Unfreeze
+            | Action::Quarantine
+            | Action::Unquarantine => Ok(()),
         }
     }
 }
@@ -613,9 +618,7 @@ mod tests {
 
             // Spawn a process that exits immediately
             // It will become a zombie because we hold the handle and don't wait() yet
-            let mut child = Command::new("true")
-                .spawn()
-                .expect("failed to spawn true");
+            let mut child = Command::new("true").spawn().expect("failed to spawn true");
 
             let pid = child.id();
             let runner = SignalActionRunner::with_defaults();

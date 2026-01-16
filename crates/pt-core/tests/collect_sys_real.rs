@@ -5,7 +5,9 @@ use pt_core::test_utils::ProcessHarness;
 
 #[test]
 fn test_cgroup_parse_real() {
-    if !ProcessHarness::is_available() { return; }
+    if !ProcessHarness::is_available() {
+        return;
+    }
     // Read our own cgroup
     #[cfg(target_os = "linux")]
     {
@@ -13,7 +15,7 @@ fn test_cgroup_parse_real() {
         let cgroup = collect::parse_cgroup(pid).expect("read cgroup");
         // Should have either unified or v1 paths
         assert!(cgroup.unified.is_some() || !cgroup.v1_paths.is_empty());
-        
+
         // If detection logic works, detect_container_from_cgroup should work on the path
         if let Some(path) = &cgroup.unified {
             let container_info = collect::detect_container_from_cgroup(path);
@@ -25,8 +27,10 @@ fn test_cgroup_parse_real() {
 
 #[test]
 fn test_systemd_unit_real() {
-    if !ProcessHarness::is_available() { return; }
-    
+    if !ProcessHarness::is_available() {
+        return;
+    }
+
     // Attempt to read systemd unit for self
     #[cfg(target_os = "linux")]
     {

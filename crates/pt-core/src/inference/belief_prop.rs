@@ -83,7 +83,12 @@ pub enum State {
 impl State {
     /// All possible states.
     pub fn all() -> &'static [State] {
-        &[State::Useful, State::UsefulBad, State::Abandoned, State::Zombie]
+        &[
+            State::Useful,
+            State::UsefulBad,
+            State::Abandoned,
+            State::Zombie,
+        ]
     }
 
     /// Index for array access (0-3).
@@ -241,7 +246,10 @@ impl ProcessTree {
             }
 
             // Check if all children have been processed
-            let children = self.children.get(&pid).map_or(&[] as &[u32], |c| c.as_slice());
+            let children = self
+                .children
+                .get(&pid)
+                .map_or(&[] as &[u32], |c| c.as_slice());
             if children.iter().all(|c| visited.contains(c)) {
                 visited.insert(pid);
                 order.push(pid);
@@ -297,7 +305,11 @@ impl Message {
 
     /// Normalize log-probabilities (for numerical stability).
     fn normalize(&mut self) {
-        let max = self.log_probs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let max = self
+            .log_probs
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
         if max.is_finite() {
             for p in &mut self.log_probs {
                 *p -= max;
@@ -499,7 +511,9 @@ impl BeliefPropagator {
 
             // Find children
             for (&child_pid, process) in &self.processes {
-                if process.ppid == pid && all_pids.contains(&child_pid) && !visited.contains(&child_pid)
+                if process.ppid == pid
+                    && all_pids.contains(&child_pid)
+                    && !visited.contains(&child_pid)
                 {
                     children.entry(pid).or_default().push(child_pid);
                     parents.insert(child_pid, pid);
@@ -540,7 +554,10 @@ impl BeliefPropagator {
             if let Some(process) = self.processes.get(&pid) {
                 let mut marginal = HashMap::new();
                 for state in State::all() {
-                    marginal.insert(*state, process.local_belief.get(state).copied().unwrap_or(0.25));
+                    marginal.insert(
+                        *state,
+                        process.local_belief.get(state).copied().unwrap_or(0.25),
+                    );
                 }
                 let mut result = HashMap::new();
                 result.insert(pid, marginal);
@@ -684,7 +701,10 @@ impl BeliefPropagator {
             }
 
             // Normalize to probabilities
-            let log_sum = log_marginal.iter().cloned().fold(f64::NEG_INFINITY, |a, b| log_sum_exp(a, b));
+            let log_sum = log_marginal
+                .iter()
+                .cloned()
+                .fold(f64::NEG_INFINITY, |a, b| log_sum_exp(a, b));
             let mut state_probs = HashMap::new();
 
             for state in State::all() {
@@ -760,10 +780,7 @@ fn log_sum_exp(a: f64, b: f64) -> f64 {
 }
 
 /// Compute total variation distance between two belief distributions.
-fn compute_belief_change(
-    local: &HashMap<State, f64>,
-    coupled: &HashMap<State, f64>,
-) -> f64 {
+fn compute_belief_change(local: &HashMap<State, f64>, coupled: &HashMap<State, f64>) -> f64 {
     let mut total = 0.0;
     for state in State::all() {
         let p1 = local.get(state).copied().unwrap_or(0.25);
@@ -1063,7 +1080,11 @@ mod tests {
         msg.normalize();
 
         // After normalization, max should be around 0
-        let max = msg.log_probs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let max = msg
+            .log_probs
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
         assert!((max - 0.0).abs() < 1e-10);
     }
 
@@ -1121,7 +1142,11 @@ mod tests {
         let belief = make_belief(0.25, 0.25, 0.25, 0.25);
         propagator.add_process(ProcessNode::with_belief(1000, 1, belief.clone()));
         for i in 1..10 {
-            propagator.add_process(ProcessNode::with_belief(1000 + i, 1000 + i - 1, belief.clone()));
+            propagator.add_process(ProcessNode::with_belief(
+                1000 + i,
+                1000 + i - 1,
+                belief.clone(),
+            ));
         }
 
         let result = propagator.propagate().unwrap();

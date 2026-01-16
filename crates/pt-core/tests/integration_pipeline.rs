@@ -1,10 +1,10 @@
 //! Integration-style tests for the scan → filter → inference pipeline.
 
 use pt_common::{ProcessId, StartId};
+use pt_core::collect::protected::{MatchedField, ProtectedFilter};
 use pt_core::collect::{ProcessRecord, ProcessState, ScanMetadata, ScanResult};
 use pt_core::config::{policy::Policy, priors::Priors};
 use pt_core::inference::{compute_posterior, CpuEvidence, Evidence};
-use pt_core::collect::protected::{MatchedField, ProtectedFilter};
 use std::time::Duration;
 
 fn make_record(
@@ -73,9 +73,33 @@ fn kernel_threads_filtered_by_guardrails() {
         .expect("protected filter should compile");
 
     let processes = vec![
-        make_record(2, 0, "root", "[kthreadd]", ProcessState::Sleeping, 0.0, None),
-        make_record(42, 2, "root", "[kworker/0:0]", ProcessState::Idle, 0.0, None),
-        make_record(9001, 1234, "testuser", "[cat]", ProcessState::Zombie, 0.0, None),
+        make_record(
+            2,
+            0,
+            "root",
+            "[kthreadd]",
+            ProcessState::Sleeping,
+            0.0,
+            None,
+        ),
+        make_record(
+            42,
+            2,
+            "root",
+            "[kworker/0:0]",
+            ProcessState::Idle,
+            0.0,
+            None,
+        ),
+        make_record(
+            9001,
+            1234,
+            "testuser",
+            "[cat]",
+            ProcessState::Zombie,
+            0.0,
+            None,
+        ),
     ];
     let scan = make_scan(processes);
 
@@ -87,7 +111,10 @@ fn kernel_threads_filtered_by_guardrails() {
         "expected kernel threads to be filtered: got {filtered_pids:?}"
     );
     assert!(
-        result.filtered.iter().any(|m| m.matched_field == MatchedField::User),
+        result
+            .filtered
+            .iter()
+            .any(|m| m.matched_field == MatchedField::User),
         "expected kernel threads to be filtered by protected user (root)"
     );
     assert!(

@@ -9,9 +9,9 @@
 
 use clap::{Args, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
+use pt_core::capabilities::{get_capabilities, ToolCapability};
 use pt_core::collect::protected::ProtectedFilter;
 use pt_core::config::{load_config, ConfigError, ConfigOptions, Priors};
-use pt_core::capabilities::{get_capabilities, ToolCapability};
 use pt_core::events::{JsonlWriter, Phase, ProgressEmitter, ProgressEvent};
 use pt_core::exit_codes::ExitCode;
 use pt_core::session::{
@@ -654,10 +654,8 @@ fn run_interactive(global: &GlobalOpts, _args: &RunArgs) -> ExitCode {
 }
 
 use pt_core::collect::{quick_scan, ProcessRecord, QuickScanOptions};
-use pt_core::inference::{
-    compute_posterior, CpuEvidence, Evidence, EvidenceLedger,
-};
 use pt_core::decision::{decide_action, Action, ActionFeasibility};
+use pt_core::inference::{compute_posterior, CpuEvidence, Evidence, EvidenceLedger};
 
 fn progress_emitter(global: &GlobalOpts) -> Option<Arc<dyn ProgressEmitter>> {
     match global.format {
@@ -696,7 +694,7 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
 
     // Configure scan options
     let options = QuickScanOptions {
-        pids: vec![],                  // Empty = all processes
+        pids: vec![], // Empty = all processes
         include_kernel_threads: args.include_kernel_threads,
         timeout: global.timeout.map(std::time::Duration::from_secs),
         progress,
@@ -894,8 +892,13 @@ fn run_bundle_create(
                 "error": format!("Invalid profile '{}'. Valid options: minimal, safe, forensic", profile_str),
             });
             match global.format {
-                OutputFormat::Md => eprintln!("Error: Invalid profile '{}'. Valid options: minimal, safe, forensic", profile_str),
-                OutputFormat::Jsonl => println!("{}", serde_json::to_string(&error_output).unwrap()),
+                OutputFormat::Md => eprintln!(
+                    "Error: Invalid profile '{}'. Valid options: minimal, safe, forensic",
+                    profile_str
+                ),
+                OutputFormat::Jsonl => {
+                    println!("{}", serde_json::to_string(&error_output).unwrap())
+                }
                 _ => println!("{}", serde_json::to_string_pretty(&error_output).unwrap()),
             }
             return ExitCode::ArgsError;
@@ -922,7 +925,10 @@ fn run_bundle_create(
         }
     } else {
         // Find latest session
-        let options = ListSessionsOptions { limit: Some(1), ..Default::default() };
+        let options = ListSessionsOptions {
+            limit: Some(1),
+            ..Default::default()
+        };
         match store.list_sessions(&options) {
             Ok(sessions) if !sessions.is_empty() => SessionId(sessions[0].session_id.clone()),
             Ok(_) => {
@@ -1013,7 +1019,11 @@ fn run_bundle_create(
                                 } else {
                                     FileType::Binary
                                 };
-                                writer.add_file(format!("telemetry/{}", name), content, Some(file_type));
+                                writer.add_file(
+                                    format!("telemetry/{}", name),
+                                    content,
+                                    Some(file_type),
+                                );
                             }
                         }
                     }
@@ -1099,7 +1109,9 @@ fn run_bundle_create(
             });
             match global.format {
                 OutputFormat::Md => eprintln!("Error creating bundle: {}", e),
-                OutputFormat::Jsonl => println!("{}", serde_json::to_string(&error_output).unwrap()),
+                OutputFormat::Jsonl => {
+                    println!("{}", serde_json::to_string(&error_output).unwrap())
+                }
                 _ => println!("{}", serde_json::to_string_pretty(&error_output).unwrap()),
             }
             ExitCode::InternalError
@@ -1149,7 +1161,9 @@ fn run_bundle_inspect(
             });
             match global.format {
                 OutputFormat::Md => eprintln!("Error: Failed to open bundle: {}", e),
-                OutputFormat::Jsonl => println!("{}", serde_json::to_string(&error_output).unwrap()),
+                OutputFormat::Jsonl => {
+                    println!("{}", serde_json::to_string(&error_output).unwrap())
+                }
                 _ => println!("{}", serde_json::to_string_pretty(&error_output).unwrap()),
             }
             return if matches!(
@@ -1175,14 +1189,19 @@ fn run_bundle_inspect(
     let description = reader.manifest().description.clone();
     let file_count = reader.manifest().file_count();
     let total_bytes = reader.manifest().total_bytes();
-    let files: Vec<_> = reader.manifest().files.iter().map(|f| {
-        serde_json::json!({
-            "path": f.path,
-            "bytes": f.bytes,
-            "sha256": f.sha256,
-            "mime_type": f.mime_type,
+    let files: Vec<_> = reader
+        .manifest()
+        .files
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "path": f.path,
+                "bytes": f.bytes,
+                "sha256": f.sha256,
+                "mime_type": f.mime_type,
+            })
         })
-    }).collect();
+        .collect();
 
     // Optionally verify all files
     let verification = if verify {
@@ -1283,7 +1302,9 @@ fn run_bundle_extract(
             });
             match global.format {
                 OutputFormat::Md => eprintln!("Error: Failed to open bundle: {}", e),
-                OutputFormat::Jsonl => println!("{}", serde_json::to_string(&error_output).unwrap()),
+                OutputFormat::Jsonl => {
+                    println!("{}", serde_json::to_string(&error_output).unwrap())
+                }
                 _ => println!("{}", serde_json::to_string_pretty(&error_output).unwrap()),
             }
             return if matches!(
@@ -1377,7 +1398,12 @@ fn run_bundle_extract(
 
     match global.format {
         OutputFormat::Md => {
-            println!("Extracted {} of {} files to {}", extracted, file_paths.len(), output_dir.display());
+            println!(
+                "Extracted {} of {} files to {}",
+                extracted,
+                file_paths.len(),
+                output_dir.display()
+            );
             if !errors.is_empty() {
                 eprintln!("Errors:");
                 for e in &errors {
@@ -1861,7 +1887,12 @@ fn output_stub(global: &GlobalOpts, command: &str, message: &str) {
     output_stub_with_session(global, &session_id, command, message);
 }
 
-fn output_stub_with_session(global: &GlobalOpts, session_id: &SessionId, command: &str, message: &str) {
+fn output_stub_with_session(
+    global: &GlobalOpts,
+    session_id: &SessionId,
+    command: &str,
+    message: &str,
+) {
     match global.format {
         OutputFormat::Json => {
             let output = serde_json::json!({
@@ -1914,7 +1945,10 @@ fn output_capabilities(global: &GlobalOpts) {
     ];
     for (name, tool) in tool_list {
         let mut tool_info = serde_json::Map::new();
-        tool_info.insert("available".to_string(), serde_json::Value::Bool(tool.available));
+        tool_info.insert(
+            "available".to_string(),
+            serde_json::Value::Bool(tool.available),
+        );
         if let Some(ref v) = tool.version {
             tool_info.insert("version".to_string(), serde_json::Value::String(v.clone()));
         }
@@ -2017,12 +2051,19 @@ fn output_capabilities(global: &GlobalOpts) {
             }
             println!();
             println!("## Permissions");
-            println!("UID: {} (root: {})", caps.permissions.effective_uid, caps.permissions.is_root);
+            println!(
+                "UID: {} (root: {})",
+                caps.permissions.effective_uid, caps.permissions.is_root
+            );
             println!("Sudo: {}", caps.permissions.can_sudo);
             println!("Read others: {}", caps.permissions.can_read_others_procs);
             println!("Signal others: {}", caps.permissions.can_signal_others);
             println!();
-            println!("## Tools ({}/{} available)", caps.tools.available_count(), caps.tools.total_count());
+            println!(
+                "## Tools ({}/{} available)",
+                caps.tools.available_count(),
+                caps.tools.total_count()
+            );
             for (name, tool) in [
                 ("ps", &caps.tools.ps),
                 ("lsof", &caps.tools.lsof),
@@ -2040,9 +2081,19 @@ fn output_capabilities(global: &GlobalOpts) {
                 println!("  {}: {}", name, status);
             }
             println!();
-            println!("## Actions ({}/{} available)", caps.actions.available_count(), caps.actions.total_count());
-            println!("  kill: {}, pause: {}, renice: {}", caps.actions.kill, caps.actions.pause, caps.actions.renice);
-            println!("  cgroup_freeze: {}, cgroup_throttle: {}", caps.actions.cgroup_freeze, caps.actions.cgroup_throttle);
+            println!(
+                "## Actions ({}/{} available)",
+                caps.actions.available_count(),
+                caps.actions.total_count()
+            );
+            println!(
+                "  kill: {}, pause: {}, renice: {}",
+                caps.actions.kill, caps.actions.pause, caps.actions.renice
+            );
+            println!(
+                "  cgroup_freeze: {}, cgroup_throttle: {}",
+                caps.actions.cgroup_freeze, caps.actions.cgroup_throttle
+            );
             println!();
             println!("## Features");
             println!("  deep_scan: {}", caps.can_deep_scan());
@@ -2106,13 +2157,7 @@ fn collect_cpu_count() -> u32 {
     std::process::Command::new("nproc")
         .output()
         .ok()
-        .and_then(|output| {
-            String::from_utf8(output.stdout)
-                .ok()?
-                .trim()
-                .parse()
-                .ok()
-        })
+        .and_then(|output| String::from_utf8(output.stdout).ok()?.trim().parse().ok())
         .unwrap_or(1)
 }
 
@@ -2125,9 +2170,17 @@ fn collect_memory_info() -> serde_json::Value {
             let mut available: u64 = 0;
             for line in content.lines() {
                 if let Some(rest) = line.strip_prefix("MemTotal:") {
-                    total = rest.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    total = rest
+                        .split_whitespace()
+                        .next()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
                 } else if let Some(rest) = line.strip_prefix("MemAvailable:") {
-                    available = rest.split_whitespace().next().and_then(|s| s.parse().ok()).unwrap_or(0);
+                    available = rest
+                        .split_whitespace()
+                        .next()
+                        .and_then(|s| s.parse().ok())
+                        .unwrap_or(0);
                 }
             }
             (total, available)
@@ -2201,7 +2254,12 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
         }
     };
 
-    let manifest = SessionManifest::new(&session_id, None, SessionMode::RobotPlan, args.label.clone());
+    let manifest = SessionManifest::new(
+        &session_id,
+        None,
+        SessionMode::RobotPlan,
+        args.label.clone(),
+    );
     let handle = match store.create(&manifest) {
         Ok(handle) => handle,
         Err(e) => {
@@ -2230,7 +2288,10 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                 }
             }
             Err(e) => {
-                eprintln!("agent snapshot: failed to read capabilities manifest {}: {}", path, e);
+                eprintln!(
+                    "agent snapshot: failed to read capabilities manifest {}: {}",
+                    path, e
+                );
                 return ExitCode::InternalError;
             }
         }
@@ -2276,10 +2337,24 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
         OutputFormat::Summary => {
-            let mem = system_state.get("memory").and_then(|m| m.get("used_gb")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let total = system_state.get("memory").and_then(|m| m.get("total_gb")).and_then(|v| v.as_f64()).unwrap_or(0.0);
-            let procs = system_state.get("process_count").and_then(|v| v.as_u64()).unwrap_or(0);
-            println!("[{}] agent snapshot: created ({} procs, {:.0}/{:.0}GB mem)", session_id, procs, mem, total);
+            let mem = system_state
+                .get("memory")
+                .and_then(|m| m.get("used_gb"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let total = system_state
+                .get("memory")
+                .and_then(|m| m.get("total_gb"))
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let procs = system_state
+                .get("process_count")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            println!(
+                "[{}] agent snapshot: created ({} procs, {:.0}/{:.0}GB mem)",
+                session_id, procs, mem, total
+            );
         }
         OutputFormat::Exitcode => {}
         _ => {
@@ -2294,7 +2369,10 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
             println!();
             println!("## System State");
             if let Some(load) = system_state.get("load").and_then(|v| v.as_array()) {
-                let load_strs: Vec<String> = load.iter().filter_map(|v| v.as_f64().map(|f| format!("{:.2}", f))).collect();
+                let load_strs: Vec<String> = load
+                    .iter()
+                    .filter_map(|v| v.as_f64().map(|f| format!("{:.2}", f)))
+                    .collect();
                 println!("  Load: {}", load_strs.join(", "));
             }
             if let Some(cores) = system_state.get("cores").and_then(|v| v.as_u64()) {
@@ -2303,8 +2381,14 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
             if let Some(mem) = system_state.get("memory") {
                 let total = mem.get("total_gb").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let used = mem.get("used_gb").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                let avail = mem.get("available_gb").and_then(|v| v.as_f64()).unwrap_or(0.0);
-                println!("  Memory: {:.1}GB total, {:.1}GB used, {:.1}GB available", total, used, avail);
+                let avail = mem
+                    .get("available_gb")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                println!(
+                    "  Memory: {:.1}GB total, {:.1}GB used, {:.1}GB available",
+                    total, used, avail
+                );
             }
             if let Some(procs) = system_state.get("process_count").and_then(|v| v.as_u64()) {
                 println!("  Processes: {}", procs);
@@ -2391,8 +2475,11 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     let emitter = progress_emitter(global);
     if let Some(ref e) = emitter {
         e.emit(
-            ProgressEvent::new(pt_core::events::event_names::QUICK_SCAN_STARTED, Phase::QuickScan)
-                .with_session_id(session_id.to_string()),
+            ProgressEvent::new(
+                pt_core::events::event_names::QUICK_SCAN_STARTED,
+                Phase::QuickScan,
+            )
+            .with_session_id(session_id.to_string()),
         );
     }
 
@@ -2414,9 +2501,12 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
 
     if let Some(ref e) = emitter {
         e.emit(
-            ProgressEvent::new(pt_core::events::event_names::QUICK_SCAN_COMPLETE, Phase::QuickScan)
-                .with_session_id(session_id.to_string())
-                .with_detail("count", scan_result.processes.len()),
+            ProgressEvent::new(
+                pt_core::events::event_names::QUICK_SCAN_COMPLETE,
+                Phase::QuickScan,
+            )
+            .with_session_id(session_id.to_string())
+            .with_detail("count", scan_result.processes.len()),
         );
     }
 
@@ -2476,17 +2566,20 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         };
 
         // Compute decision (optimal action based on expected loss)
-        let decision_outcome = match decide_action(&posterior_result.posterior, &policy, &feasibility) {
-            Ok(d) => d,
-            Err(_) => continue, // Skip processes that fail decision
-        };
+        let decision_outcome =
+            match decide_action(&posterior_result.posterior, &policy, &feasibility) {
+                Ok(d) => d,
+                Err(_) => continue, // Skip processes that fail decision
+            };
 
         // Build evidence ledger for classification and confidence
-        let ledger = EvidenceLedger::from_posterior_result(&posterior_result, Some(proc.pid.0), None);
+        let ledger =
+            EvidenceLedger::from_posterior_result(&posterior_result, Some(proc.pid.0), None);
 
         // Determine max posterior class for filtering
         let posterior = &posterior_result.posterior;
-        let max_posterior = posterior.useful
+        let max_posterior = posterior
+            .useful
             .max(posterior.useful_bad)
             .max(posterior.abandoned)
             .max(posterior.zombie);
@@ -2616,7 +2709,11 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
 
     // Build recommended section
     let empty_pids: Vec<u32> = Vec::new();
-    let preselected_pids = if args.yes { &kill_candidates } else { &empty_pids };
+    let preselected_pids = if args.yes {
+        &kill_candidates
+    } else {
+        &empty_pids
+    };
     let recommended = serde_json::json!({
         "preselected_pids": preselected_pids,
         "actions": kill_candidates.iter().map(|pid| serde_json::json!({
@@ -2659,12 +2756,11 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         return ExitCode::InternalError;
     }
     let plan_path = decision_dir.join("plan.json");
-    if let Err(e) = std::fs::write(&plan_path, serde_json::to_string_pretty(&plan_output).unwrap()) {
-        eprintln!(
-            "agent plan: failed to write {}: {}",
-            plan_path.display(),
-            e
-        );
+    if let Err(e) = std::fs::write(
+        &plan_path,
+        serde_json::to_string_pretty(&plan_output).unwrap(),
+    ) {
+        eprintln!("agent plan: failed to write {}: {}", plan_path.display(), e);
         return ExitCode::InternalError;
     }
 
@@ -2707,9 +2803,18 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             println!("\n## Candidates\n");
             for candidate in &candidates {
                 let pid = candidate.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
-                let cmd = candidate.get("cmd_short").and_then(|v| v.as_str()).unwrap_or("?");
-                let class = candidate.get("classification").and_then(|v| v.as_str()).unwrap_or("?");
-                let action = candidate.get("recommended_action").and_then(|v| v.as_str()).unwrap_or("?");
+                let cmd = candidate
+                    .get("cmd_short")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
+                let class = candidate
+                    .get("classification")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
+                let action = candidate
+                    .get("recommended_action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("?");
                 println!("- PID {}: {} ({}) → {}", pid, cmd, class, action);
             }
         }
@@ -2820,7 +2925,10 @@ fn run_agent_explain(global: &GlobalOpts, args: &AgentExplainArgs) -> ExitCode {
 
     // Optionally save to session
     let explain_path = handle.dir.join("inference").join("explain.json");
-    if let Err(e) = std::fs::write(&explain_path, serde_json::to_string_pretty(&output).unwrap()) {
+    if let Err(e) = std::fs::write(
+        &explain_path,
+        serde_json::to_string_pretty(&output).unwrap(),
+    ) {
         eprintln!("agent explain: warning: failed to save to session: {}", e);
     }
 
@@ -2831,7 +2939,10 @@ fn run_agent_explain(global: &GlobalOpts, args: &AgentExplainArgs) -> ExitCode {
         OutputFormat::Summary => {
             for expl in &explanations {
                 if let (Some(pid), Some(class)) = (expl.get("pid"), expl.get("classification")) {
-                    let conf = expl.get("confidence").and_then(|v| v.as_str()).unwrap_or("?");
+                    let conf = expl
+                        .get("confidence")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("?");
                     println!("[{}] PID {}: {} ({})", sid, pid, class, conf);
                 }
             }
@@ -2852,9 +2963,18 @@ fn run_agent_explain(global: &GlobalOpts, args: &AgentExplainArgs) -> ExitCode {
                     continue;
                 }
 
-                let class = expl.get("classification").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let conf = expl.get("confidence").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let why = expl.get("why_summary").and_then(|v| v.as_str()).unwrap_or("");
+                let class = expl
+                    .get("classification")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let conf = expl
+                    .get("confidence")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let why = expl
+                    .get("why_summary")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
 
                 println!("## PID {} - {} ({})\n", pid, class, conf);
                 if !why.is_empty() {
@@ -2884,7 +3004,8 @@ fn run_agent_explain(global: &GlobalOpts, args: &AgentExplainArgs) -> ExitCode {
                             let feat = bf.get("feature").and_then(|v| v.as_str()).unwrap_or("?");
                             let bf_val = bf.get("bf").and_then(|v| v.as_f64()).unwrap_or(0.0);
                             let dir = bf.get("direction").and_then(|v| v.as_str()).unwrap_or("?");
-                            let strength = bf.get("strength").and_then(|v| v.as_str()).unwrap_or("?");
+                            let strength =
+                                bf.get("strength").and_then(|v| v.as_str()).unwrap_or("?");
                             // Format BF: use scientific notation for extreme values
                             let bf_str = if bf_val.is_infinite() || bf_val > 1e6 {
                                 format!("{:.2e}", bf_val)
@@ -2932,7 +3053,7 @@ fn build_process_explanation(
         runtime_seconds: Some(proc.elapsed.as_secs_f64()),
         orphan: Some(proc.is_orphan()),
         tty: Some(proc.has_tty()),
-        net: None,      // Would need network scan
+        net: None,       // Would need network scan
         io_active: None, // Would need /proc inspection
         state_flag: state_to_flag(proc.state),
         command_category: None, // Would need category classifier
@@ -3041,7 +3162,12 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         eprintln!("agent apply: {}", e);
         return ExitCode::ArgsError;
     }
-    output_stub_with_session(global, &sid, "agent apply", "Agent apply mode not yet implemented");
+    output_stub_with_session(
+        global,
+        &sid,
+        "agent apply",
+        "Agent apply mode not yet implemented",
+    );
     ExitCode::Clean
 }
 
@@ -3064,7 +3190,12 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
         eprintln!("agent verify: {}", e);
         return ExitCode::ArgsError;
     }
-    output_stub_with_session(global, &sid, "agent verify", "Agent verify mode not yet implemented");
+    output_stub_with_session(
+        global,
+        &sid,
+        "agent verify",
+        "Agent verify mode not yet implemented",
+    );
     ExitCode::Clean
 }
 
@@ -3098,7 +3229,12 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             return ExitCode::ArgsError;
         }
     }
-    output_stub_with_session(global, &base, "agent diff", "Agent diff mode not yet implemented");
+    output_stub_with_session(
+        global,
+        &base,
+        "agent diff",
+        "Agent diff mode not yet implemented",
+    );
     ExitCode::Clean
 }
 
@@ -3138,26 +3274,27 @@ fn run_agent_list_priors(global: &GlobalOpts, args: &AgentListPriorsArgs) -> Exi
     }
 
     // Helper to build class prior JSON
-    let build_class_json = |name: &str, cp: &pt_core::config::priors::ClassPriors| -> serde_json::Value {
-        let mut obj = serde_json::json!({
-            "prior_prob": cp.prior_prob,
-            "cpu_beta": { "alpha": cp.cpu_beta.alpha, "beta": cp.cpu_beta.beta },
-            "orphan_beta": { "alpha": cp.orphan_beta.alpha, "beta": cp.orphan_beta.beta },
-            "tty_beta": { "alpha": cp.tty_beta.alpha, "beta": cp.tty_beta.beta },
-            "net_beta": { "alpha": cp.net_beta.alpha, "beta": cp.net_beta.beta },
-        });
-        if let Some(ref io) = cp.io_active_beta {
-            obj["io_active_beta"] = serde_json::json!({ "alpha": io.alpha, "beta": io.beta });
-        }
-        if let Some(ref rt) = cp.runtime_gamma {
-            obj["runtime_gamma"] = serde_json::json!({ "shape": rt.shape, "rate": rt.rate });
-        }
-        if let Some(ref hz) = cp.hazard_gamma {
-            obj["hazard_gamma"] = serde_json::json!({ "shape": hz.shape, "rate": hz.rate });
-        }
-        obj["class"] = serde_json::Value::String(name.to_string());
-        obj
-    };
+    let build_class_json =
+        |name: &str, cp: &pt_core::config::priors::ClassPriors| -> serde_json::Value {
+            let mut obj = serde_json::json!({
+                "prior_prob": cp.prior_prob,
+                "cpu_beta": { "alpha": cp.cpu_beta.alpha, "beta": cp.cpu_beta.beta },
+                "orphan_beta": { "alpha": cp.orphan_beta.alpha, "beta": cp.orphan_beta.beta },
+                "tty_beta": { "alpha": cp.tty_beta.alpha, "beta": cp.tty_beta.beta },
+                "net_beta": { "alpha": cp.net_beta.alpha, "beta": cp.net_beta.beta },
+            });
+            if let Some(ref io) = cp.io_active_beta {
+                obj["io_active_beta"] = serde_json::json!({ "alpha": io.alpha, "beta": io.beta });
+            }
+            if let Some(ref rt) = cp.runtime_gamma {
+                obj["runtime_gamma"] = serde_json::json!({ "shape": rt.shape, "rate": rt.rate });
+            }
+            if let Some(ref hz) = cp.hazard_gamma {
+                obj["hazard_gamma"] = serde_json::json!({ "shape": hz.shape, "rate": hz.rate });
+            }
+            obj["class"] = serde_json::Value::String(name.to_string());
+            obj
+        };
 
     // Build classes array (filtered or all)
     let classes_data: Vec<serde_json::Value> = match args.class.as_deref() {
@@ -3190,7 +3327,8 @@ fn run_agent_list_priors(global: &GlobalOpts, args: &AgentListPriorsArgs) -> Exi
     // Add extended sections in extended mode
     if args.extended {
         if !priors.hazard_regimes.is_empty() {
-            response["hazard_regimes"] = serde_json::to_value(&priors.hazard_regimes).unwrap_or_default();
+            response["hazard_regimes"] =
+                serde_json::to_value(&priors.hazard_regimes).unwrap_or_default();
         }
         if let Some(ref sm) = priors.semi_markov {
             response["semi_markov"] = serde_json::to_value(sm).unwrap_or_default();
@@ -3224,13 +3362,26 @@ fn run_agent_list_priors(global: &GlobalOpts, args: &AgentListPriorsArgs) -> Exi
             println!("{}", serde_json::to_string(&response).unwrap());
         }
         OutputFormat::Summary => {
-            let source = if snapshot.priors_path.is_some() { "custom" } else { "defaults" };
-            println!("[{}] priors: {} class(es) from {}", session_id, classes_data.len(), source);
+            let source = if snapshot.priors_path.is_some() {
+                "custom"
+            } else {
+                "defaults"
+            };
+            println!(
+                "[{}] priors: {} class(es) from {}",
+                session_id,
+                classes_data.len(),
+                source
+            );
         }
         OutputFormat::Exitcode => {}
         OutputFormat::Metrics => {
             // Key=value pairs for monitoring systems
-            let source = if snapshot.priors_path.is_some() { "custom" } else { "defaults" };
+            let source = if snapshot.priors_path.is_some() {
+                "custom"
+            } else {
+                "defaults"
+            };
             println!("priors_source={}", source);
             println!("priors_class_count={}", classes_data.len());
             println!("priors_schema_version={}", snapshot.priors_schema_version);
@@ -3258,16 +3409,32 @@ fn run_agent_list_priors(global: &GlobalOpts, args: &AgentListPriorsArgs) -> Exi
                 println!("|-----------|-------|");
                 println!("| prior_prob | {:.4} |", prior_prob);
                 if let Some(cpu) = class_json.get("cpu_beta") {
-                    println!("| cpu_beta | α={:.2}, β={:.2} |", cpu["alpha"].as_f64().unwrap_or(0.0), cpu["beta"].as_f64().unwrap_or(0.0));
+                    println!(
+                        "| cpu_beta | α={:.2}, β={:.2} |",
+                        cpu["alpha"].as_f64().unwrap_or(0.0),
+                        cpu["beta"].as_f64().unwrap_or(0.0)
+                    );
                 }
                 if let Some(orphan) = class_json.get("orphan_beta") {
-                    println!("| orphan_beta | α={:.2}, β={:.2} |", orphan["alpha"].as_f64().unwrap_or(0.0), orphan["beta"].as_f64().unwrap_or(0.0));
+                    println!(
+                        "| orphan_beta | α={:.2}, β={:.2} |",
+                        orphan["alpha"].as_f64().unwrap_or(0.0),
+                        orphan["beta"].as_f64().unwrap_or(0.0)
+                    );
                 }
                 if let Some(tty) = class_json.get("tty_beta") {
-                    println!("| tty_beta | α={:.2}, β={:.2} |", tty["alpha"].as_f64().unwrap_or(0.0), tty["beta"].as_f64().unwrap_or(0.0));
+                    println!(
+                        "| tty_beta | α={:.2}, β={:.2} |",
+                        tty["alpha"].as_f64().unwrap_or(0.0),
+                        tty["beta"].as_f64().unwrap_or(0.0)
+                    );
                 }
                 if let Some(net) = class_json.get("net_beta") {
-                    println!("| net_beta | α={:.2}, β={:.2} |", net["alpha"].as_f64().unwrap_or(0.0), net["beta"].as_f64().unwrap_or(0.0));
+                    println!(
+                        "| net_beta | α={:.2}, β={:.2} |",
+                        net["alpha"].as_f64().unwrap_or(0.0),
+                        net["beta"].as_f64().unwrap_or(0.0)
+                    );
                 }
                 println!();
             }
@@ -3353,7 +3520,11 @@ fn run_agent_session_status(
         let total = std::fs::read_to_string(&plan_path)
             .ok()
             .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-            .and_then(|v| v.get("candidates").and_then(|c| c.as_array()).map(|a| a.len()))
+            .and_then(|v| {
+                v.get("candidates")
+                    .and_then(|c| c.as_array())
+                    .map(|a| a.len())
+            })
             .unwrap_or(completed);
         (completed, total)
     } else {
@@ -3428,8 +3599,16 @@ fn run_agent_session_status(
             println!("  Pending: {}", pending_actions);
             println!();
             println!("Resumable: {}", if resumable { "yes" } else { "no" });
-            if resumable && matches!(manifest.state, SessionState::Planned | SessionState::Executing) {
-                println!("Resume with: pt agent apply --session {}", manifest.session_id);
+            if resumable
+                && matches!(
+                    manifest.state,
+                    SessionState::Planned | SessionState::Executing
+                )
+            {
+                println!(
+                    "Resume with: pt agent apply --session {}",
+                    manifest.session_id
+                );
             }
             if let Some(error) = &manifest.error {
                 println!();
@@ -3495,7 +3674,10 @@ fn run_agent_sessions_cleanup(
             println!();
             println!("Older than: {}", older_than_str);
             println!("Removed: {} sessions", result.removed_count);
-            println!("Preserved: {} sessions (active or in-progress)", result.preserved_count);
+            println!(
+                "Preserved: {} sessions (active or in-progress)",
+                result.preserved_count
+            );
             if !result.errors.is_empty() {
                 println!();
                 println!("## Errors");
@@ -3522,17 +3704,20 @@ fn run_agent_sessions_list(
     args: &AgentSessionsArgs,
     host_id: &str,
 ) -> ExitCode {
-    let state_filter = args.state.as_ref().and_then(|s| match s.to_lowercase().as_str() {
-        "created" => Some(SessionState::Created),
-        "scanning" => Some(SessionState::Scanning),
-        "planned" => Some(SessionState::Planned),
-        "executing" => Some(SessionState::Executing),
-        "completed" => Some(SessionState::Completed),
-        "cancelled" => Some(SessionState::Cancelled),
-        "failed" => Some(SessionState::Failed),
-        "archived" => Some(SessionState::Archived),
-        _ => None,
-    });
+    let state_filter = args
+        .state
+        .as_ref()
+        .and_then(|s| match s.to_lowercase().as_str() {
+            "created" => Some(SessionState::Created),
+            "scanning" => Some(SessionState::Scanning),
+            "planned" => Some(SessionState::Planned),
+            "executing" => Some(SessionState::Executing),
+            "completed" => Some(SessionState::Completed),
+            "cancelled" => Some(SessionState::Cancelled),
+            "failed" => Some(SessionState::Failed),
+            "archived" => Some(SessionState::Archived),
+            _ => None,
+        });
 
     let options = ListSessionsOptions {
         limit: Some(args.limit),
@@ -3607,8 +3792,12 @@ fn run_agent_sessions_list(
                         s.session_id,
                         s.state,
                         s.mode,
-                        s.candidates_count.map(|c| c.to_string()).unwrap_or_else(|| "-".to_string()),
-                        s.actions_count.map(|c| c.to_string()).unwrap_or_else(|| "-".to_string()),
+                        s.candidates_count
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "-".to_string()),
+                        s.actions_count
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "-".to_string()),
                     );
                 }
             }

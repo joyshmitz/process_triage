@@ -34,9 +34,9 @@
 //! parent_patterns = []
 //! ```
 
-use super::types::{SupervisorCategory, SupervisorPattern};
 use super::environ::EnvPattern;
 use super::ipc::IpcPattern;
+use super::types::{SupervisorCategory, SupervisorPattern};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -87,12 +87,18 @@ impl BetaParams {
 
     /// Create a uniform prior Beta(1, 1).
     pub fn uniform() -> Self {
-        Self { alpha: 1.0, beta: 1.0 }
+        Self {
+            alpha: 1.0,
+            beta: 1.0,
+        }
     }
 
     /// Create a weakly informative prior Beta(2, 2).
     pub fn weakly_informative() -> Self {
-        Self { alpha: 2.0, beta: 2.0 }
+        Self {
+            alpha: 2.0,
+            beta: 2.0,
+        }
     }
 
     /// Compute the mean of the distribution: alpha / (alpha + beta).
@@ -160,8 +166,8 @@ impl SignaturePriors {
     /// Create priors indicating high likelihood of usefulness.
     pub fn likely_useful() -> Self {
         Self {
-            useful: Some(BetaParams::new(9.0, 1.0)),      // ~90% useful
-            abandoned: Some(BetaParams::new(1.0, 9.0)),  // ~10% abandoned
+            useful: Some(BetaParams::new(9.0, 1.0)),    // ~90% useful
+            abandoned: Some(BetaParams::new(1.0, 9.0)), // ~10% abandoned
             ..Default::default()
         }
     }
@@ -169,8 +175,8 @@ impl SignaturePriors {
     /// Create priors indicating high likelihood of abandonment.
     pub fn likely_abandoned() -> Self {
         Self {
-            useful: Some(BetaParams::new(1.0, 4.0)),      // ~20% useful
-            abandoned: Some(BetaParams::new(4.0, 1.0)),  // ~80% abandoned
+            useful: Some(BetaParams::new(1.0, 4.0)),    // ~20% useful
+            abandoned: Some(BetaParams::new(4.0, 1.0)), // ~80% abandoned
             ..Default::default()
         }
     }
@@ -241,8 +247,8 @@ impl ProcessExpectations {
     /// Create expectations for a short-lived build/compile task.
     pub fn short_lived_task() -> Self {
         Self {
-            typical_lifetime_seconds: Some(300),        // 5 minutes typical
-            max_normal_lifetime_seconds: Some(3600),   // 1 hour max
+            typical_lifetime_seconds: Some(300),     // 5 minutes typical
+            max_normal_lifetime_seconds: Some(3600), // 1 hour max
             cpu_during_run: Some(0.8),
             idle_cpu_normal: false,
             expects_disk_io: true,
@@ -253,9 +259,9 @@ impl ProcessExpectations {
     /// Create expectations for a long-running daemon.
     pub fn daemon() -> Self {
         Self {
-            typical_lifetime_seconds: None,             // No typical lifetime
-            max_normal_lifetime_seconds: None,         // Can run indefinitely
-            cpu_during_run: Some(0.05),                // Low CPU when serving
+            typical_lifetime_seconds: None,    // No typical lifetime
+            max_normal_lifetime_seconds: None, // Can run indefinitely
+            cpu_during_run: Some(0.05),        // Low CPU when serving
             idle_cpu_normal: true,
             expects_network: true,
             ..Default::default()
@@ -265,12 +271,12 @@ impl ProcessExpectations {
     /// Create expectations for an interactive development server.
     pub fn dev_server() -> Self {
         Self {
-            typical_lifetime_seconds: Some(3600),      // ~1 hour session
+            typical_lifetime_seconds: Some(3600),     // ~1 hour session
             max_normal_lifetime_seconds: Some(28800), // 8 hours max
             cpu_during_run: Some(0.3),
-            idle_cpu_normal: true,                      // Idle between requests
+            idle_cpu_normal: true, // Idle between requests
             expects_network: true,
-            expects_disk_io: true,                      // File watching
+            expects_disk_io: true, // File watching
             ..Default::default()
         }
     }
@@ -295,7 +301,10 @@ impl ProcessExpectations {
                 ));
             }
         }
-        if let (Some(typical), Some(max)) = (self.typical_lifetime_seconds, self.max_normal_lifetime_seconds) {
+        if let (Some(typical), Some(max)) = (
+            self.typical_lifetime_seconds,
+            self.max_normal_lifetime_seconds,
+        ) {
             if typical > max {
                 return Err(SignatureError::Invalid(
                     "typical_lifetime_seconds cannot exceed max_normal_lifetime_seconds".into(),
@@ -342,7 +351,10 @@ pub struct SupervisorSignature {
 
     /// Match priority for conflict resolution (v2).
     /// Higher priority signatures take precedence. Default is 100.
-    #[serde(default = "default_priority", skip_serializing_if = "is_default_priority")]
+    #[serde(
+        default = "default_priority",
+        skip_serializing_if = "is_default_priority"
+    )]
     pub priority: u32,
 }
 
@@ -597,9 +609,7 @@ impl SupervisorSignature {
         self.patterns
             .socket_paths
             .iter()
-            .map(|path| {
-                IpcPattern::path(&self.name, self.category, path, self.confidence_weight)
-            })
+            .map(|path| IpcPattern::path(&self.name, self.category, path, self.confidence_weight))
             .collect()
     }
 }
@@ -808,7 +818,11 @@ pub struct SignatureMatch<'a> {
 
 impl<'a> SignatureMatch<'a> {
     /// Create a new match result.
-    pub fn new(signature: &'a SupervisorSignature, level: MatchLevel, details: MatchDetails) -> Self {
+    pub fn new(
+        signature: &'a SupervisorSignature,
+        level: MatchLevel,
+        details: MatchDetails,
+    ) -> Self {
         let score = Self::compute_score(signature, &level, &details);
         Self {
             signature,
@@ -1061,11 +1075,7 @@ impl SignatureDatabase {
     }
 
     /// Find signatures matching an environment variable.
-    pub fn find_by_env_var(
-        &self,
-        var_name: &str,
-        var_value: &str,
-    ) -> Vec<&SupervisorSignature> {
+    pub fn find_by_env_var(&self, var_name: &str, var_value: &str) -> Vec<&SupervisorSignature> {
         self.signatures
             .iter()
             .filter(|sig| {
@@ -1100,7 +1110,12 @@ impl SignatureDatabase {
     pub fn find_by_pid_file(&self, path: &str) -> Vec<&SupervisorSignature> {
         self.signatures
             .iter()
-            .filter(|sig| sig.patterns.pid_files.iter().any(|p| path == p || path.starts_with(p)))
+            .filter(|sig| {
+                sig.patterns
+                    .pid_files
+                    .iter()
+                    .any(|p| path == p || path.starts_with(p))
+            })
             .collect()
     }
 
@@ -1168,19 +1183,22 @@ impl SignatureDatabase {
                 if sig.patterns.environment_vars.is_empty() {
                     false
                 } else {
-                    sig.patterns.environment_vars.iter().any(|(var_name, pattern)| {
-                        if let Some(var_value) = env.get(var_name) {
-                            if pattern.is_empty() || pattern == ".*" {
-                                true
+                    sig.patterns
+                        .environment_vars
+                        .iter()
+                        .any(|(var_name, pattern)| {
+                            if let Some(var_value) = env.get(var_name) {
+                                if pattern.is_empty() || pattern == ".*" {
+                                    true
+                                } else {
+                                    regex::Regex::new(pattern)
+                                        .map(|re| re.is_match(var_value))
+                                        .unwrap_or(false)
+                                }
                             } else {
-                                regex::Regex::new(pattern)
-                                    .map(|re| re.is_match(var_value))
-                                    .unwrap_or(false)
+                                false
                             }
-                        } else {
-                            false
-                        }
-                    })
+                        })
                 }
             } else {
                 false
@@ -1189,9 +1207,10 @@ impl SignatureDatabase {
 
             // Check socket paths
             let socket_matched = if let Some(sockets) = ctx.socket_paths {
-                sig.patterns.socket_paths.iter().any(|prefix| {
-                    sockets.iter().any(|s| s.starts_with(prefix))
-                })
+                sig.patterns
+                    .socket_paths
+                    .iter()
+                    .any(|prefix| sockets.iter().any(|s| s.starts_with(prefix)))
             } else {
                 false
             };
@@ -1238,7 +1257,10 @@ impl SignatureDatabase {
         // Sort by score (descending), then by priority (descending)
         matches.sort_by(|a, b| {
             // First compare scores
-            let score_cmp = b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal);
+            let score_cmp = b
+                .score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal);
             if score_cmp != std::cmp::Ordering::Equal {
                 return score_cmp;
             }
@@ -1362,10 +1384,7 @@ impl SignatureDatabase {
                     ("GITHUB_WORKFLOW".into(), ".*".into()),
                     ("GITHUB_RUN_ID".into(), ".*".into()),
                 ]))
-                .with_pid_files(vec![
-                    "/actions-runner/.runner",
-                    "~/.actions-runner/.runner",
-                ])
+                .with_pid_files(vec!["/actions-runner/.runner", "~/.actions-runner/.runner"])
                 .as_builtin(),
         );
 
@@ -1488,9 +1507,7 @@ impl SignatureDatabase {
                 .with_confidence(0.85)
                 .with_notes("nodemon - Node.js file watcher and auto-restarter")
                 .with_process_patterns(vec![r"^nodemon$", r"^node.*nodemon"])
-                .with_env_patterns(HashMap::from([
-                    ("NODEMON_CONFIG".into(), ".*".into()),
-                ]))
+                .with_env_patterns(HashMap::from([("NODEMON_CONFIG".into(), ".*".into())]))
                 .as_builtin(),
         );
 
@@ -1499,9 +1516,7 @@ impl SignatureDatabase {
                 .with_confidence(0.85)
                 .with_notes("forever - Node.js process manager")
                 .with_process_patterns(vec![r"^forever$", r"^node.*forever"])
-                .with_env_patterns(HashMap::from([
-                    ("FOREVER_ROOT".into(), ".*".into()),
-                ]))
+                .with_env_patterns(HashMap::from([("FOREVER_ROOT".into(), ".*".into())]))
                 .with_pid_files(vec!["~/.forever/pids/", "/var/run/forever/"])
                 .as_builtin(),
         );
@@ -1511,9 +1526,7 @@ impl SignatureDatabase {
                 .with_confidence(0.85)
                 .with_notes("Docker container engine")
                 .with_process_patterns(vec![r"^dockerd$", r"^containerd$"])
-                .with_env_patterns(HashMap::from([
-                    ("DOCKER_HOST".into(), ".*".into()),
-                ]))
+                .with_env_patterns(HashMap::from([("DOCKER_HOST".into(), ".*".into())]))
                 .with_pid_files(vec!["/var/run/docker.pid", "/run/docker.pid"])
                 .as_builtin(),
         );
@@ -1523,9 +1536,10 @@ impl SignatureDatabase {
                 .with_confidence(0.90)
                 .with_notes("Kubernetes")
                 .with_process_patterns(vec![r"^kubelet$", r"^kube-proxy$"])
-                .with_env_patterns(HashMap::from([
-                    ("KUBERNETES_SERVICE_HOST".into(), ".*".into()),
-                ]))
+                .with_env_patterns(HashMap::from([(
+                    "KUBERNETES_SERVICE_HOST".into(),
+                    ".*".into(),
+                )]))
                 .as_builtin(),
         );
     }
@@ -1598,7 +1612,10 @@ mod tests {
     fn test_signature_validation_invalid_regex() {
         let sig = SupervisorSignature::new("test", SupervisorCategory::Agent)
             .with_process_patterns(vec![r"[invalid"]);
-        assert!(matches!(sig.validate(), Err(SignatureError::InvalidRegex { .. })));
+        assert!(matches!(
+            sig.validate(),
+            Err(SignatureError::InvalidRegex { .. })
+        ));
     }
 
     #[test]
@@ -1688,7 +1705,10 @@ mod tests {
     fn test_signature_schema_version_check() {
         let json = r#"{"schema_version": 999, "signatures": []}"#;
         let result = SignatureSchema::from_json(json);
-        assert!(matches!(result, Err(SignatureError::UnsupportedVersion { .. })));
+        assert!(matches!(
+            result,
+            Err(SignatureError::UnsupportedVersion { .. })
+        ));
     }
 
     #[test]
@@ -1704,21 +1724,28 @@ mod tests {
         let mut test_env = std::collections::HashMap::new();
         test_env.insert("GITHUB_ACTIONS".to_string(), "true".to_string());
         let matches = environ_db.find_matches(&test_env);
-        assert!(!matches.is_empty(), "EnvironDatabase should have patterns loaded");
+        assert!(
+            !matches.is_empty(),
+            "EnvironDatabase should have patterns loaded"
+        );
 
         // Check IpcDatabase export via find_matches (patterns field is private)
         let ipc_db = db.to_ipc_database();
         let matches = ipc_db.find_matches("/tmp/vscode-ipc-test");
-        assert!(!matches.is_empty(), "IpcDatabase should have patterns loaded");
+        assert!(
+            !matches.is_empty(),
+            "IpcDatabase should have patterns loaded"
+        );
     }
 
     #[test]
     fn test_signature_to_env_patterns() {
-        let sig = SupervisorSignature::new("test", SupervisorCategory::Agent)
-            .with_env_patterns(HashMap::from([
+        let sig = SupervisorSignature::new("test", SupervisorCategory::Agent).with_env_patterns(
+            HashMap::from([
                 ("VAR1".into(), ".*".into()),
                 ("VAR2".into(), "specific".into()),
-            ]));
+            ]),
+        );
 
         let patterns = sig.to_env_patterns();
         assert_eq!(patterns.len(), 2);
@@ -1981,13 +2008,10 @@ mod tests {
     fn test_match_process_with_env_var() {
         let db = SignatureDatabase::with_defaults();
 
-        let env = HashMap::from([
-            ("VSCODE_PID".to_string(), "12345".to_string()),
-        ]);
+        let env = HashMap::from([("VSCODE_PID".to_string(), "12345".to_string())]);
 
         // Even if process name doesn't match, env var should match vscode
-        let ctx = ProcessMatchContext::with_comm("some_shell")
-            .env_vars(&env);
+        let ctx = ProcessMatchContext::with_comm("some_shell").env_vars(&env);
         let matches = db.match_process(&ctx);
 
         // Should have a match from environment
@@ -2000,8 +2024,7 @@ mod tests {
 
         let sockets = vec!["/tmp/claude-session-123".to_string()];
 
-        let ctx = ProcessMatchContext::with_comm("shell")
-            .socket_paths(&sockets);
+        let ctx = ProcessMatchContext::with_comm("shell").socket_paths(&sockets);
         let matches = db.match_process(&ctx);
 
         // Should match claude via socket path
@@ -2012,9 +2035,7 @@ mod tests {
     fn test_match_process_multi_pattern() {
         let db = SignatureDatabase::with_defaults();
 
-        let env = HashMap::from([
-            ("VSCODE_PID".to_string(), "12345".to_string()),
-        ]);
+        let env = HashMap::from([("VSCODE_PID".to_string(), "12345".to_string())]);
         let sockets = vec!["/tmp/vscode-ipc-456.sock".to_string()];
 
         // Match on process name, env var, and socket - should get MultiPattern level
@@ -2077,12 +2098,12 @@ mod tests {
         let _ = db.add(
             SupervisorSignature::new("generic-node", SupervisorCategory::Other)
                 .with_process_patterns(vec![r"^node$"])
-                .with_priority(50) // Lower priority
+                .with_priority(50), // Lower priority
         );
         let _ = db.add(
             SupervisorSignature::new("specific-node", SupervisorCategory::Other)
                 .with_process_patterns(vec![r"^node$"])
-                .with_priority(150) // Higher priority
+                .with_priority(150), // Higher priority
         );
 
         let ctx = ProcessMatchContext::with_comm("node");
@@ -2103,7 +2124,7 @@ mod tests {
             SupervisorSignature::new("strict-match", SupervisorCategory::Agent)
                 .with_process_patterns(vec![r"^myapp$"])
                 .with_arg_patterns(vec![r"--special-mode"])
-                .with_min_matches(2) // Require both to match
+                .with_min_matches(2), // Require both to match
         );
 
         // Just process name - should NOT match (only 1 pattern type)
@@ -2112,8 +2133,7 @@ mod tests {
         assert!(matches1.is_empty());
 
         // Process name + args - should match (2 pattern types)
-        let ctx2 = ProcessMatchContext::with_comm("myapp")
-            .cmdline("myapp --special-mode --other");
+        let ctx2 = ProcessMatchContext::with_comm("myapp").cmdline("myapp --special-mode --other");
         let matches2 = db.match_process(&ctx2);
         assert!(!matches2.is_empty());
     }
@@ -2125,7 +2145,7 @@ mod tests {
         let _ = db.add(
             SupervisorSignature::new("jest-watch", SupervisorCategory::Other)
                 .with_process_patterns(vec![r"^node$"])
-                .with_arg_patterns(vec![r"jest", r"--watch"])
+                .with_arg_patterns(vec![r"jest", r"--watch"]),
         );
 
         // With matching args
@@ -2139,7 +2159,9 @@ mod tests {
             .cmdline("node ./node_modules/.bin/jest src/test.js");
         let matches_partial = db.match_process(&ctx_partial);
         // Should not match because --watch is missing (AND semantics)
-        assert!(!matches_partial.iter().any(|m| m.signature.name == "jest-watch" && m.details.args_matched));
+        assert!(!matches_partial
+            .iter()
+            .any(|m| m.signature.name == "jest-watch" && m.details.args_matched));
     }
 
     #[test]
@@ -2149,11 +2171,10 @@ mod tests {
         let _ = db.add(
             SupervisorSignature::new("project-dev", SupervisorCategory::Other)
                 .with_process_patterns(vec![r"^node$"])
-                .with_working_dir_patterns(vec![r"/home/.*/projects/"])
+                .with_working_dir_patterns(vec![r"/home/.*/projects/"]),
         );
 
-        let ctx_match = ProcessMatchContext::with_comm("node")
-            .cwd("/home/user/projects/myapp");
+        let ctx_match = ProcessMatchContext::with_comm("node").cwd("/home/user/projects/myapp");
         let matches = db.match_process(&ctx_match);
 
         assert!(!matches.is_empty());
@@ -2169,7 +2190,7 @@ mod tests {
                 .with_process_patterns(vec![r"^test$"])
                 .with_priors(SignaturePriors::likely_useful())
                 .with_expectations(ProcessExpectations::dev_server())
-                .with_priority(200)
+                .with_priority(200),
         );
 
         let json = schema.to_json().expect("should serialize to JSON");
@@ -2199,7 +2220,7 @@ mod tests {
                 .with_min_matches(2)
                 .with_priors(SignaturePriors::likely_abandoned())
                 .with_expectations(ProcessExpectations::short_lived_task())
-                .with_priority(75)
+                .with_priority(75),
         );
 
         let toml_str = schema.to_toml().expect("should serialize to TOML");
@@ -2217,8 +2238,7 @@ mod tests {
     #[test]
     fn test_match_score_ordering() {
         // Test that scores are ordered correctly by match level
-        let sig = SupervisorSignature::new("test", SupervisorCategory::Agent)
-            .with_confidence(1.0); // Use 1.0 for easy score comparison
+        let sig = SupervisorSignature::new("test", SupervisorCategory::Agent).with_confidence(1.0); // Use 1.0 for easy score comparison
 
         let details = MatchDetails {
             process_name_matched: true,
@@ -2226,12 +2246,16 @@ mod tests {
         };
 
         let command_only = SignatureMatch::new(&sig, MatchLevel::CommandOnly, details.clone());
-        let multi = SignatureMatch::new(&sig, MatchLevel::MultiPattern, MatchDetails {
-            process_name_matched: true,
-            env_vars_matched: true,
-            pattern_types_matched: 2,
-            ..Default::default()
-        });
+        let multi = SignatureMatch::new(
+            &sig,
+            MatchLevel::MultiPattern,
+            MatchDetails {
+                process_name_matched: true,
+                env_vars_matched: true,
+                pattern_types_matched: 2,
+                ..Default::default()
+            },
+        );
 
         assert!(multi.score > command_only.score);
     }

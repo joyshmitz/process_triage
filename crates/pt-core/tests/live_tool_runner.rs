@@ -3,7 +3,7 @@
 //! These tests use real commands and avoid mocks/fakes. They are gated by
 //! command availability so they can skip safely on minimal environments.
 
-use pt_core::collect::{ToolRunnerBuilder, ToolError};
+use pt_core::collect::{ToolError, ToolRunnerBuilder};
 use std::path::Path;
 use std::time::Duration;
 
@@ -67,9 +67,7 @@ fn live_tool_runner_timeout() {
         .timeout(Duration::from_millis(100))
         .build();
 
-    let output = runner
-        .run_tool("sleep", &["5"], None)
-        .expect("run sleep");
+    let output = runner.run_tool("sleep", &["5"], None).expect("run sleep");
     assert!(output.timed_out);
 }
 

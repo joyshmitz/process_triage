@@ -359,13 +359,7 @@ impl ObservationLikelihood {
 
     /// Create from likelihoods (will be converted to log).
     pub fn from_likelihoods(likelihoods: [f64; NUM_STATES]) -> Result<Self> {
-        let log_likelihoods = likelihoods.map(|l| {
-            if l > 0.0 {
-                l.ln()
-            } else {
-                f64::NEG_INFINITY
-            }
-        });
+        let log_likelihoods = likelihoods.map(|l| if l > 0.0 { l.ln() } else { f64::NEG_INFINITY });
 
         Ok(Self {
             log_likelihoods,
@@ -448,7 +442,10 @@ pub fn update_belief(
     }
 
     // Compute log-evidence for diagnostics
-    let max_log = log_updated.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let max_log = log_updated
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
     let log_evidence = if max_log == f64::NEG_INFINITY {
         f64::NEG_INFINITY
     } else {
@@ -586,10 +583,16 @@ mod tests {
     #[test]
     fn test_belief_state_invalid_probs() {
         let result = BeliefState::from_probs([0.5, 0.5, 0.5, 0.5]);
-        assert!(matches!(result, Err(BeliefStateError::InvalidDistribution(_))));
+        assert!(matches!(
+            result,
+            Err(BeliefStateError::InvalidDistribution(_))
+        ));
 
         let result = BeliefState::from_probs([1.5, -0.5, 0.0, 0.0]);
-        assert!(matches!(result, Err(BeliefStateError::ProbabilityOutOfRange(_))));
+        assert!(matches!(
+            result,
+            Err(BeliefStateError::ProbabilityOutOfRange(_))
+        ));
     }
 
     #[test]
@@ -703,7 +706,8 @@ mod tests {
     fn test_update_belief_entropy_decreases_with_information() {
         let prior = BeliefState::uniform();
         let transition = TransitionModel::identity();
-        let observation = ObservationLikelihood::from_likelihoods([0.01, 0.01, 0.97, 0.01]).unwrap();
+        let observation =
+            ObservationLikelihood::from_likelihoods([0.01, 0.01, 0.97, 0.01]).unwrap();
         let config = BeliefUpdateConfig::default();
 
         let result = update_belief(&prior, &transition, &observation, &config).unwrap();
@@ -772,7 +776,8 @@ mod tests {
     fn test_belief_update_smoothing() {
         let prior = BeliefState::certain(ProcessState::Useful);
         let transition = TransitionModel::identity();
-        let observation = ObservationLikelihood::from_likelihoods([0.001, 0.001, 0.997, 0.001]).unwrap();
+        let observation =
+            ObservationLikelihood::from_likelihoods([0.001, 0.001, 0.997, 0.001]).unwrap();
 
         let mut config = BeliefUpdateConfig::default();
         config.smoothing = true;
@@ -788,14 +793,20 @@ mod tests {
     fn test_belief_update_min_prob_floor() {
         let prior = BeliefState::uniform();
         let transition = TransitionModel::identity();
-        let observation = ObservationLikelihood::from_likelihoods([0.001, 0.001, 0.997, 0.001]).unwrap();
+        let observation =
+            ObservationLikelihood::from_likelihoods([0.001, 0.001, 0.997, 0.001]).unwrap();
 
         let mut config = BeliefUpdateConfig::default();
         config.min_prob = 1e-6;
 
         let result = update_belief(&prior, &transition, &observation, &config).unwrap();
         for &p in &result.belief.probs {
-            assert!(p >= config.min_prob, "prob {} < min_prob {}", p, config.min_prob);
+            assert!(
+                p >= config.min_prob,
+                "prob {} < min_prob {}",
+                p,
+                config.min_prob
+            );
         }
     }
 
@@ -809,7 +820,10 @@ mod tests {
         ];
 
         let result = TransitionModel::new(matrix);
-        assert!(matches!(result, Err(BeliefStateError::InvalidTransitionRow(1))));
+        assert!(matches!(
+            result,
+            Err(BeliefStateError::InvalidTransitionRow(1))
+        ));
     }
 
     #[test]

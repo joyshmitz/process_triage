@@ -511,11 +511,7 @@ ActiveState=inactive
 
         let available = is_systemd_available();
 
-        crate::test_log!(
-            INFO,
-            "systemd availability result",
-            available = available
-        );
+        crate::test_log!(INFO, "systemd availability result", available = available);
 
         // The result depends on the system, but the function should not panic
         // On most modern Linux systems with systemd, this should be true
@@ -600,7 +596,11 @@ ActiveState=inactive
             .spawn_shell("sleep 30")
             .expect("spawn sleep process");
 
-        crate::test_log!(INFO, "systemd unit collection for spawned process", pid = proc.pid());
+        crate::test_log!(
+            INFO,
+            "systemd unit collection for spawned process",
+            pid = proc.pid()
+        );
 
         let unit = collect_systemd_unit(proc.pid(), None);
 

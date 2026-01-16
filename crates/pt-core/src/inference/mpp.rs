@@ -149,11 +149,11 @@ impl BurstinessLevel {
     /// High burstiness suggests abnormal behavior (tight loops, cascading failures).
     pub fn log_odds_contribution(&self) -> f64 {
         match self {
-            BurstinessLevel::Regular => -0.3,    // Supports normal behavior
-            BurstinessLevel::Mild => 0.0,        // Neutral
-            BurstinessLevel::Moderate => 0.3,    // Mild concern
-            BurstinessLevel::High => 0.8,        // Strong signal
-            BurstinessLevel::VeryHigh => 1.5,    // Very strong signal
+            BurstinessLevel::Regular => -0.3, // Supports normal behavior
+            BurstinessLevel::Mild => 0.0,     // Neutral
+            BurstinessLevel::Moderate => 0.3, // Mild concern
+            BurstinessLevel::High => 0.8,     // Strong signal
+            BurstinessLevel::VeryHigh => 1.5, // Very strong signal
         }
     }
 }
@@ -407,7 +407,11 @@ fn format_description(summary: &MppSummary) -> String {
 
     format!(
         "{} event rate ({:.1}/s), {} burstiness (Fano={:.2}, CV={:.2})",
-        rate_desc, summary.event_rate, summary.burstiness_level, summary.fano_factor, summary.cv_inter_arrival
+        rate_desc,
+        summary.event_rate,
+        summary.burstiness_level,
+        summary.fano_factor,
+        summary.cv_inter_arrival
     )
 }
 
@@ -458,10 +462,10 @@ pub struct MarkedPointProcess {
 impl MarkedPointProcess {
     /// Create a new marked point process processor.
     pub fn new(config: MppConfig) -> Self {
-        let mark_digest = TDigest::new(config.tdigest_config.clone())
-            .expect("TDigest config is valid");
-        let inter_arrival_digest = TDigest::new(config.tdigest_config.clone())
-            .expect("TDigest config is valid");
+        let mark_digest =
+            TDigest::new(config.tdigest_config.clone()).expect("TDigest config is valid");
+        let inter_arrival_digest =
+            TDigest::new(config.tdigest_config.clone()).expect("TDigest config is valid");
 
         Self {
             config,
@@ -493,10 +497,10 @@ impl MarkedPointProcess {
     /// Reset the processor to initial state.
     pub fn reset(&mut self) {
         self.events.clear();
-        self.mark_digest = TDigest::new(self.config.tdigest_config.clone())
-            .expect("TDigest config is valid");
-        self.inter_arrival_digest = TDigest::new(self.config.tdigest_config.clone())
-            .expect("TDigest config is valid");
+        self.mark_digest =
+            TDigest::new(self.config.tdigest_config.clone()).expect("TDigest config is valid");
+        self.inter_arrival_digest =
+            TDigest::new(self.config.tdigest_config.clone()).expect("TDigest config is valid");
         self.mark_count = 0;
         self.mark_sum = 0.0;
         self.mark_mean = 0.0;
@@ -805,8 +809,10 @@ impl BatchMppAnalyzer {
 
     /// Add a named processor.
     pub fn add_processor(&mut self, name: &str) {
-        self.processors
-            .push((name.to_string(), MarkedPointProcess::new(self.config.clone())));
+        self.processors.push((
+            name.to_string(),
+            MarkedPointProcess::new(self.config.clone()),
+        ));
     }
 
     /// Get or create a processor by name.
@@ -814,8 +820,10 @@ impl BatchMppAnalyzer {
         if let Some(idx) = self.processors.iter().position(|(n, _)| n == name) {
             &mut self.processors[idx].1
         } else {
-            self.processors
-                .push((name.to_string(), MarkedPointProcess::new(self.config.clone())));
+            self.processors.push((
+                name.to_string(),
+                MarkedPointProcess::new(self.config.clone()),
+            ));
             &mut self.processors.last_mut().unwrap().1
         }
     }

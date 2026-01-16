@@ -42,10 +42,7 @@ fn live_network_collects_tcp_udp_unix() {
         .any(|p| p.protocol == "tcp" || p.protocol == "tcp6");
     assert!(tcp_listen, "expected at least one tcp listen port");
 
-    let tcp_established = network
-        .tcp_connections
-        .iter()
-        .any(|c| c.state.is_active());
+    let tcp_established = network.tcp_connections.iter().any(|c| c.state.is_active());
     assert!(tcp_established, "expected an active tcp connection");
 
     let udp_present = network.udp_sockets.iter().any(|s| s.local_port > 0);

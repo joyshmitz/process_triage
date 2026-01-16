@@ -967,9 +967,9 @@ impl RequirementChecker for LiveRequirementChecker {
     }
 
     fn check_cgroup_v2_available(&self) -> bool {
-        *self.cgroup_v2_available.get_or_init(|| {
-            std::path::Path::new("/sys/fs/cgroup/cgroup.controllers").exists()
-        })
+        *self
+            .cgroup_v2_available
+            .get_or_init(|| std::path::Path::new("/sys/fs/cgroup/cgroup.controllers").exists())
     }
 }
 
@@ -1143,7 +1143,10 @@ impl<'a> RecoveryExecutor<'a> {
             },
             agent_next_step: format!(
                 "{}; diagnosis: {}",
-                alternative.command_hint.as_deref().unwrap_or("Investigate further"),
+                alternative
+                    .command_hint
+                    .as_deref()
+                    .unwrap_or("Investigate further"),
                 branch.diagnosis
             ),
         })
@@ -1155,12 +1158,7 @@ impl<'a> RecoveryExecutor<'a> {
     }
 
     /// Classify a failure from ActionError-like inputs.
-    pub fn classify_failure(
-        &self,
-        error_kind: &str,
-        pid: u32,
-        respawned: bool,
-    ) -> FailureCategory {
+    pub fn classify_failure(&self, error_kind: &str, pid: u32, respawned: bool) -> FailureCategory {
         if respawned {
             return FailureCategory::SupervisorConflict;
         }
@@ -1211,7 +1209,10 @@ mod tests {
     fn test_kill_tree_supervisor_conflict() {
         let tree = RecoveryTree::kill_tree();
         let branch = tree.get_branch(FailureCategory::SupervisorConflict);
-        assert_eq!(branch.alternatives[0].action, RecoveryAction::StopSupervisor);
+        assert_eq!(
+            branch.alternatives[0].action,
+            RecoveryAction::StopSupervisor
+        );
     }
 
     #[test]
@@ -1505,8 +1506,12 @@ mod tests {
         let executor = RecoveryExecutor::new(&db, &checker);
         let session = executor.create_session(1234, None);
 
-        let hint =
-            executor.generate_hint(Action::Kill, FailureCategory::PermissionDenied, 1234, &session);
+        let hint = executor.generate_hint(
+            Action::Kill,
+            FailureCategory::PermissionDenied,
+            1234,
+            &session,
+        );
         assert!(hint.is_some());
         let hint = hint.unwrap();
         assert_eq!(hint.recommended_action, RecoveryAction::RetryWithSudo);

@@ -11,8 +11,8 @@ use std::io;
 use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
-use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
 #[cfg(unix)]
@@ -52,11 +52,8 @@ impl LiveHarness {
             .expect("harness lock poisoned");
 
         let suffix = HARNESS_COUNTER.fetch_add(1, Ordering::SeqCst);
-        let temp_dir = std::env::temp_dir().join(format!(
-            "pt_live_harness_{}_{}",
-            std::process::id(),
-            suffix
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("pt_live_harness_{}_{}", std::process::id(), suffix));
         fs::create_dir_all(&temp_dir)?;
 
         Ok(Self {
@@ -100,10 +97,7 @@ impl LiveHarness {
     pub fn open_ro_file(&mut self) -> io::Result<PathBuf> {
         let path = self.temp_dir.join(format!("ro_{}.txt", self.files.len()));
         if !path.exists() {
-            let _ = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .open(&path)?;
+            let _ = OpenOptions::new().write(true).create(true).open(&path)?;
         }
         let file = OpenOptions::new().read(true).open(&path)?;
         self.files.push(file);
@@ -150,7 +144,9 @@ impl LiveHarness {
     /// Open a Unix domain socket listener + connection (Linux/Unix only).
     #[cfg(unix)]
     pub fn open_unix_socket(&mut self) -> io::Result<PathBuf> {
-        let path = self.temp_dir.join(format!("unix_{}.sock", self.unix_streams.len()));
+        let path = self
+            .temp_dir
+            .join(format!("unix_{}.sock", self.unix_streams.len()));
         let listener = UnixListener::bind(&path)?;
         let client = UnixStream::connect(&path)?;
         let (server, _) = listener.accept()?;

@@ -1,11 +1,11 @@
 #![cfg(feature = "test-utils")]
 
-use pt_core::action::{SignalActionRunner};
-use pt_core::action::executor::{ActionRunner};
-use pt_core::plan::{PlanAction, ActionRationale, ActionTimeouts, ActionRouting, ActionConfidence};
+use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
+use pt_core::action::executor::ActionRunner;
+use pt_core::action::SignalActionRunner;
 use pt_core::decision::Action as PlanActionType;
+use pt_core::plan::{ActionConfidence, ActionRationale, ActionRouting, ActionTimeouts, PlanAction};
 use pt_core::test_utils::ProcessHarness;
-use pt_common::{ProcessId, StartId, IdentityQuality, ProcessIdentity};
 use std::time::Duration;
 
 fn empty_rationale() -> ActionRationale {
@@ -20,7 +20,9 @@ fn empty_rationale() -> ActionRationale {
 
 #[test]
 fn test_signal_kill_real() {
-    if !ProcessHarness::is_available() { return; }
+    if !ProcessHarness::is_available() {
+        return;
+    }
     let harness = ProcessHarness::default();
     // Use a long sleep so we have time to kill it
     let proc = harness.spawn_sleep(60).expect("spawn");
@@ -61,18 +63,24 @@ fn test_signal_kill_real() {
 
     // Verify process is gone
     std::thread::sleep(Duration::from_millis(100));
-    
+
     // Check if running using signal 0
     // If it's a zombie, kill(0) returns success (0).
     // So we should check if verify() succeeds.
-    
+
     let verify = runner.verify(&action);
-    assert!(verify.is_ok(), "Verify failed: process still alive/running? {:?}", verify);
+    assert!(
+        verify.is_ok(),
+        "Verify failed: process still alive/running? {:?}",
+        verify
+    );
 }
 
 #[test]
 fn test_signal_pause_resume_real() {
-    if !ProcessHarness::is_available() { return; }
+    if !ProcessHarness::is_available() {
+        return;
+    }
     let harness = ProcessHarness::default();
     let proc = harness.spawn_sleep(60).expect("spawn");
     let pid = proc.pid();
@@ -114,7 +122,11 @@ fn test_signal_pause_resume_real() {
         std::thread::sleep(Duration::from_millis(100));
         let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid)).unwrap();
         // State is 3rd field. T = stopped.
-        assert!(stat.contains(") T ") || stat.contains(") t "), "Process should be stopped (T): {}", stat);
+        assert!(
+            stat.contains(") T ") || stat.contains(") t "),
+            "Process should be stopped (T): {}",
+            stat
+        );
     }
 
     // Resume
@@ -125,7 +137,11 @@ fn test_signal_pause_resume_real() {
     {
         std::thread::sleep(Duration::from_millis(50));
         let stat = std::fs::read_to_string(format!("/proc/{}/stat", pid)).unwrap();
-        assert!(stat.contains(") S ") || stat.contains(") R "), "Process should be running (S/R): {}", stat);
+        assert!(
+            stat.contains(") S ") || stat.contains(") R "),
+            "Process should be running (S/R): {}",
+            stat
+        );
     }
 }
 
@@ -135,7 +151,9 @@ fn test_process_group_pause_resume_real() {
     use pt_core::action::SignalConfig;
     use pt_core::test_utils::is_process_stopped;
 
-    if !ProcessHarness::is_available() { return; }
+    if !ProcessHarness::is_available() {
+        return;
+    }
     let harness = ProcessHarness::default();
 
     // Spawn a process group (parent + child)
@@ -148,7 +166,11 @@ fn test_process_group_pause_resume_real() {
     // Get PGID and all PIDs in the group
     let pgid = proc.pgid().expect("should have pgid");
     let group_pids = proc.group_pids();
-    assert!(group_pids.len() >= 2, "expected at least 2 processes in group, got {:?}", group_pids);
+    assert!(
+        group_pids.len() >= 2,
+        "expected at least 2 processes in group, got {:?}",
+        group_pids
+    );
 
     // Create runner with process group targeting enabled
     let runner = SignalActionRunner::new(SignalConfig {
@@ -191,7 +213,8 @@ fn test_process_group_pause_resume_real() {
     for gpid in &group_pids {
         assert!(
             is_process_stopped(*gpid),
-            "process {} in group should be stopped", gpid
+            "process {} in group should be stopped",
+            gpid
         );
     }
 
@@ -230,20 +253,23 @@ fn test_process_group_pause_resume_real() {
     for gpid in &group_pids {
         assert!(
             !is_process_stopped(*gpid),
-            "process {} in group should be running", gpid
+            "process {} in group should be running",
+            gpid
         );
     }
 }
 
 #[test]
 fn test_zombie_verification_real() {
-    if !ProcessHarness::is_available() { return; }
+    if !ProcessHarness::is_available() {
+        return;
+    }
     let harness = ProcessHarness::default();
-    
+
     // Spawn a process that exits immediately -> Zombie
     let proc = harness.spawn_shell("true").expect("spawn true");
     let pid = proc.pid();
-    
+
     // Wait until it becomes zombie
     let mut is_zombie = false;
     for _ in 0..20 {
@@ -255,7 +281,7 @@ fn test_zombie_verification_real() {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    
+
     let runner = SignalActionRunner::with_defaults();
     let action = PlanAction {
         action_id: "test-kill-zombie".to_string(),
@@ -285,7 +311,7 @@ fn test_zombie_verification_real() {
     // Execute kill on zombie should succeed (no-op or ignored signal)
     let result = runner.execute(&action);
     assert!(result.is_ok(), "Kill on zombie failed: {:?}", result);
-    
+
     // Verify should succeed (Z count as dead)
     let result = runner.verify(&action);
     assert!(result.is_ok(), "Verify on zombie failed: {:?}", result);

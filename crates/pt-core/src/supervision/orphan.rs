@@ -12,9 +12,7 @@
 //! This feature conditions on supervision context to produce meaningful evidence.
 
 use super::nohup::{detect_nohup, BackgroundIntent, NohupError, NohupResult};
-use super::{
-    detect_supervision, CombinedResult, DetectionError, SupervisorCategory,
-};
+use super::{detect_supervision, CombinedResult, DetectionError, SupervisorCategory};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use thiserror::Error;
@@ -183,9 +181,7 @@ pub fn detect_container() -> bool {
     // 3. Check /proc/1/environ for container hints
     if let Ok(environ) = fs::read("/proc/1/environ") {
         let environ_str = String::from_utf8_lossy(&environ);
-        if environ_str.contains("KUBERNETES_")
-            || environ_str.contains("container=")
-        {
+        if environ_str.contains("KUBERNETES_") || environ_str.contains("container=") {
             return true;
         }
     }
@@ -194,8 +190,15 @@ pub fn detect_container() -> bool {
     if let Ok(comm) = fs::read_to_string("/proc/1/comm") {
         let comm = comm.trim();
         // If PID 1 is not a typical init system, we're likely in a container
-        if !["init", "systemd", "launchd", "upstart", "runit", "s6-svscan"]
-            .contains(&comm)
+        if ![
+            "init",
+            "systemd",
+            "launchd",
+            "upstart",
+            "runit",
+            "s6-svscan",
+        ]
+        .contains(&comm)
         {
             // Could be a container entrypoint
             return true;
@@ -352,7 +355,9 @@ impl OrphanAnalyzer {
                             supervision.supervisor_name.as_deref().unwrap_or("unknown")
                         );
                     }
-                    Some(SupervisorCategory::Agent) | Some(SupervisorCategory::Ide) | Some(SupervisorCategory::Ci) => {
+                    Some(SupervisorCategory::Agent)
+                    | Some(SupervisorCategory::Ide)
+                    | Some(SupervisorCategory::Ci) => {
                         result.reason = ReparentingReason::SupervisedByAutomation;
                         result.explanation = format!(
                             "Process is supervised by automation: {:?} ({})",
@@ -383,7 +388,8 @@ impl OrphanAnalyzer {
                         result.unexpected_reparenting = false;
                         result.reason = ReparentingReason::IntentionallyBackgrounded;
                         result.confidence = nohup_result.confidence;
-                        result.explanation = "Process was intentionally backgrounded (nohup/disown)".to_string();
+                        result.explanation =
+                            "Process was intentionally backgrounded (nohup/disown)".to_string();
                         return Ok(result);
                     }
                     BackgroundIntent::Forgotten => {
@@ -391,7 +397,9 @@ impl OrphanAnalyzer {
                         result.unexpected_reparenting = true;
                         result.reason = ReparentingReason::ReparentedToInitWithoutSupervision;
                         result.confidence = nohup_result.confidence;
-                        result.explanation = "Process appears to be forgotten nohup/disown (stale output)".to_string();
+                        result.explanation =
+                            "Process appears to be forgotten nohup/disown (stale output)"
+                                .to_string();
                         return Ok(result);
                     }
                     BackgroundIntent::Unknown => {
@@ -400,7 +408,9 @@ impl OrphanAnalyzer {
                             result.unexpected_reparenting = false;
                             result.reason = ReparentingReason::IntentionallyBackgrounded;
                             result.confidence = 0.6;
-                            result.explanation = "Process ignores SIGHUP, likely intentionally backgrounded".to_string();
+                            result.explanation =
+                                "Process ignores SIGHUP, likely intentionally backgrounded"
+                                    .to_string();
                             return Ok(result);
                         }
                     }
@@ -415,7 +425,8 @@ impl OrphanAnalyzer {
             result.unexpected_reparenting = false;
             result.reason = ReparentingReason::LaunchdManaged;
             result.confidence = 0.7;
-            result.explanation = "On macOS, PPID=1 (launchd) is often expected for daemons".to_string();
+            result.explanation =
+                "On macOS, PPID=1 (launchd) is often expected for daemons".to_string();
             return Ok(result);
         }
 
@@ -424,7 +435,9 @@ impl OrphanAnalyzer {
         result.unexpected_reparenting = true;
         result.reason = ReparentingReason::ReparentedToInitWithoutSupervision;
         result.confidence = 0.8;
-        result.explanation = "Process orphaned to init with no detected supervision or intentional backgrounding".to_string();
+        result.explanation =
+            "Process orphaned to init with no detected supervision or intentional backgrounding"
+                .to_string();
 
         Ok(result)
     }

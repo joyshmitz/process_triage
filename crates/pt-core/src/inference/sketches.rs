@@ -65,8 +65,8 @@ pub struct CountMinConfig {
 impl Default for CountMinConfig {
     fn default() -> Self {
         Self {
-            width: 1024,  // ε ≈ 0.27%
-            depth: 4,     // δ ≈ 6.25%
+            width: 1024, // ε ≈ 0.27%
+            depth: 4,    // δ ≈ 6.25%
         }
     }
 }
@@ -553,10 +553,8 @@ impl TDigest {
         }
 
         // Sort buffer by value
-        self.buffer.sort_by(|a, b| {
-            a.0.partial_cmp(&b.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        self.buffer
+            .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
         // Create centroids from buffer
         let new_centroids: Vec<_> = self
@@ -578,7 +576,11 @@ impl TDigest {
         // Merge all centroids and sort
         let mut all_centroids = std::mem::take(&mut self.centroids);
         all_centroids.extend(new_centroids);
-        all_centroids.sort_by(|a, b| a.mean.partial_cmp(&b.mean).unwrap_or(std::cmp::Ordering::Equal));
+        all_centroids.sort_by(|a, b| {
+            a.mean
+                .partial_cmp(&b.mean)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Compress using the scale function
         self.centroids = self.compress_centroids(all_centroids);
@@ -966,7 +968,9 @@ impl SketchManager {
         memory_mb: f64,
         age_seconds: f64,
     ) -> SketchResult<SketchEvidence> {
-        let top_commands = self.command_hitters.top_k(self.config.space_saving.capacity);
+        let top_commands = self
+            .command_hitters
+            .top_k(self.config.space_saving.capacity);
 
         let heavy_hitter_rank = top_commands
             .iter()
@@ -981,9 +985,12 @@ impl SketchManager {
         };
 
         // Estimate percentiles by comparing to quantile sketch
-        let cpu_percentile = self.estimate_percentile(&mut self.cpu_quantiles.clone(), cpu_percent)?;
-        let memory_percentile = self.estimate_percentile(&mut self.memory_quantiles.clone(), memory_mb)?;
-        let age_percentile = self.estimate_percentile(&mut self.age_quantiles.clone(), age_seconds)?;
+        let cpu_percentile =
+            self.estimate_percentile(&mut self.cpu_quantiles.clone(), cpu_percent)?;
+        let memory_percentile =
+            self.estimate_percentile(&mut self.memory_quantiles.clone(), memory_mb)?;
+        let age_percentile =
+            self.estimate_percentile(&mut self.age_quantiles.clone(), age_seconds)?;
 
         let description = if heavy_hitter_rank.is_some() {
             format!(

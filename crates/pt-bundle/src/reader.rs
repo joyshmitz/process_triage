@@ -2,8 +2,8 @@
 //!
 //! Reads ZIP archives with integrity verification.
 
-use crate::{BundleError, BundleManifest, FileEntry, Result, BUNDLE_SCHEMA_VERSION};
 use crate::encryption;
+use crate::{BundleError, BundleManifest, FileEntry, Result, BUNDLE_SCHEMA_VERSION};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
@@ -281,9 +281,9 @@ impl<R: Read + std::io::Seek> BundleReader<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::encryption::{decrypt_bytes, encrypt_bytes};
     use crate::BundleError;
     use crate::BundleWriter;
-    use crate::encryption::{decrypt_bytes, encrypt_bytes};
     use pt_redact::ExportProfile;
 
     fn create_test_bundle() -> Vec<u8> {

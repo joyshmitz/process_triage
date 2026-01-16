@@ -921,7 +921,10 @@ impl PolicyEnforcer {
     }
 
     /// Get a summary of critical files for reporting.
-    pub fn critical_files_summary(&self, candidate: &ProcessCandidate) -> Option<CriticalFilesSummary> {
+    pub fn critical_files_summary(
+        &self,
+        candidate: &ProcessCandidate,
+    ) -> Option<CriticalFilesSummary> {
         if candidate.critical_files.is_empty() {
             return None;
         }

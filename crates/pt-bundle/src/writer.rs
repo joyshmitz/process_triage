@@ -2,8 +2,8 @@
 //!
 //! Creates ZIP archives with manifest and checksums.
 
-use crate::{BundleError, BundleManifest, FileEntry, Result};
 use crate::encryption;
+use crate::{BundleError, BundleManifest, FileEntry, Result};
 use pt_redact::ExportProfile;
 use std::fs::File;
 use std::io::{Cursor, Write};

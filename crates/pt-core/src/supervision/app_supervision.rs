@@ -288,7 +288,9 @@ impl AppSupervisionAnalyzer {
         let pm2_id_str = pm2_id.cloned();
 
         let explanation = match (&pm2_name_str, &pm2_id_str) {
-            (Some(name), Some(id)) => format!("Process is managed by PM2 as '{}' (id: {})", name, id),
+            (Some(name), Some(id)) => {
+                format!("Process is managed by PM2 as '{}' (id: {})", name, id)
+            }
             (Some(name), None) => format!("Process is managed by PM2 as '{}'", name),
             (None, Some(id)) => format!("Process is managed by PM2 (id: {})", id),
             (None, None) => "Process is managed by PM2".to_string(),
@@ -317,7 +319,11 @@ impl AppSupervisionAnalyzer {
     }
 
     /// Detect supervisord-managed process.
-    fn detect_supervisord(&self, pid: u32, env: &HashMap<String, String>) -> Option<AppSupervisionResult> {
+    fn detect_supervisord(
+        &self,
+        pid: u32,
+        env: &HashMap<String, String>,
+    ) -> Option<AppSupervisionResult> {
         // supervisord sets SUPERVISOR_* variables
         let supervisor_enabled = env.get("SUPERVISOR_ENABLED");
         let supervisor_process_name = env.get("SUPERVISOR_PROCESS_NAME");
@@ -356,7 +362,10 @@ impl AppSupervisionAnalyzer {
 
         let explanation = match (&program, &group) {
             (Some(prog), Some(grp)) => {
-                format!("Process is managed by supervisord as '{}' in group '{}'", prog, grp)
+                format!(
+                    "Process is managed by supervisord as '{}' in group '{}'",
+                    prog, grp
+                )
             }
             (Some(prog), None) => format!("Process is managed by supervisord as '{}'", prog),
             _ => "Process is managed by supervisord".to_string(),
@@ -385,7 +394,11 @@ impl AppSupervisionAnalyzer {
     }
 
     /// Detect nodemon-managed process.
-    fn detect_nodemon(&self, pid: u32, env: &HashMap<String, String>) -> Option<AppSupervisionResult> {
+    fn detect_nodemon(
+        &self,
+        pid: u32,
+        env: &HashMap<String, String>,
+    ) -> Option<AppSupervisionResult> {
         // nodemon sets NODEMON_CONFIG or can be detected via parent
         let nodemon_config = env.get("NODEMON_CONFIG");
 
@@ -422,7 +435,11 @@ impl AppSupervisionAnalyzer {
     }
 
     /// Detect forever-managed process.
-    fn detect_forever(&self, pid: u32, env: &HashMap<String, String>) -> Option<AppSupervisionResult> {
+    fn detect_forever(
+        &self,
+        pid: u32,
+        env: &HashMap<String, String>,
+    ) -> Option<AppSupervisionResult> {
         // forever sets FOREVER_ROOT, FOREVER_UID
         let forever_root = env.get("FOREVER_ROOT");
         let forever_uid = env.get("FOREVER_UID");
@@ -496,16 +513,27 @@ impl AppSupervisionAnalyzer {
 
         let (supervisor_type, explanation) = match supervisor_name.to_lowercase().as_str() {
             "pm2" => (AppSupervisorType::Pm2, "Process has PM2 in ancestry chain"),
-            "supervisord" => (AppSupervisorType::Supervisord, "Process has supervisord in ancestry chain"),
-            "nodemon" => (AppSupervisorType::Nodemon, "Process has nodemon in ancestry chain"),
-            "forever" => (AppSupervisorType::Forever, "Process has forever in ancestry chain"),
+            "supervisord" => (
+                AppSupervisorType::Supervisord,
+                "Process has supervisord in ancestry chain",
+            ),
+            "nodemon" => (
+                AppSupervisorType::Nodemon,
+                "Process has nodemon in ancestry chain",
+            ),
+            "forever" => (
+                AppSupervisorType::Forever,
+                "Process has forever in ancestry chain",
+            ),
             _ => return None, // Not an app supervisor we care about
         };
 
         let recommended_action = if self.include_action_recommendations {
             match supervisor_type {
                 AppSupervisorType::Pm2 => Some(self.generate_pm2_action(&None, &None)),
-                AppSupervisorType::Supervisord => Some(self.generate_supervisord_action(&None, &None)),
+                AppSupervisorType::Supervisord => {
+                    Some(self.generate_supervisord_action(&None, &None))
+                }
                 AppSupervisorType::Nodemon => Some(self.generate_nodemon_action()),
                 AppSupervisorType::Forever => Some(self.generate_forever_action(&None)),
                 AppSupervisorType::Unknown => None,
@@ -524,11 +552,15 @@ impl AppSupervisionAnalyzer {
             supervisord_program: None,
             supervisord_group: None,
             confidence: result.confidence * 0.8, // Slightly lower confidence via ancestry
-            evidence: result.evidence.into_iter().map(|e| SupervisionEvidence {
-                evidence_type: EvidenceType::Ancestry,
-                description: e.description,
-                weight: e.weight,
-            }).collect(),
+            evidence: result
+                .evidence
+                .into_iter()
+                .map(|e| SupervisionEvidence {
+                    evidence_type: EvidenceType::Ancestry,
+                    description: e.description,
+                    weight: e.weight,
+                })
+                .collect(),
             recommended_action,
             explanation: explanation.to_string(),
         })
@@ -569,7 +601,9 @@ impl AppSupervisionAnalyzer {
             ],
             is_safe: false,
             warning: Some("PM2 will respawn the process if restart policy is set".to_string()),
-            respawn_hint: Some("Use 'pm2 delete' to permanently remove, or 'pm2 stop' to pause".to_string()),
+            respawn_hint: Some(
+                "Use 'pm2 delete' to permanently remove, or 'pm2 stop' to pause".to_string(),
+            ),
         }
     }
 
@@ -603,8 +637,12 @@ impl AppSupervisionAnalyzer {
                 },
             ],
             is_safe: false,
-            warning: Some("supervisord may respawn the process depending on autorestart setting".to_string()),
-            respawn_hint: Some("Check /etc/supervisor/conf.d/ for autorestart configuration".to_string()),
+            warning: Some(
+                "supervisord may respawn the process depending on autorestart setting".to_string(),
+            ),
+            respawn_hint: Some(
+                "Check /etc/supervisor/conf.d/ for autorestart configuration".to_string(),
+            ),
         }
     }
 
@@ -613,14 +651,15 @@ impl AppSupervisionAnalyzer {
         AppSupervisorAction {
             action_type: AppActionType::Stop,
             command: "# Send SIGINT to nodemon parent process".to_string(),
-            alternatives: vec![
-                AlternativeAction {
-                    description: "Find nodemon parent".to_string(),
-                    command: "pgrep -f nodemon".to_string(),
-                },
-            ],
+            alternatives: vec![AlternativeAction {
+                description: "Find nodemon parent".to_string(),
+                command: "pgrep -f nodemon".to_string(),
+            }],
             is_safe: true,
-            warning: Some("nodemon is a development tool - killing the main process stops watching".to_string()),
+            warning: Some(
+                "nodemon is a development tool - killing the main process stops watching"
+                    .to_string(),
+            ),
             respawn_hint: Some("nodemon only respawns on file changes, not crashes".to_string()),
         }
     }
@@ -705,10 +744,8 @@ mod tests {
     #[test]
     fn test_supervisord_action_generation() {
         let analyzer = AppSupervisionAnalyzer::new();
-        let action = analyzer.generate_supervisord_action(
-            &Some("worker".to_string()),
-            &Some("celery".to_string()),
-        );
+        let action = analyzer
+            .generate_supervisord_action(&Some("worker".to_string()), &Some("celery".to_string()));
 
         assert_eq!(action.action_type, AppActionType::Stop);
         assert_eq!(action.command, "supervisorctl stop celery:worker");

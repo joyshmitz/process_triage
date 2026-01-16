@@ -25,7 +25,9 @@ use tempfile::tempdir;
 // ============================================================================
 
 fn fixtures_dir() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").leak()
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .leak()
 }
 
 fn load_policy_fixture() -> Policy {
@@ -59,7 +61,9 @@ macro_rules! log_test {
 fn test_expected_loss_with_real_policy_fixture() {
     let policy = load_policy_fixture();
 
-    log_test!("INFO", "Starting expected loss test with real fixture",
+    log_test!(
+        "INFO",
+        "Starting expected loss test with real fixture",
         test_name = "test_expected_loss_with_real_policy_fixture",
         policy_id = policy.policy_id,
     );
@@ -101,7 +105,9 @@ fn test_expected_loss_with_real_policy_fixture() {
 
         match result {
             Ok(outcome) => {
-                log_test!("INFO", "Decision completed",
+                log_test!(
+                    "INFO",
+                    "Decision completed",
                     test_case = i,
                     optimal_action = format!("{:?}", outcome.optimal_action),
                     tie_break = outcome.rationale.tie_break,
@@ -130,7 +136,9 @@ fn test_expected_loss_with_real_policy_fixture() {
                 }
             }
             Err(e) => {
-                log_test!("ERROR", "Decision failed unexpectedly",
+                log_test!(
+                    "ERROR",
+                    "Decision failed unexpectedly",
                     test_case = i,
                     error = format!("{:?}", e),
                 );
@@ -185,9 +193,7 @@ fn test_expected_loss_edge_case_single_class_certainty() {
     ];
 
     for (class_name, posterior) in certainty_cases {
-        log_test!("INFO", "Testing certainty case",
-            class = class_name,
-        );
+        log_test!("INFO", "Testing certainty case", class = class_name,);
 
         let result = decide_action(&posterior, &policy, &ActionFeasibility::allow_all());
         assert!(result.is_ok(), "Should handle {} certainty", class_name);
@@ -259,30 +265,37 @@ fn test_expected_loss_invalid_posteriors() {
     ];
 
     for (case_name, posterior) in invalid_cases {
-        log_test!("INFO", "Testing invalid posterior",
-            case = case_name,
-        );
+        log_test!("INFO", "Testing invalid posterior", case = case_name,);
 
         let result = decide_action(&posterior, &policy, &ActionFeasibility::allow_all());
 
         match result {
             Err(DecisionError::InvalidPosterior { .. }) => {
-                log_test!("INFO", "Correctly rejected invalid posterior",
+                log_test!(
+                    "INFO",
+                    "Correctly rejected invalid posterior",
                     case = case_name,
                 );
             }
             Ok(_) => {
-                log_test!("ERROR", "Should have rejected invalid posterior",
+                log_test!(
+                    "ERROR",
+                    "Should have rejected invalid posterior",
                     case = case_name,
                 );
                 panic!("{} posterior should be rejected", case_name);
             }
             Err(other) => {
-                log_test!("ERROR", "Unexpected error type",
+                log_test!(
+                    "ERROR",
+                    "Unexpected error type",
                     case = case_name,
                     error = format!("{:?}", other),
                 );
-                panic!("{} should produce InvalidPosterior error, got {:?}", case_name, other);
+                panic!(
+                    "{} should produce InvalidPosterior error, got {:?}",
+                    case_name, other
+                );
             }
         }
     }
@@ -318,11 +331,16 @@ fn test_expected_loss_with_disabled_actions() {
 
     // Verify Kill is not in expected_loss list
     assert!(
-        !outcome.expected_loss.iter().any(|e| e.action == Action::Kill),
+        !outcome
+            .expected_loss
+            .iter()
+            .any(|e| e.action == Action::Kill),
         "Disabled action should not appear in expected_loss"
     );
 
-    log_test!("INFO", "Disabled action test passed",
+    log_test!(
+        "INFO",
+        "Disabled action test passed",
         optimal_action = format!("{:?}", outcome.optimal_action),
         num_expected_loss = outcome.expected_loss.len(),
     );
@@ -383,7 +401,9 @@ fn test_expected_loss_no_feasible_actions() {
             log_test!("INFO", "Correctly detected no feasible actions");
         }
         _other => {
-            log_test!("ERROR", "Should have returned NoFeasibleActions",
+            log_test!(
+                "ERROR",
+                "Should have returned NoFeasibleActions",
                 result = format!("{:?}", _other),
             );
             panic!("Expected NoFeasibleActions error");
@@ -425,7 +445,9 @@ fn test_recovery_preference_with_real_priors() {
     )
     .expect("decision with recovery");
 
-    log_test!("INFO", "Recovery preference test",
+    log_test!(
+        "INFO",
+        "Recovery preference test",
         without_recovery_action = format!("{:?}", without_recovery.optimal_action),
         with_recovery_action = format!("{:?}", with_recovery.optimal_action),
         used_recovery_preference = with_recovery.rationale.used_recovery_preference,
@@ -444,10 +466,14 @@ fn make_fdr_candidate(pid: i32, e_value: f64) -> FdrCandidate {
     FdrCandidate {
         target: TargetIdentity {
             pid,
-            start_id: format!("{}-{}-boot", pid, std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_micros()),
+            start_id: format!(
+                "{}-{}-boot",
+                pid,
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_micros()
+            ),
             uid: 1000,
         },
         e_value,
@@ -466,7 +492,9 @@ fn test_fdr_selection_ebh_vs_eby() {
     let ebh_result = select_fdr(&candidates, alpha, FdrMethod::EBh).expect("eBH selection");
     let eby_result = select_fdr(&candidates, alpha, FdrMethod::EBy).expect("eBY selection");
 
-    log_test!("INFO", "FDR method comparison",
+    log_test!(
+        "INFO",
+        "FDR method comparison",
         ebh_selected = ebh_result.selected_k,
         eby_selected = eby_result.selected_k,
         eby_correction = eby_result.correction_factor,
@@ -499,10 +527,12 @@ fn test_fdr_selection_determinism() {
     let result1 = select_fdr(&candidates, 0.05, FdrMethod::EBh).expect("selection 1");
     let result2 = select_fdr(&candidates, 0.05, FdrMethod::EBh).expect("selection 2");
 
-    assert_eq!(result1.selected_k, result2.selected_k, "Selection should be deterministic");
     assert_eq!(
-        result1.selection_threshold,
-        result2.selection_threshold,
+        result1.selected_k, result2.selected_k,
+        "Selection should be deterministic"
+    );
+    assert_eq!(
+        result1.selection_threshold, result2.selection_threshold,
         "Threshold should be deterministic"
     );
 
@@ -512,7 +542,9 @@ fn test_fdr_selection_determinism() {
         assert_eq!(c1.selected, c2.selected);
     }
 
-    log_test!("INFO", "FDR determinism verified",
+    log_test!(
+        "INFO",
+        "FDR determinism verified",
         selected_k = result1.selected_k,
         num_candidates = candidates.len(),
     );
@@ -525,24 +557,24 @@ fn test_fdr_selection_edge_cases() {
     let result = select_fdr(&single, 0.1, FdrMethod::EBh);
     assert!(result.is_ok());
 
-    log_test!("INFO", "Single candidate FDR",
+    log_test!(
+        "INFO",
+        "Single candidate FDR",
         selected_k = result.as_ref().unwrap().selected_k,
     );
 
     // All e-values below 1 (no evidence)
-    let low_evidence: Vec<FdrCandidate> = (1..=5)
-        .map(|i| make_fdr_candidate(i, 0.5))
-        .collect();
+    let low_evidence: Vec<FdrCandidate> = (1..=5).map(|i| make_fdr_candidate(i, 0.5)).collect();
     let result = select_fdr(&low_evidence, 0.1, FdrMethod::EBh).expect("low evidence");
     assert_eq!(result.selected_k, 0, "No selections when all e-values < 1");
 
     // Very high alpha (permissive)
-    let candidates: Vec<FdrCandidate> = (1..=5)
-        .map(|i| make_fdr_candidate(i, i as f64))
-        .collect();
+    let candidates: Vec<FdrCandidate> = (1..=5).map(|i| make_fdr_candidate(i, i as f64)).collect();
     let _result = select_fdr(&candidates, 0.99, FdrMethod::EBh).expect("high alpha");
 
-    log_test!("INFO", "High alpha FDR",
+    log_test!(
+        "INFO",
+        "High alpha FDR",
         alpha = 0.99,
         selected_k = _result.selected_k,
     );
@@ -591,7 +623,9 @@ fn test_alpha_investing_persistence() {
     let state = store.load_or_init(&policy, user_id).expect("init state");
     assert!(state.wealth > 0.0, "Initial wealth should be positive");
 
-    log_test!("INFO", "Alpha investing initial state",
+    log_test!(
+        "INFO",
+        "Alpha investing initial state",
         wealth = state.wealth,
         host_id = state.host_id,
     );
@@ -601,7 +635,9 @@ fn test_alpha_investing_persistence() {
     assert!(update.wealth_prev > 0.0);
     assert!(update.alpha_spend > 0.0);
 
-    log_test!("INFO", "Alpha investing update",
+    log_test!(
+        "INFO",
+        "Alpha investing update",
         wealth_prev = update.wealth_prev,
         wealth_next = update.wealth_next,
         discoveries = update.discoveries,
@@ -636,7 +672,9 @@ fn test_alpha_investing_wealth_formula() {
 
     // Initialize and update
     let _state = store.load_or_init(&policy, 1000).expect("init");
-    let update = store.update_wealth(&policy, 1000, discoveries).expect("update");
+    let update = store
+        .update_wealth(&policy, 1000, discoveries)
+        .expect("update");
 
     // Compare with expected
     assert!(
@@ -646,7 +684,9 @@ fn test_alpha_investing_wealth_formula() {
         expected_next
     );
 
-    log_test!("INFO", "Alpha investing formula verified",
+    log_test!(
+        "INFO",
+        "Alpha investing formula verified",
         w0 = w0,
         alpha_spend = alpha_spend,
         alpha_earn = alpha_earn,
@@ -670,7 +710,9 @@ fn test_alpha_investing_wealth_depletion() {
         final_wealth = update.wealth_next;
 
         if final_wealth < 1e-10 {
-            log_test!("INFO", "Wealth depleted after iterations",
+            log_test!(
+                "INFO",
+                "Wealth depleted after iterations",
                 iterations = _i + 1,
             );
             break;
@@ -718,7 +760,9 @@ fn test_enforcer_with_real_policy_fixture() {
 
     let _result = enforcer.check_action(&candidate, Action::Kill, false);
 
-    log_test!("INFO", "Enforcer check with real fixture",
+    log_test!(
+        "INFO",
+        "Enforcer check with real fixture",
         allowed = _result.allowed,
         has_violation = _result.violation.is_some(),
         num_warnings = _result.warnings.len(),
@@ -806,7 +850,9 @@ fn test_enforcer_protected_patterns() {
             }
         }
 
-        log_test!("INFO", "Protected pattern test",
+        log_test!(
+            "INFO",
+            "Protected pattern test",
             cmdline = cmdline,
             should_block = should_block,
             was_blocked = !result.allowed,
@@ -862,7 +908,9 @@ fn test_enforcer_rate_limiting() {
     let result = enforcer.check_action(&candidate, Action::Kill, false);
     assert!(result.allowed, "Kill should be allowed after reset");
 
-    log_test!("INFO", "Rate limiting test passed",
+    log_test!(
+        "INFO",
+        "Rate limiting test passed",
         max_kills = policy.guardrails.max_kills_per_run,
     );
 }
@@ -901,8 +949,14 @@ fn test_enforcer_robot_mode_gates() {
     };
 
     let result = enforcer.check_action(&low_posterior_candidate, Action::Kill, true);
-    assert!(!result.allowed, "Low posterior should be blocked in robot mode");
-    assert_eq!(result.violation.as_ref().unwrap().kind, ViolationKind::RobotModeGate);
+    assert!(
+        !result.allowed,
+        "Low posterior should be blocked in robot mode"
+    );
+    assert_eq!(
+        result.violation.as_ref().unwrap().kind,
+        ViolationKind::RobotModeGate
+    );
 
     // Test blast radius gate
     let high_memory_candidate = ProcessCandidate {
@@ -913,7 +967,7 @@ fn test_enforcer_robot_mode_gates() {
         group: None,
         category: None,
         age_seconds: 7200,
-        posterior: Some(0.95), // Above threshold
+        posterior: Some(0.95),  // Above threshold
         memory_mb: Some(600.0), // Above blast radius
         has_known_signature: false,
         open_write_fds: Some(0),
@@ -927,8 +981,16 @@ fn test_enforcer_robot_mode_gates() {
     };
 
     let result = enforcer.check_action(&high_memory_candidate, Action::Kill, true);
-    assert!(!result.allowed, "High memory should be blocked in robot mode");
-    assert!(result.violation.as_ref().unwrap().message.contains("memory"));
+    assert!(
+        !result.allowed,
+        "High memory should be blocked in robot mode"
+    );
+    assert!(result
+        .violation
+        .as_ref()
+        .unwrap()
+        .message
+        .contains("memory"));
 
     log_test!("INFO", "Robot mode gates test passed");
 }
@@ -961,8 +1023,14 @@ fn test_enforcer_data_loss_gates() {
     };
 
     let result = enforcer.check_action(&candidate_with_fds, Action::Kill, false);
-    assert!(!result.allowed, "Open write FDs should trigger data loss gate");
-    assert_eq!(result.violation.as_ref().unwrap().kind, ViolationKind::DataLossGate);
+    assert!(
+        !result.allowed,
+        "Open write FDs should trigger data loss gate"
+    );
+    assert_eq!(
+        result.violation.as_ref().unwrap().kind,
+        ViolationKind::DataLossGate
+    );
 
     // Test locked files gate
     let candidate_locked = ProcessCandidate {
@@ -987,7 +1055,10 @@ fn test_enforcer_data_loss_gates() {
     };
 
     let result = enforcer.check_action(&candidate_locked, Action::Kill, false);
-    assert!(!result.allowed, "Locked files should trigger data loss gate");
+    assert!(
+        !result.allowed,
+        "Locked files should trigger data loss gate"
+    );
 
     log_test!("INFO", "Data loss gates test passed");
 }
@@ -1023,7 +1094,10 @@ fn test_enforcer_min_age_gate() {
 
     let result = enforcer.check_action(&young_candidate, Action::Kill, false);
     assert!(!result.allowed, "Young process should be blocked");
-    assert_eq!(result.violation.as_ref().unwrap().kind, ViolationKind::MinAgeBreach);
+    assert_eq!(
+        result.violation.as_ref().unwrap().kind,
+        ViolationKind::MinAgeBreach
+    );
 
     // Old process
     let old_candidate = ProcessCandidate {
@@ -1050,14 +1124,12 @@ fn test_enforcer_min_age_gate() {
 #[test]
 fn test_enforcer_warnings() {
     let mut policy = Policy::default();
-    policy.guardrails.force_review_patterns = vec![
-        pt_core::config::policy::PatternEntry {
-            pattern: "kubectl".to_string(),
-            kind: "literal".to_string(),
-            case_insensitive: true,
-            notes: Some("Kubernetes tool".to_string()),
-        },
-    ];
+    policy.guardrails.force_review_patterns = vec![pt_core::config::policy::PatternEntry {
+        pattern: "kubectl".to_string(),
+        kind: "literal".to_string(),
+        case_insensitive: true,
+        notes: Some("Kubernetes tool".to_string()),
+    }];
 
     let enforcer = PolicyEnforcer::new(&policy).expect("create enforcer");
 
@@ -1084,10 +1156,15 @@ fn test_enforcer_warnings() {
 
     // In interactive mode, should be allowed with warning
     let result = enforcer.check_action(&candidate, Action::Kill, false);
-    assert!(result.allowed, "Force review should allow in interactive mode");
+    assert!(
+        result.allowed,
+        "Force review should allow in interactive mode"
+    );
     assert!(!result.warnings.is_empty(), "Should have warning");
 
-    log_test!("INFO", "Enforcer warnings test passed",
+    log_test!(
+        "INFO",
+        "Enforcer warnings test passed",
         num_warnings = result.warnings.len(),
     );
 }

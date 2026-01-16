@@ -200,7 +200,10 @@ mod ancestry_tests {
         assert_eq!(tmux_matches[0].category, SupervisorCategory::Terminal);
 
         let systemd_matches = db.find_matches("systemd");
-        assert_eq!(systemd_matches[0].category, SupervisorCategory::Orchestrator);
+        assert_eq!(
+            systemd_matches[0].category,
+            SupervisorCategory::Orchestrator
+        );
     }
 
     // =========================================================================
@@ -418,14 +421,18 @@ mod environ_tests {
         env1.insert("GITHUB_ACTIONS".to_string(), "true".to_string());
         let matches = db.find_matches(&env1);
         assert!(!matches.is_empty());
-        assert!(matches.iter().any(|(p, _)| p.supervisor_name == "github-actions"));
+        assert!(matches
+            .iter()
+            .any(|(p, _)| p.supervisor_name == "github-actions"));
 
         // GitLab CI
         let mut env2 = HashMap::new();
         env2.insert("GITLAB_CI".to_string(), "true".to_string());
         let matches = db.find_matches(&env2);
         assert!(!matches.is_empty());
-        assert!(matches.iter().any(|(p, _)| p.supervisor_name == "gitlab-ci"));
+        assert!(matches
+            .iter()
+            .any(|(p, _)| p.supervisor_name == "gitlab-ci"));
 
         // Generic CI
         let mut env3 = HashMap::new();
@@ -587,7 +594,10 @@ mod signature_integration_tests {
         assert!(!environ_db.find_matches(&env).is_empty());
 
         let mut tmux_env = HashMap::new();
-        tmux_env.insert("TMUX".to_string(), "/tmp/tmux-1000/default,123,0".to_string());
+        tmux_env.insert(
+            "TMUX".to_string(),
+            "/tmp/tmux-1000/default,123,0".to_string(),
+        );
         assert!(!environ_db.find_matches(&tmux_env).is_empty());
 
         let mut screen_env = HashMap::new();

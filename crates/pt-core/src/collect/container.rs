@@ -635,14 +635,21 @@ mod tests {
     fn test_nomock_detect_container_from_real_cgroup() {
         // Test container detection using our actual cgroup path
         if !std::path::Path::new("/proc/self/cgroup").exists() {
-            crate::test_log!(INFO, "Skipping no-mock test: /proc/self/cgroup not available");
+            crate::test_log!(
+                INFO,
+                "Skipping no-mock test: /proc/self/cgroup not available"
+            );
             return;
         }
 
         let content = match std::fs::read_to_string("/proc/self/cgroup") {
             Ok(c) => c,
             Err(e) => {
-                crate::test_log!(INFO, "Skipping test: cannot read cgroup", error = format!("{}", e).as_str());
+                crate::test_log!(
+                    INFO,
+                    "Skipping test: cannot read cgroup",
+                    error = format!("{}", e).as_str()
+                );
                 return;
             }
         };
@@ -679,11 +686,7 @@ mod tests {
         // Test K8s detection using real environment (won't detect K8s in most test envs)
         let env: HashMap<String, String> = std::env::vars().collect();
 
-        crate::test_log!(
-            INFO,
-            "kubernetes env detection test",
-            env_count = env.len()
-        );
+        crate::test_log!(INFO, "kubernetes env detection test", env_count = env.len());
 
         let result = detect_kubernetes_from_env(&env);
 
@@ -706,8 +709,8 @@ mod tests {
 
     #[test]
     fn test_nomock_container_detection_spawned_process() {
-        use crate::test_utils::ProcessHarness;
         use crate::collect::cgroup::collect_cgroup_details;
+        use crate::test_utils::ProcessHarness;
 
         if !ProcessHarness::is_available() {
             crate::test_log!(INFO, "Skipping no-mock test: ProcessHarness not available");
@@ -719,7 +722,11 @@ mod tests {
             .spawn_shell("sleep 30")
             .expect("spawn sleep process");
 
-        crate::test_log!(INFO, "container detection for spawned process", pid = proc.pid());
+        crate::test_log!(
+            INFO,
+            "container detection for spawned process",
+            pid = proc.pid()
+        );
 
         // Get cgroup details first
         if let Some(cgroup_details) = collect_cgroup_details(proc.pid()) {
@@ -737,7 +744,11 @@ mod tests {
                 );
             }
         } else {
-            crate::test_log!(INFO, "No cgroup details available for spawned process", pid = proc.pid());
+            crate::test_log!(
+                INFO,
+                "No cgroup details available for spawned process",
+                pid = proc.pid()
+            );
         }
     }
 }

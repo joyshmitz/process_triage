@@ -20,10 +20,10 @@ use pt_core::action::prechecks::{
     LivePreCheckConfig, LivePreCheckProvider, NoopPreCheckProvider, PreCheckProvider,
     PreCheckResult,
 };
-use pt_core::collect::{ProcessRecord, ProcessState, ScanMetadata, ScanResult, ProtectedFilter};
+use pt_core::collect::{ProcessRecord, ProcessState, ProtectedFilter, ScanMetadata, ScanResult};
+use pt_core::config::Policy;
 use pt_core::decision::{Action, DecisionOutcome, ExpectedLoss};
 use pt_core::plan::{DecisionBundle, DecisionCandidate, Plan, PreCheck};
-use pt_core::config::Policy;
 use pt_core::test_utils::ProcessHarness;
 use std::time::Duration;
 use tempfile::tempdir;
@@ -149,7 +149,11 @@ mod data_loss_gates {
         match result {
             PreCheckResult::Blocked { check, reason } => {
                 assert_eq!(check, PreCheck::CheckDataLossGate);
-                assert!(reason.contains("write fd"), "Expected write fd mention: {}", reason);
+                assert!(
+                    reason.contains("write fd"),
+                    "Expected write fd mention: {}",
+                    reason
+                );
             }
             PreCheckResult::Passed => {
                 // May pass if running in a context without write fds
@@ -467,8 +471,8 @@ mod identity_coordination {
         let dir = tempdir().expect("tempdir");
 
         let runner = NoopActionRunner;
-        let identity_provider = StaticIdentityProvider::default()
-            .with_identity(make_test_identity(pid, uid));
+        let identity_provider =
+            StaticIdentityProvider::default().with_identity(make_test_identity(pid, uid));
 
         let executor = ActionExecutor::new(&runner, &identity_provider, dir.path().join("lock"));
         let result = executor.execute_plan(&plan).expect("execute");
@@ -559,8 +563,8 @@ mod identity_coordination {
 
         let plan = make_test_plan(123, 1000, vec![]);
         let runner = NoopActionRunner;
-        let identity_provider = StaticIdentityProvider::default()
-            .with_identity(make_test_identity(123, 1000));
+        let identity_provider =
+            StaticIdentityProvider::default().with_identity(make_test_identity(123, 1000));
 
         let executor = ActionExecutor::new(&runner, &identity_provider, &lock_path);
 
@@ -622,10 +626,24 @@ mod protected_processes {
 
         let filter = ProtectedFilter::new(&patterns, &[], &[], &[]).unwrap();
 
-        let systemd = make_test_record(1, 0, "systemd", "/usr/lib/systemd/systemd", "root", ProcessState::Running);
+        let systemd = make_test_record(
+            1,
+            0,
+            "systemd",
+            "/usr/lib/systemd/systemd",
+            "root",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&systemd).is_some());
 
-        let systemd_logind = make_test_record(100, 1, "systemd-logind", "/usr/lib/systemd/systemd-logind", "root", ProcessState::Running);
+        let systemd_logind = make_test_record(
+            100,
+            1,
+            "systemd-logind",
+            "/usr/lib/systemd/systemd-logind",
+            "root",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&systemd_logind).is_some());
     }
 
@@ -640,7 +658,14 @@ mod protected_processes {
 
         let filter = ProtectedFilter::new(&patterns, &[], &[], &[]).unwrap();
 
-        let sshd = make_test_record(500, 1, "sshd", "/usr/sbin/sshd -D", "root", ProcessState::Running);
+        let sshd = make_test_record(
+            500,
+            1,
+            "sshd",
+            "/usr/sbin/sshd -D",
+            "root",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&sshd).is_some());
     }
 
@@ -655,10 +680,24 @@ mod protected_processes {
 
         let filter = ProtectedFilter::new(&patterns, &[], &[], &[]).unwrap();
 
-        let dockerd = make_test_record(600, 1, "dockerd", "/usr/bin/dockerd", "root", ProcessState::Running);
+        let dockerd = make_test_record(
+            600,
+            1,
+            "dockerd",
+            "/usr/bin/dockerd",
+            "root",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&dockerd).is_some());
 
-        let containerd = make_test_record(601, 1, "containerd", "/usr/bin/containerd", "root", ProcessState::Running);
+        let containerd = make_test_record(
+            601,
+            1,
+            "containerd",
+            "/usr/bin/containerd",
+            "root",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&containerd).is_some());
     }
 
@@ -666,7 +705,14 @@ mod protected_processes {
     fn test_pid_1_always_protected() {
         let filter = ProtectedFilter::new(&[], &[], &[1], &[]).unwrap();
 
-        let init = make_test_record(1, 0, "systemd", "/usr/lib/systemd/systemd", "root", ProcessState::Running);
+        let init = make_test_record(
+            1,
+            0,
+            "systemd",
+            "/usr/lib/systemd/systemd",
+            "root",
+            ProcessState::Running,
+        );
         let result = filter.is_protected(&init);
         assert!(result.is_some());
         assert!(result.unwrap().pattern.contains("never_kill_pid"));
@@ -676,11 +722,25 @@ mod protected_processes {
     fn test_root_user_can_be_protected() {
         let filter = ProtectedFilter::new(&[], &["root".to_string()], &[], &[]).unwrap();
 
-        let root_proc = make_test_record(1000, 1, "important", "/usr/bin/important", "root", ProcessState::Running);
+        let root_proc = make_test_record(
+            1000,
+            1,
+            "important",
+            "/usr/bin/important",
+            "root",
+            ProcessState::Running,
+        );
         let result = filter.is_protected(&root_proc);
         assert!(result.is_some());
 
-        let user_proc = make_test_record(1001, 1, "userproc", "/home/user/proc", "testuser", ProcessState::Running);
+        let user_proc = make_test_record(
+            1001,
+            1,
+            "userproc",
+            "/home/user/proc",
+            "testuser",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&user_proc).is_none());
     }
 
@@ -690,11 +750,25 @@ mod protected_processes {
         let filter = ProtectedFilter::new(&[], &[], &[], &[1]).unwrap();
 
         // Direct child of PID 1
-        let child = make_test_record(100, 1, "service", "/usr/bin/service", "root", ProcessState::Running);
+        let child = make_test_record(
+            100,
+            1,
+            "service",
+            "/usr/bin/service",
+            "root",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&child).is_some());
 
         // Grandchild of PID 1 (parent is 100, not 1)
-        let grandchild = make_test_record(200, 100, "worker", "/usr/bin/worker", "root", ProcessState::Running);
+        let grandchild = make_test_record(
+            200,
+            100,
+            "worker",
+            "/usr/bin/worker",
+            "root",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&grandchild).is_none());
     }
 
@@ -710,10 +784,24 @@ mod protected_processes {
 
         let filter = ProtectedFilter::new(&patterns, &[], &[], &[]).unwrap();
 
-        let myapp = make_test_record(700, 1, "myapp", "/opt/myapp/bin/myapp", "appuser", ProcessState::Running);
+        let myapp = make_test_record(
+            700,
+            1,
+            "myapp",
+            "/opt/myapp/bin/myapp",
+            "appuser",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&myapp).is_some());
 
-        let other = make_test_record(701, 1, "other", "/usr/bin/other", "appuser", ProcessState::Running);
+        let other = make_test_record(
+            701,
+            1,
+            "other",
+            "/usr/bin/other",
+            "appuser",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&other).is_none());
 
         // Single * only matches within a path segment (doesn't cross /)
@@ -726,11 +814,25 @@ mod protected_processes {
         let single_filter = ProtectedFilter::new(&single_star_patterns, &[], &[], &[]).unwrap();
 
         // Direct file in /opt/myapp/ - should match
-        let direct_file = make_test_record(702, 1, "config", "/opt/myapp/config", "appuser", ProcessState::Running);
+        let direct_file = make_test_record(
+            702,
+            1,
+            "config",
+            "/opt/myapp/config",
+            "appuser",
+            ProcessState::Running,
+        );
         assert!(single_filter.is_protected(&direct_file).is_some());
 
         // Nested path - single * should NOT match (doesn't cross /)
-        let nested = make_test_record(703, 1, "myapp", "/opt/myapp/bin/myapp", "appuser", ProcessState::Running);
+        let nested = make_test_record(
+            703,
+            1,
+            "myapp",
+            "/opt/myapp/bin/myapp",
+            "appuser",
+            ProcessState::Running,
+        );
         assert!(single_filter.is_protected(&nested).is_none());
     }
 
@@ -745,29 +847,59 @@ mod protected_processes {
 
         let filter = ProtectedFilter::new(&patterns, &[], &[], &[]).unwrap();
 
-        let postgres = make_test_record(800, 1, "postgres", "/usr/lib/postgresql/14/bin/postgres", "postgres", ProcessState::Running);
+        let postgres = make_test_record(
+            800,
+            1,
+            "postgres",
+            "/usr/lib/postgresql/14/bin/postgres",
+            "postgres",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&postgres).is_some());
 
-        let redis = make_test_record(801, 1, "redis-server", "/usr/bin/redis-server", "redis", ProcessState::Running);
+        let redis = make_test_record(
+            801,
+            1,
+            "redis-server",
+            "/usr/bin/redis-server",
+            "redis",
+            ProcessState::Running,
+        );
         assert!(filter.is_protected(&redis).is_some());
     }
 
     #[test]
     fn test_scan_result_filtering() {
-        let patterns = vec![(
-            "systemd".to_string(),
-            "literal".to_string(),
-            true,
-            None,
-        )];
+        let patterns = vec![("systemd".to_string(), "literal".to_string(), true, None)];
 
         let filter = ProtectedFilter::new(&patterns, &[], &[], &[]).unwrap();
 
         let scan_result = ScanResult {
             processes: vec![
-                make_test_record(1, 0, "systemd", "/usr/lib/systemd/systemd", "root", ProcessState::Running),
-                make_test_record(100, 1, "bash", "/bin/bash", "testuser", ProcessState::Running),
-                make_test_record(101, 1, "systemd-logind", "/usr/lib/systemd/systemd-logind", "root", ProcessState::Running),
+                make_test_record(
+                    1,
+                    0,
+                    "systemd",
+                    "/usr/lib/systemd/systemd",
+                    "root",
+                    ProcessState::Running,
+                ),
+                make_test_record(
+                    100,
+                    1,
+                    "bash",
+                    "/bin/bash",
+                    "testuser",
+                    ProcessState::Running,
+                ),
+                make_test_record(
+                    101,
+                    1,
+                    "systemd-logind",
+                    "/usr/lib/systemd/systemd-logind",
+                    "root",
+                    ProcessState::Running,
+                ),
             ],
             metadata: ScanMetadata {
                 scan_type: "quick".to_string(),
@@ -855,10 +987,16 @@ mod session_safety {
         // Analyzing self against self - should detect same session
         let result = analyzer.analyze(pt_pid, pt_pid).expect("should analyze");
 
-        assert!(result.is_protected, "Process should be protected when in same session");
+        assert!(
+            result.is_protected,
+            "Process should be protected when in same session"
+        );
         assert!(
             result.protection_types.iter().any(|t| {
-                matches!(t, pt_core::supervision::session::SessionProtectionType::SameSession)
+                matches!(
+                    t,
+                    pt_core::supervision::session::SessionProtectionType::SameSession
+                )
             }),
             "Should have SameSession protection type"
         );
@@ -888,9 +1026,15 @@ mod session_safety {
         // Session leader protection is always enabled (not configurable)
         // So we check that SameSession is NOT in protection types
         let has_same_session = result.protection_types.iter().any(|t| {
-            matches!(t, pt_core::supervision::session::SessionProtectionType::SameSession)
+            matches!(
+                t,
+                pt_core::supervision::session::SessionProtectionType::SameSession
+            )
         });
-        assert!(!has_same_session, "SameSession protection should be disabled");
+        assert!(
+            !has_same_session,
+            "SameSession protection should be disabled"
+        );
     }
 
     #[test]
@@ -1055,7 +1199,11 @@ mod session_safety {
 
         for t in types {
             let display = t.to_string();
-            assert!(!display.is_empty(), "Protection type {:?} should have display", t);
+            assert!(
+                !display.is_empty(),
+                "Protection type {:?} should have display",
+                t
+            );
         }
     }
 }
@@ -1113,17 +1261,18 @@ mod precheck_integration {
         let uid = 1000u32;
 
         // Create plan with pre-checks
-        let plan = make_test_plan(pid, uid, vec![
-            PreCheck::VerifyIdentity,
-            PreCheck::CheckNotProtected,
-        ]);
+        let plan = make_test_plan(
+            pid,
+            uid,
+            vec![PreCheck::VerifyIdentity, PreCheck::CheckNotProtected],
+        );
 
         let dir = tempdir().expect("tempdir");
         let runner = NoopActionRunner;
 
         // Identity that matches
-        let identity_provider = StaticIdentityProvider::default()
-            .with_identity(make_test_identity(pid, uid));
+        let identity_provider =
+            StaticIdentityProvider::default().with_identity(make_test_identity(pid, uid));
 
         // For this test, we use NoopPreCheckProvider which always passes
         let pre_check_provider = NoopPreCheckProvider;

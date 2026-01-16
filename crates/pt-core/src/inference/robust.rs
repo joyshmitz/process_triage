@@ -234,13 +234,7 @@ impl TemperedPosterior {
     ///
     /// Standard update: α' = α + k, β' = β + (n-k)
     /// Tempered update: α' = α + η·k, β' = β + η·(n-k)
-    pub fn beta_binomial(
-        prior_alpha: f64,
-        prior_beta: f64,
-        n: usize,
-        k: usize,
-        eta: f64,
-    ) -> Self {
+    pub fn beta_binomial(prior_alpha: f64, prior_beta: f64, n: usize, k: usize, eta: f64) -> Self {
         let eta = eta.clamp(0.0, 1.0);
         let k = k.min(n);
 
@@ -340,7 +334,9 @@ pub enum RobustError {
     #[error("empty credal intersection")]
     EmptyIntersection,
 
-    #[error("decision not robust: worst-case posterior {worst_case:.4} < threshold {threshold:.4}")]
+    #[error(
+        "decision not robust: worst-case posterior {worst_case:.4} < threshold {threshold:.4}"
+    )]
     NotRobust { worst_case: f64, threshold: f64 },
 }
 
@@ -537,11 +533,7 @@ impl LeastFavorablePrior {
     ///
     /// The least-favorable prior assigns maximum probability to high-loss classes
     /// while respecting the credal constraints.
-    pub fn compute(
-        loss_row: &[f64],
-        credal_sets: &[CredalSet],
-        class_names: &[&str],
-    ) -> Self {
+    pub fn compute(loss_row: &[f64], credal_sets: &[CredalSet], class_names: &[&str]) -> Self {
         if loss_row.len() != credal_sets.len() || loss_row.len() != class_names.len() {
             return Self {
                 class_probs: vec![],
@@ -552,11 +544,8 @@ impl LeastFavorablePrior {
         }
 
         // Sort classes by loss (highest first)
-        let mut indexed: Vec<(usize, f64)> = loss_row
-            .iter()
-            .enumerate()
-            .map(|(i, &l)| (i, l))
-            .collect();
+        let mut indexed: Vec<(usize, f64)> =
+            loss_row.iter().enumerate().map(|(i, &l)| (i, l)).collect();
         indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Greedily assign maximum probability to highest-loss classes
@@ -911,7 +900,7 @@ pub fn minimax_expected_loss_gate(
 /// Given loss matrix L[action, class] and credal priors P(class) ∈ [l_c, u_c],
 /// find max_{P ∈ credal} E_P[L[a, C]].
 pub fn worst_case_expected_loss(
-    loss_row: &[f64],        // L[action, class] for each class
+    loss_row: &[f64],          // L[action, class] for each class
     credal_sets: &[CredalSet], // Credal set for each class probability
 ) -> f64 {
     if loss_row.len() != credal_sets.len() {
@@ -919,7 +908,8 @@ pub fn worst_case_expected_loss(
     }
 
     // Worst case: assign highest probability to highest loss classes
-    let mut indexed: Vec<(usize, f64)> = loss_row.iter().enumerate().map(|(i, &l)| (i, l)).collect();
+    let mut indexed: Vec<(usize, f64)> =
+        loss_row.iter().enumerate().map(|(i, &l)| (i, l)).collect();
     indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut worst_loss = 0.0;
@@ -941,16 +931,14 @@ pub fn worst_case_expected_loss(
 }
 
 /// Compute best-case expected loss over a credal set.
-pub fn best_case_expected_loss(
-    loss_row: &[f64],
-    credal_sets: &[CredalSet],
-) -> f64 {
+pub fn best_case_expected_loss(loss_row: &[f64], credal_sets: &[CredalSet]) -> f64 {
     if loss_row.len() != credal_sets.len() {
         return f64::INFINITY;
     }
 
     // Best case: assign highest probability to lowest loss classes
-    let mut indexed: Vec<(usize, f64)> = loss_row.iter().enumerate().map(|(i, &l)| (i, l)).collect();
+    let mut indexed: Vec<(usize, f64)> =
+        loss_row.iter().enumerate().map(|(i, &l)| (i, l)).collect();
     indexed.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut best_loss = 0.0;
@@ -998,8 +986,8 @@ pub fn select_eta_prequential(
 
             // Cross-entropy log-loss: -k_rate * ln(p) - (1-k_rate) * ln(1-p)
             let k_rate = k as f64 / n.max(1) as f64;
-            let loss = -k_rate * p_pred.max(1e-10).ln()
-                - (1.0 - k_rate) * (1.0 - p_pred).max(1e-10).ln();
+            let loss =
+                -k_rate * p_pred.max(1e-10).ln() - (1.0 - k_rate) * (1.0 - p_pred).max(1e-10).ln();
             cumulative_loss += loss;
 
             // Tempered update
@@ -1220,10 +1208,7 @@ mod tests {
     #[test]
     fn test_best_case_expected_loss() {
         let losses = [1.0, 0.0];
-        let credals = [
-            CredalSet::interval(0.1, 0.3),
-            CredalSet::interval(0.7, 0.9),
-        ];
+        let credals = [CredalSet::interval(0.1, 0.3), CredalSet::interval(0.7, 0.9)];
 
         let best = best_case_expected_loss(&losses, &credals);
         // Best case: assign max to lowest loss (class 1), so P(class 1) = 0.9
@@ -1234,10 +1219,7 @@ mod tests {
     #[test]
     fn test_minimax_gate_blocks_on_worst_case() {
         let losses = [0.1, 1.0];
-        let credals = [
-            CredalSet::interval(0.0, 0.9),
-            CredalSet::interval(0.1, 1.0),
-        ];
+        let credals = [CredalSet::interval(0.0, 0.9), CredalSet::interval(0.1, 1.0)];
         let config = MinimaxConfig {
             enabled: true,
             max_worst_case_loss: 0.5,
@@ -1252,10 +1234,7 @@ mod tests {
     #[test]
     fn test_minimax_gate_disabled_allows() {
         let losses = [0.1, 1.0];
-        let credals = [
-            CredalSet::interval(0.0, 0.9),
-            CredalSet::interval(0.1, 1.0),
-        ];
+        let credals = [CredalSet::interval(0.0, 0.9), CredalSet::interval(0.1, 1.0)];
         let config = MinimaxConfig::disabled();
 
         let result = minimax_expected_loss_gate(&losses, &credals, &config);
@@ -1388,7 +1367,11 @@ mod tests {
 
         // LFP should be valid distribution (sums to 1)
         let sum: f64 = lfp.class_probs.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-10, "Probs should sum to 1, got {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 1e-10,
+            "Probs should sum to 1, got {}",
+            sum
+        );
 
         // Expected loss should be computable
         let expected: f64 = lfp
@@ -1412,10 +1395,7 @@ mod tests {
         let gate = MinimaxGate::new(config);
 
         let losses = [0.0, 1.0];
-        let credals = [
-            CredalSet::interval(0.7, 0.9),
-            CredalSet::interval(0.1, 0.3),
-        ];
+        let credals = [CredalSet::interval(0.7, 0.9), CredalSet::interval(0.1, 0.3)];
 
         let result = gate.is_safe(&losses, &credals);
         // Worst case: 0.3 * 1.0 = 0.3, which equals threshold
@@ -1449,10 +1429,10 @@ mod tests {
         let keep_losses = [0.0, 0.0, 0.1, 0.1];
         let kill_losses = [1.0, 0.5, 0.0, 0.0];
         let credals = [
-            CredalSet::interval(0.6, 0.8), // useful
-            CredalSet::interval(0.1, 0.2), // useful_bad
+            CredalSet::interval(0.6, 0.8),   // useful
+            CredalSet::interval(0.1, 0.2),   // useful_bad
             CredalSet::interval(0.05, 0.15), // abandoned
-            CredalSet::interval(0.0, 0.1), // zombie
+            CredalSet::interval(0.0, 0.1),   // zombie
         ];
 
         let action_losses: Vec<(&str, &[f64])> =
@@ -1475,8 +1455,10 @@ mod tests {
             CredalSet::interval(0.3, 0.7), // class 1
         ];
 
-        let action_losses: Vec<(&str, &[f64])> =
-            vec![("action_a", &action_a_losses[..]), ("action_b", &action_b_losses[..])];
+        let action_losses: Vec<(&str, &[f64])> = vec![
+            ("action_a", &action_a_losses[..]),
+            ("action_b", &action_b_losses[..]),
+        ];
 
         let analysis = DecisionStabilityAnalysis::analyze(&action_losses, &credals, 1.0);
 
@@ -1491,10 +1473,7 @@ mod tests {
 
         let keep_losses = [0.0, 0.1];
         let kill_losses = [1.0, 0.0];
-        let credals = [
-            CredalSet::interval(0.7, 0.9),
-            CredalSet::interval(0.1, 0.3),
-        ];
+        let credals = [CredalSet::interval(0.7, 0.9), CredalSet::interval(0.1, 0.3)];
 
         let action_losses: Vec<(&str, &[f64])> =
             vec![("keep", &keep_losses[..]), ("kill", &kill_losses[..])];
@@ -1516,10 +1495,7 @@ mod tests {
         });
 
         let losses = [0.0, 0.8];
-        let credals = [
-            CredalSet::interval(0.6, 0.8),
-            CredalSet::interval(0.2, 0.4),
-        ];
+        let credals = [CredalSet::interval(0.6, 0.8), CredalSet::interval(0.2, 0.4)];
 
         // First compute LFP so it gets cached
         gate.compute_lfp(&losses, &credals, &["class_a", "class_b"]);
@@ -1528,7 +1504,10 @@ mod tests {
 
         assert!(evidence.enabled);
         assert!(evidence.worst_case_loss >= evidence.best_case_loss);
-        assert!((evidence.regret_gap - (evidence.worst_case_loss - evidence.best_case_loss)).abs() < 1e-10);
+        assert!(
+            (evidence.regret_gap - (evidence.worst_case_loss - evidence.best_case_loss)).abs()
+                < 1e-10
+        );
         assert!(evidence.lfp_probs.is_some());
     }
 
@@ -1571,18 +1550,18 @@ mod tests {
         let kill_worst = worst_case_expected_loss(&kill_losses, &credals);
 
         // Under minimax, Keep is safer
-        assert!(keep_worst < kill_worst,
+        assert!(
+            keep_worst < kill_worst,
             "Keep worst-case {} should be less than Kill worst-case {}",
-            keep_worst, kill_worst);
+            keep_worst,
+            kill_worst
+        );
     }
 
     #[test]
     fn test_decision_stability_threshold_shift() {
         let keep_losses = [0.1, 0.1];
-        let credals = [
-            CredalSet::interval(0.4, 0.6),
-            CredalSet::interval(0.4, 0.6),
-        ];
+        let credals = [CredalSet::interval(0.4, 0.6), CredalSet::interval(0.4, 0.6)];
 
         let action_losses: Vec<(&str, &[f64])> = vec![("keep", &keep_losses[..])];
 
@@ -1615,10 +1594,7 @@ mod tests {
         });
 
         let losses = [0.0, 0.5];
-        let credals = [
-            CredalSet::interval(0.4, 0.6),
-            CredalSet::interval(0.4, 0.6),
-        ];
+        let credals = [CredalSet::interval(0.4, 0.6), CredalSet::interval(0.4, 0.6)];
 
         // Initially safe
         let result1 = gate.is_safe(&losses, &credals);

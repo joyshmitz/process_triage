@@ -517,7 +517,10 @@ impl DriftMonitor {
         let mut detectors = HashMap::new();
 
         // Set up default detectors for common features
-        detectors.insert("cpu".to_string(), WassersteinDetector::new(WassersteinConfig::for_cpu()));
+        detectors.insert(
+            "cpu".to_string(),
+            WassersteinDetector::new(WassersteinConfig::for_cpu()),
+        );
         detectors.insert(
             "memory".to_string(),
             WassersteinDetector::new(WassersteinConfig::for_memory()),
@@ -550,11 +553,17 @@ impl DriftMonitor {
         name: &str,
         current: &[f64],
     ) -> Result<DriftResult, WassersteinError> {
-        let detector = self.detectors.get(name).ok_or(WassersteinError::InvalidThreshold {
-            message: format!("No detector configured for feature: {}", name),
-        })?;
+        let detector = self
+            .detectors
+            .get(name)
+            .ok_or(WassersteinError::InvalidThreshold {
+                message: format!("No detector configured for feature: {}", name),
+            })?;
 
-        let baseline = self.baselines.get(name).ok_or(WassersteinError::EmptyDistribution)?;
+        let baseline = self
+            .baselines
+            .get(name)
+            .ok_or(WassersteinError::EmptyDistribution)?;
 
         detector.detect_drift_validated(baseline, current)
     }
@@ -760,7 +769,10 @@ mod tests {
         let detector = WassersteinDetector::default();
         let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
         let dist = detector.wasserstein_distance(&data, &data);
-        assert!((dist - 0.0).abs() < 1e-10, "Identical distributions should have W=0");
+        assert!(
+            (dist - 0.0).abs() < 1e-10,
+            "Identical distributions should have W=0"
+        );
     }
 
     #[test]
@@ -884,9 +896,7 @@ mod tests {
         });
 
         // Baseline with some internal variability
-        let baseline: Vec<f64> = (0..100)
-            .map(|i| 1.0 + (i % 10) as f64 * 0.1)
-            .collect();
+        let baseline: Vec<f64> = (0..100).map(|i| 1.0 + (i % 10) as f64 * 0.1).collect();
 
         let threshold = detector.adaptive_threshold(&baseline);
         // Should be > 0 and influenced by internal variability
@@ -904,11 +914,17 @@ mod tests {
         let current = vec![1.0, 2.0, 3.0, 4.0, 5.0]; // Only 5 samples
 
         let result = detector.detect_drift_validated(&baseline, &current);
-        assert!(matches!(result, Err(WassersteinError::InsufficientBaseline { .. })));
+        assert!(matches!(
+            result,
+            Err(WassersteinError::InsufficientBaseline { .. })
+        ));
 
         let baseline: Vec<f64> = (0..30).map(|i| i as f64).collect();
         let result = detector.detect_drift_validated(&baseline, &current);
-        assert!(matches!(result, Err(WassersteinError::InsufficientCurrent { .. })));
+        assert!(matches!(
+            result,
+            Err(WassersteinError::InsufficientCurrent { .. })
+        ));
     }
 
     #[test]
@@ -940,13 +956,25 @@ mod tests {
         let mut monitor = DriftMonitor::new();
 
         // Set baselines
-        monitor.set_baseline("cpu", (0..50).map(|i| 0.1 + (i % 10) as f64 * 0.02).collect());
-        monitor.set_baseline("memory", (0..50).map(|i| 0.5 + (i % 5) as f64 * 0.01).collect());
+        monitor.set_baseline(
+            "cpu",
+            (0..50).map(|i| 0.1 + (i % 10) as f64 * 0.02).collect(),
+        );
+        monitor.set_baseline(
+            "memory",
+            (0..50).map(|i| 0.5 + (i % 5) as f64 * 0.01).collect(),
+        );
 
         // Current data (no significant drift)
         let mut current = HashMap::new();
-        current.insert("cpu".to_string(), (0..30).map(|i| 0.12 + (i % 10) as f64 * 0.02).collect());
-        current.insert("memory".to_string(), (0..30).map(|i| 0.51 + (i % 5) as f64 * 0.01).collect());
+        current.insert(
+            "cpu".to_string(),
+            (0..30).map(|i| 0.12 + (i % 10) as f64 * 0.02).collect(),
+        );
+        current.insert(
+            "memory".to_string(),
+            (0..30).map(|i| 0.51 + (i % 5) as f64 * 0.01).collect(),
+        );
 
         let results = monitor.check_all(&current);
         assert_eq!(results.len(), 2);

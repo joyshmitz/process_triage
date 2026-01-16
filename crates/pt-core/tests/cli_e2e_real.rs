@@ -6,8 +6,10 @@ use pt_core::test_utils::ProcessHarness;
 
 #[test]
 fn test_cli_scan_real() {
-    if !ProcessHarness::is_available() { return; }
-    
+    if !ProcessHarness::is_available() {
+        return;
+    }
+
     let mut cmd = Command::cargo_bin("pt-core").unwrap();
     cmd.args(["scan", "--format", "json", "--robot"])
         .assert()
@@ -18,25 +20,30 @@ fn test_cli_scan_real() {
 
 #[test]
 fn test_cli_scan_jsonl_log() {
-    if !ProcessHarness::is_available() { return; }
-    
+    if !ProcessHarness::is_available() {
+        return;
+    }
+
     let mut cmd = Command::cargo_bin("pt-core").unwrap();
     // With --format json, logs should be JSONL on stderr
     cmd.args(["scan", "--format", "json", "--robot"])
         .assert()
         .success()
-        .stderr(predicate::str::contains("\"event\":")
-            .and(predicate::str::contains("scan")));
+        .stderr(predicate::str::contains("\"event\":").and(predicate::str::contains("scan")));
 }
 
 #[test]
 fn test_cli_run_dry_run_real() {
-    if !ProcessHarness::is_available() { return; }
-    
+    if !ProcessHarness::is_available() {
+        return;
+    }
+
     let mut cmd = Command::cargo_bin("pt-core").unwrap();
-    cmd.args(["run", "--dry-run", "--format", "json", "--robot"]) 
+    cmd.args(["run", "--dry-run", "--format", "json", "--robot"])
         .assert()
         .success()
         // Stub message for now
-        .stdout(predicate::str::contains("Interactive triage mode not yet implemented"));
+        .stdout(predicate::str::contains(
+            "Interactive triage mode not yet implemented",
+        ));
 }

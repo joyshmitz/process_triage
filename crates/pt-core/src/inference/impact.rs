@@ -542,8 +542,12 @@ impl ImpactScorer {
         components.missing_data = missing_data.clone();
 
         // Compute weighted total
-        let raw_score = network_score * (self.config.listen_port_weight + self.config.established_conn_weight)
-            + fd_score * (self.config.open_fd_weight + self.config.write_fd_weight + self.config.critical_write_weight)
+        let raw_score = network_score
+            * (self.config.listen_port_weight + self.config.established_conn_weight)
+            + fd_score
+                * (self.config.open_fd_weight
+                    + self.config.write_fd_weight
+                    + self.config.critical_write_weight)
             + supervision_score * self.config.supervision_weight
             + child_score * self.config.child_count_weight;
 
@@ -619,10 +623,7 @@ impl ImpactScorer {
     }
 
     /// Score supervision-related impact.
-    fn score_supervision(
-        &self,
-        result: &CombinedResult,
-    ) -> (f64, SupervisorLevel, Option<String>) {
+    fn score_supervision(&self, result: &CombinedResult) -> (f64, SupervisorLevel, Option<String>) {
         let level: SupervisorLevel = result.supervisor_type.into();
         let name = result.supervisor_name.clone();
 
@@ -691,7 +692,11 @@ impl ImpactScorer {
             factors.push(format!(
                 "{} child process{}",
                 components.child_count,
-                if components.child_count == 1 { "" } else { "es" }
+                if components.child_count == 1 {
+                    ""
+                } else {
+                    "es"
+                }
             ));
         }
 
@@ -783,8 +788,14 @@ mod tests {
     #[test]
     fn test_supervisor_level_protection_weight() {
         assert_eq!(SupervisorLevel::None.protection_weight(), 0.0);
-        assert!(SupervisorLevel::Terminal.protection_weight() < SupervisorLevel::Agent.protection_weight());
-        assert!(SupervisorLevel::Ide.protection_weight() < SupervisorLevel::Orchestrator.protection_weight());
+        assert!(
+            SupervisorLevel::Terminal.protection_weight()
+                < SupervisorLevel::Agent.protection_weight()
+        );
+        assert!(
+            SupervisorLevel::Ide.protection_weight()
+                < SupervisorLevel::Orchestrator.protection_weight()
+        );
         assert_eq!(SupervisorLevel::Agent.protection_weight(), 1.0);
     }
 

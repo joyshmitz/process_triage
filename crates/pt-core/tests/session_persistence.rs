@@ -117,4 +117,3 @@ fn plan_with_session_reuses_session_id_and_writes_plan_artifact() {
         plan_path.display()
     );
 }
-

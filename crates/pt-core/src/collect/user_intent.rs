@@ -149,10 +149,7 @@ pub enum IntentMetadata {
         has_uncommitted_changes: Option<bool>,
     },
     /// Shell activity info.
-    Shell {
-        shell_type: String,
-        shell_pid: u32,
-    },
+    Shell { shell_type: String, shell_pid: u32 },
     /// Foreground job info.
     Foreground { pgid: u32, tpgid: i32 },
 }
@@ -202,7 +199,11 @@ impl UserIntentFeatures {
     pub fn strongest_signal(&self) -> Option<IntentSignalType> {
         self.evidence
             .iter()
-            .max_by(|a, b| a.weight.partial_cmp(&b.weight).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.weight
+                    .partial_cmp(&b.weight)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .map(|e| e.signal_type)
     }
 }
@@ -615,10 +616,7 @@ fn detect_session_mux_signals(pid: u32, config: &UserIntentConfig) -> Option<Vec
         evidence.push(IntentEvidence {
             signal_type: IntentSignalType::ScreenSession,
             weight: config.weight_for(IntentSignalType::ScreenSession),
-            description: format!(
-                "Process is in screen session (PID: {:?})",
-                screen_info.pid
-            ),
+            description: format!("Process is in screen session (PID: {:?})", screen_info.pid),
             metadata: Some(IntentMetadata::Screen {
                 session_pid: screen_info.pid,
                 session_hash,
@@ -714,7 +712,10 @@ fn detect_shell_activity_signals(
 
 /// Detect repo activity signals.
 #[cfg(target_os = "linux")]
-fn detect_repo_activity_signals(pid: u32, config: &UserIntentConfig) -> Option<Vec<IntentEvidence>> {
+fn detect_repo_activity_signals(
+    pid: u32,
+    config: &UserIntentConfig,
+) -> Option<Vec<IntentEvidence>> {
     // Get process CWD
     let cwd_path = format!("/proc/{}/cwd", pid);
     let cwd = fs::read_link(&cwd_path).ok()?;
@@ -800,12 +801,10 @@ fn compute_intent_score(evidence: &[IntentEvidence], config: &UserIntentConfig) 
     }
 
     match config.scoring_method {
-        ScoringMethod::MaxWeight => {
-            evidence
-                .iter()
-                .map(|e| e.weight)
-                .fold(0.0f64, |a, b| a.max(b))
-        }
+        ScoringMethod::MaxWeight => evidence
+            .iter()
+            .map(|e| e.weight)
+            .fold(0.0f64, |a, b| a.max(b)),
         ScoringMethod::WeightedAverage => {
             let sum: f64 = evidence.iter().map(|e| e.weight).sum();
             sum / evidence.len() as f64
@@ -1037,7 +1036,10 @@ mod tests {
         let hash3 = hash_string(socket_different);
 
         assert_eq!(hash1, hash2, "Same socket path should produce same hash");
-        assert_ne!(hash1, hash3, "Different paths should produce different hashes");
+        assert_ne!(
+            hash1, hash3,
+            "Different paths should produce different hashes"
+        );
     }
 
     #[test]
@@ -1052,7 +1054,10 @@ mod tests {
         let hash3 = hash_string(session_different);
 
         assert_eq!(hash1, hash2, "Same session ID should produce same hash");
-        assert_ne!(hash1, hash3, "Different sessions should produce different hashes");
+        assert_ne!(
+            hash1, hash3,
+            "Different sessions should produce different hashes"
+        );
     }
 
     #[test]
@@ -1067,7 +1072,10 @@ mod tests {
         let hash3 = hash_string(conn_different);
 
         assert_eq!(hash1, hash2, "Same connection should produce same hash");
-        assert_ne!(hash1, hash3, "Different connections should produce different hashes");
+        assert_ne!(
+            hash1, hash3,
+            "Different connections should produce different hashes"
+        );
     }
 
     // === Privacy tests ===

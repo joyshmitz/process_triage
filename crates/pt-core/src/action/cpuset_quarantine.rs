@@ -180,16 +180,19 @@ impl CpusetQuarantineActionRunner {
     #[cfg(target_os = "linux")]
     fn execute_quarantine(&self, action: &PlanAction) -> Result<(), ActionError> {
         let pid = action.target.pid.0;
-        debug!(pid, cpus = self.config.target_cpus, "executing cpuset quarantine");
+        debug!(
+            pid,
+            cpus = self.config.target_cpus,
+            "executing cpuset quarantine"
+        );
 
         // Note: Protected process check requires reading /proc/<pid>/comm at runtime
         // since ProcessIdentity doesn't include comm. The protected_names check
         // would need to be done at plan creation time with process metadata.
 
         // Collect cgroup details for the target process
-        let cgroup_details = collect_cgroup_details(pid).ok_or_else(|| {
-            ActionError::Failed(format!("failed to read cgroup for pid {}", pid))
-        })?;
+        let cgroup_details = collect_cgroup_details(pid)
+            .ok_or_else(|| ActionError::Failed(format!("failed to read cgroup for pid {}", pid)))?;
 
         // Try cgroup v2 first
         if cgroup_details.version == CgroupVersion::V2
@@ -316,15 +319,15 @@ impl CpusetQuarantineActionRunner {
         // For unquarantine, we need reversal metadata
         // This would typically be passed via action metadata
         // For now, restore to all available CPUs
-        let cgroup_details = collect_cgroup_details(pid).ok_or_else(|| {
-            ActionError::Failed(format!("failed to read cgroup for pid {}", pid))
-        })?;
+        let cgroup_details = collect_cgroup_details(pid)
+            .ok_or_else(|| ActionError::Failed(format!("failed to read cgroup for pid {}", pid)))?;
 
         if let Some(ref unified_path) = cgroup_details.unified_path {
             let cpuset_path = format!("/sys/fs/cgroup{}/cpuset.cpus", unified_path);
             if Path::new(&cpuset_path).exists() {
                 // Try to read cpuset.cpus.effective to get all available CPUs
-                let effective_path = format!("/sys/fs/cgroup{}/cpuset.cpus.effective", unified_path);
+                let effective_path =
+                    format!("/sys/fs/cgroup{}/cpuset.cpus.effective", unified_path);
                 let all_cpus = if Path::new(&effective_path).exists() {
                     fs::read_to_string(&effective_path).ok()
                 } else {
@@ -359,7 +362,10 @@ impl CpusetQuarantineActionRunner {
         let pid = action.target.pid.0;
 
         let cgroup_details = collect_cgroup_details(pid).ok_or_else(|| {
-            ActionError::Failed(format!("failed to read cgroup for verification, pid {}", pid))
+            ActionError::Failed(format!(
+                "failed to read cgroup for verification, pid {}",
+                pid
+            ))
         })?;
 
         let expected_cpuset = self.config.cpuset_string();
@@ -463,9 +469,8 @@ impl CpusetQuarantineActionRunner {
             format!("/sys/fs/cgroup/cpuset{}/cpuset.cpus", metadata.cgroup_path)
         };
 
-        fs::write(&cpuset_path, &metadata.previous_cpuset).map_err(|e| {
-            ActionError::Failed(format!("failed to restore cpuset: {}", e))
-        })?;
+        fs::write(&cpuset_path, &metadata.previous_cpuset)
+            .map_err(|e| ActionError::Failed(format!("failed to restore cpuset: {}", e)))?;
 
         info!(
             path = %cpuset_path,
@@ -484,13 +489,17 @@ impl ActionRunner for CpusetQuarantineActionRunner {
             Action::Quarantine => self.execute_quarantine(action),
             Action::Unquarantine => self.execute_unquarantine(action),
             Action::Keep => Ok(()),
-            Action::Pause | Action::Resume | Action::Kill | Action::Renice | Action::Restart
-            | Action::Freeze | Action::Unfreeze | Action::Throttle => {
-                Err(ActionError::Failed(format!(
-                    "{:?} is not a quarantine action",
-                    action.action
-                )))
-            }
+            Action::Pause
+            | Action::Resume
+            | Action::Kill
+            | Action::Renice
+            | Action::Restart
+            | Action::Freeze
+            | Action::Unfreeze
+            | Action::Throttle => Err(ActionError::Failed(format!(
+                "{:?} is not a quarantine action",
+                action.action
+            ))),
         }
     }
 
@@ -499,8 +508,14 @@ impl ActionRunner for CpusetQuarantineActionRunner {
             Action::Quarantine => self.verify_quarantine(action),
             Action::Unquarantine => Ok(()), // Unquarantine verification would check cpuset restored
             Action::Keep => Ok(()),
-            Action::Pause | Action::Resume | Action::Kill | Action::Renice | Action::Restart
-            | Action::Freeze | Action::Unfreeze | Action::Throttle => Ok(()),
+            Action::Pause
+            | Action::Resume
+            | Action::Kill
+            | Action::Renice
+            | Action::Restart
+            | Action::Freeze
+            | Action::Unfreeze
+            | Action::Throttle => Ok(()),
         }
     }
 }

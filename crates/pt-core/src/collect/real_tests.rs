@@ -78,7 +78,10 @@ fn test_cgroup_details_real_pid() {
 
     let details = collect_cgroup_details(proc.pid()).expect("cgroup details");
     assert!(
-        details.provenance.cgroup_file.contains(&format!("/proc/{}/cgroup", proc.pid())),
+        details
+            .provenance
+            .cgroup_file
+            .contains(&format!("/proc/{}/cgroup", proc.pid())),
         "expected provenance to include cgroup file path"
     );
     assert!(proc.is_running());

@@ -575,8 +575,7 @@ impl CompoundPoissonEvidence {
 
     /// Create evidence from analysis result.
     pub fn from_result(result: &CompoundPoissonResult, baseline_rate: f64) -> Self {
-        let (classification, confidence, direction) =
-            Self::classify_result(result, baseline_rate);
+        let (classification, confidence, direction) = Self::classify_result(result, baseline_rate);
 
         let log_bf = result
             .params
@@ -614,11 +613,7 @@ impl CompoundPoissonEvidence {
     ) -> (Classification, Confidence, Direction) {
         // Insufficient data - default to Useful (conservative)
         if result.total_events < 3 {
-            return (
-                Classification::Benign,
-                Confidence::Low,
-                Direction::Neutral,
-            );
+            return (Classification::Benign, Confidence::Low, Direction::Neutral);
         }
 
         // Rate ratio compared to baseline
@@ -656,7 +651,10 @@ impl CompoundPoissonEvidence {
     }
 
     /// Generate human-readable explanation.
-    fn generate_explanation(result: &CompoundPoissonResult, classification: &Classification) -> String {
+    fn generate_explanation(
+        result: &CompoundPoissonResult,
+        classification: &Classification,
+    ) -> String {
         let rate_desc = if result.params.kappa > 1.0 {
             format!("{:.2} bursts/sec (high)", result.params.kappa)
         } else if result.params.kappa > 0.1 {
@@ -1071,7 +1069,10 @@ impl BatchCompoundPoissonAnalyzer {
         for (id, events) in streams {
             let mut analyzer = CompoundPoissonAnalyzer::new(self.config.clone());
             analyzer.observe_batch(events);
-            evidence.insert(id.to_string(), analyzer.generate_evidence(self.baseline_rate));
+            evidence.insert(
+                id.to_string(),
+                analyzer.generate_evidence(self.baseline_rate),
+            );
         }
 
         evidence
@@ -1251,10 +1252,7 @@ mod tests {
         let mut analyzer = CompoundPoissonAnalyzer::with_defaults();
 
         // 5 events over 10 seconds
-        let events = make_events(
-            &[0.0, 2.0, 4.0, 6.0, 8.0],
-            &[1.0, 1.5, 0.8, 1.2, 1.0],
-        );
+        let events = make_events(&[0.0, 2.0, 4.0, 6.0, 8.0], &[1.0, 1.5, 0.8, 1.2, 1.0]);
 
         for event in events {
             analyzer.observe(event);
@@ -1451,8 +1449,7 @@ mod tests {
         let stream1 = make_events(&[0.0, 1.0, 2.0, 3.0, 4.0], &[1.0; 5]);
         let stream2 = make_events(&[0.0, 0.5, 1.0, 1.5, 2.0], &[2.0; 5]);
 
-        let streams: Vec<(&str, Vec<BurstEvent>)> =
-            vec![("proc1", stream1), ("proc2", stream2)];
+        let streams: Vec<(&str, Vec<BurstEvent>)> = vec![("proc1", stream1), ("proc2", stream2)];
 
         let results = batch.analyze_batch(&streams);
 

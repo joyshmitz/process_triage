@@ -17,8 +17,8 @@
 
 use crate::config::policy::{LossMatrix, Policy};
 use crate::decision::expected_loss::{
-    expected_loss_for_action, select_optimal_action, Action, ActionFeasibility,
-    DecisionError, ExpectedLoss,
+    expected_loss_for_action, select_optimal_action, Action, ActionFeasibility, DecisionError,
+    ExpectedLoss,
 };
 use crate::inference::ClassScores;
 use serde::{Deserialize, Serialize};
@@ -248,11 +248,7 @@ impl Default for ProbeCostModel {
 impl ProbeCostModel {
     /// Get the cost for a probe type.
     pub fn cost(&self, probe: ProbeType) -> f64 {
-        let base = self
-            .costs
-            .get(&probe)
-            .map(|c| c.total())
-            .unwrap_or(0.5);
+        let base = self.costs.get(&probe).map(|c| c.total()).unwrap_or(0.5);
         base * self.base_multiplier
     }
 
@@ -352,10 +348,7 @@ fn compute_expected_losses(
 /// This is a simplified model that estimates the expected posterior shift
 /// based on probe characteristics. In practice, this would use prior
 /// predictive distributions for more accurate estimates.
-fn estimate_posterior_after_probe(
-    posterior: &ClassScores,
-    probe: ProbeType,
-) -> ClassScores {
+fn estimate_posterior_after_probe(posterior: &ClassScores, probe: ProbeType) -> ClassScores {
     // Information gain factors per probe type
     // These represent how much each probe type typically clarifies classification
     let (useful_shift, abandoned_shift) = match probe {
@@ -441,7 +434,10 @@ fn compute_probe_voi(
     // Compute expected loss after probe
     let losses_after = compute_expected_losses(&posterior_after, loss_matrix, feasibility)?;
     let (_, _) = select_optimal_action(&losses_after);
-    let min_loss_after = losses_after.iter().map(|e| e.loss).fold(f64::INFINITY, f64::min);
+    let min_loss_after = losses_after
+        .iter()
+        .map(|e| e.loss)
+        .fold(f64::INFINITY, f64::min);
 
     // VOI = E[loss_after] - E[loss_now] - cost
     // Negative VOI means probe is worthwhile
@@ -483,7 +479,10 @@ pub fn compute_voi(
         posterior.abandoned,
         posterior.zombie,
     ];
-    if values.iter().any(|v| v.is_nan() || v.is_infinite() || *v < 0.0) {
+    if values
+        .iter()
+        .any(|v| v.is_nan() || v.is_infinite() || *v < 0.0)
+    {
         return Err(VoiError::InvalidPosterior {
             message: "posterior contains invalid values".to_string(),
         });
@@ -525,9 +524,11 @@ pub fn compute_voi(
     }
 
     // Find best probe (most negative VOI = most worthwhile)
-    let best = probe_vois
-        .iter()
-        .min_by(|a, b| a.voi.partial_cmp(&b.voi).unwrap_or(std::cmp::Ordering::Equal));
+    let best = probe_vois.iter().min_by(|a, b| {
+        a.voi
+            .partial_cmp(&b.voi)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let (best_probe, act_now, rationale) = match best {
         Some(p) if p.voi < 0.0 => {
@@ -556,11 +557,7 @@ pub fn compute_voi(
                 ),
             )
         }
-        None => (
-            None,
-            true,
-            "Act now: no probes available".to_string(),
-        ),
+        None => (None, true, "Act now: no probes available".to_string()),
     };
 
     Ok(VoiAnalysis {
@@ -669,12 +666,18 @@ mod tests {
         let strace_cost = model.cost(ProbeType::Strace);
 
         // Strace should be more expensive due to intrusiveness
-        assert!(strace_cost > wait_cost * 0.5, "strace should be relatively expensive");
+        assert!(
+            strace_cost > wait_cost * 0.5,
+            "strace should be relatively expensive"
+        );
 
         // Quick scan should be cheapest active probe
         let quick_cost = model.cost(ProbeType::QuickScan);
         let deep_cost = model.cost(ProbeType::DeepScan);
-        assert!(quick_cost < deep_cost, "quick scan should be cheaper than deep scan");
+        assert!(
+            quick_cost < deep_cost,
+            "quick scan should be cheaper than deep scan"
+        );
     }
 
     #[test]
@@ -768,7 +771,10 @@ mod tests {
 
         // Strace should have higher cost than quick scan
         let strace_voi = result.probes.iter().find(|p| p.probe == ProbeType::Strace);
-        let quick_voi = result.probes.iter().find(|p| p.probe == ProbeType::QuickScan);
+        let quick_voi = result
+            .probes
+            .iter()
+            .find(|p| p.probe == ProbeType::QuickScan);
 
         if let (Some(s), Some(q)) = (strace_voi, quick_voi) {
             assert!(s.cost > q.cost, "strace should have higher cost");
@@ -785,12 +791,18 @@ mod tests {
             zombie: 0.25,
         };
         let entropy_uniform = shannon_entropy(&uniform);
-        assert!((entropy_uniform - 2.0).abs() < 0.01, "uniform should have ~2 bits entropy");
+        assert!(
+            (entropy_uniform - 2.0).abs() < 0.01,
+            "uniform should have ~2 bits entropy"
+        );
 
         // Confident distribution has low entropy
         let confident = confident_abandoned_posterior();
         let entropy_confident = shannon_entropy(&confident);
-        assert!(entropy_confident < entropy_uniform, "confident should have lower entropy");
+        assert!(
+            entropy_confident < entropy_uniform,
+            "confident should have lower entropy"
+        );
     }
 
     #[test]
@@ -841,10 +853,15 @@ mod tests {
         )
         .expect("VOI computation should succeed");
 
-        assert_eq!(result.probes.len(), 2, "should only evaluate specified probes");
-        assert!(result.probes.iter().all(|p| {
-            p.probe == ProbeType::QuickScan || p.probe == ProbeType::DeepScan
-        }));
+        assert_eq!(
+            result.probes.len(),
+            2,
+            "should only evaluate specified probes"
+        );
+        assert!(result
+            .probes
+            .iter()
+            .all(|p| { p.probe == ProbeType::QuickScan || p.probe == ProbeType::DeepScan }));
     }
 
     #[test]

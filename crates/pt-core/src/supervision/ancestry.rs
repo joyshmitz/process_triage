@@ -83,7 +83,8 @@ impl ProcessTreeCache {
             return Ok(());
         }
 
-        let entries = fs::read_dir(proc).map_err(|e| AncestryError::IoError { pid: 0, source: e })?;
+        let entries =
+            fs::read_dir(proc).map_err(|e| AncestryError::IoError { pid: 0, source: e })?;
 
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -177,10 +178,12 @@ pub(crate) fn parse_stat(content: &str, pid: u32) -> Result<(u32, String), Ances
         message: "missing '(' in stat".to_string(),
     })?;
 
-    let close_paren = content.rfind(')').ok_or_else(|| AncestryError::ParseError {
-        pid,
-        message: "missing ')' in stat".to_string(),
-    })?;
+    let close_paren = content
+        .rfind(')')
+        .ok_or_else(|| AncestryError::ParseError {
+            pid,
+            message: "missing ')' in stat".to_string(),
+        })?;
 
     let comm = content[open_paren + 1..close_paren].to_string();
 
@@ -196,10 +199,12 @@ pub(crate) fn parse_stat(content: &str, pid: u32) -> Result<(u32, String), Ances
         });
     }
 
-    let ppid = fields[1].parse::<u32>().map_err(|_| AncestryError::ParseError {
-        pid,
-        message: format!("invalid ppid: {}", fields[1]),
-    })?;
+    let ppid = fields[1]
+        .parse::<u32>()
+        .map_err(|_| AncestryError::ParseError {
+            pid,
+            message: format!("invalid ppid: {}", fields[1]),
+        })?;
 
     Ok((ppid, comm))
 }
@@ -208,7 +213,8 @@ pub(crate) fn parse_stat(content: &str, pid: u32) -> Result<(u32, String), Ances
 #[cfg(target_os = "linux")]
 fn read_cmdline(pid: u32) -> Result<String, AncestryError> {
     let path = format!("/proc/{}/cmdline", pid);
-    let content = fs::read_to_string(&path).map_err(|e| AncestryError::IoError { pid, source: e })?;
+    let content =
+        fs::read_to_string(&path).map_err(|e| AncestryError::IoError { pid, source: e })?;
 
     // cmdline uses NUL as separator
     Ok(content.replace('\0', " ").trim().to_string())
@@ -444,7 +450,9 @@ mod tests {
         let pid = std::process::id();
         let mut analyzer = AncestryAnalyzer::new();
 
-        let result = analyzer.analyze(pid).expect("should analyze current process");
+        let result = analyzer
+            .analyze(pid)
+            .expect("should analyze current process");
 
         // Current process should have an ancestry chain
         assert!(!result.ancestry_chain.is_empty());

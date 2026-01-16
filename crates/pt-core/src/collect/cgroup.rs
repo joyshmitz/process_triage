@@ -612,7 +612,10 @@ mod tests {
     fn test_nomock_collect_cgroup_details_self() {
         // Test collecting cgroup details for our own process
         if !std::path::Path::new("/proc/self/cgroup").exists() {
-            crate::test_log!(INFO, "Skipping no-mock test: /proc/self/cgroup not available");
+            crate::test_log!(
+                INFO,
+                "Skipping no-mock test: /proc/self/cgroup not available"
+            );
             return;
         }
 
@@ -663,7 +666,11 @@ mod tests {
             .spawn_shell("sleep 30")
             .expect("spawn sleep process");
 
-        crate::test_log!(INFO, "cgroup details spawned process test", pid = proc.pid());
+        crate::test_log!(
+            INFO,
+            "cgroup details spawned process test",
+            pid = proc.pid()
+        );
 
         let details = collect_cgroup_details(proc.pid());
         crate::test_log!(
@@ -673,13 +680,18 @@ mod tests {
             has_result = details.is_some()
         );
 
-        assert!(details.is_some(), "Should be able to read cgroup for spawned process");
+        assert!(
+            details.is_some(),
+            "Should be able to read cgroup for spawned process"
+        );
         let details = details.unwrap();
 
         // Either unified path (v2) or v1 paths should be present
         let has_paths = details.unified_path.is_some() || !details.v1_paths.is_empty();
-        assert!(has_paths || details.version == CgroupVersion::Unknown,
-                "Should have cgroup paths or be Unknown");
+        assert!(
+            has_paths || details.version == CgroupVersion::Unknown,
+            "Should have cgroup paths or be Unknown"
+        );
 
         crate::test_log!(
             INFO,
@@ -694,7 +706,10 @@ mod tests {
     fn test_nomock_cgroup_systemd_slice_detection() {
         // Test that systemd slice/unit detection works on real cgroup paths
         if !std::path::Path::new("/proc/self/cgroup").exists() {
-            crate::test_log!(INFO, "Skipping no-mock test: /proc/self/cgroup not available");
+            crate::test_log!(
+                INFO,
+                "Skipping no-mock test: /proc/self/cgroup not available"
+            );
             return;
         }
 
@@ -730,11 +745,11 @@ mod tests {
 
         // Test common container CPU limits
         let test_cases = [
-            (Some(100000i64), Some(100000u64), Some(1.0)),   // 1 core
-            (Some(50000), Some(100000), Some(0.5)),          // 0.5 cores
-            (Some(200000), Some(100000), Some(2.0)),         // 2 cores
-            (None, Some(100000), None),                       // Unlimited
-            (Some(-1), Some(100000), None),                   // Unlimited (v1 style)
+            (Some(100000i64), Some(100000u64), Some(1.0)), // 1 core
+            (Some(50000), Some(100000), Some(0.5)),        // 0.5 cores
+            (Some(200000), Some(100000), Some(2.0)),       // 2 cores
+            (None, Some(100000), None),                    // Unlimited
+            (Some(-1), Some(100000), None),                // Unlimited (v1 style)
         ];
 
         for (quota, period, expected) in test_cases {

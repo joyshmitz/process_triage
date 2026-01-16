@@ -213,7 +213,11 @@ impl RuntimeRobotConstraints {
     pub fn with_exclude_categories(mut self, categories: Vec<String>) -> Self {
         if !categories.is_empty() {
             for cat in categories {
-                if !self.exclude_categories.iter().any(|c| c.eq_ignore_ascii_case(&cat)) {
+                if !self
+                    .exclude_categories
+                    .iter()
+                    .any(|c| c.eq_ignore_ascii_case(&cat))
+                {
                     self.exclude_categories.push(cat);
                 }
             }
@@ -245,7 +249,10 @@ impl RuntimeRobotConstraints {
         }
 
         summary.push(format!("min_posterior: {:.4}", self.min_posterior));
-        summary.push(format!("max_blast_radius_mb: {:.1}", self.max_blast_radius_mb));
+        summary.push(format!(
+            "max_blast_radius_mb: {:.1}",
+            self.max_blast_radius_mb
+        ));
 
         if let Some(total) = self.max_total_blast_radius_mb {
             summary.push(format!("max_total_blast_radius_mb: {:.1}", total));
@@ -262,7 +269,10 @@ impl RuntimeRobotConstraints {
         }
 
         if !self.allow_categories.is_empty() {
-            summary.push(format!("allow_categories: [{}]", self.allow_categories.join(", ")));
+            summary.push(format!(
+                "allow_categories: [{}]",
+                self.allow_categories.join(", ")
+            ));
         }
 
         if !self.exclude_categories.is_empty() {
@@ -528,8 +538,9 @@ impl ConstraintChecker {
                         .as_ref()
                         .map(|s| s.max_kills)
                         .unwrap_or_default(),
-                    remediation: Some("Increase max_kills or handle remaining processes manually"
-                        .to_string()),
+                    remediation: Some(
+                        "Increase max_kills or handle remaining processes manually".to_string(),
+                    ),
                 });
             }
         }
@@ -771,7 +782,8 @@ mod tests {
     #[test]
     fn test_cli_override_min_posterior() {
         let robot_mode = test_robot_mode();
-        let constraints = RuntimeRobotConstraints::from_policy(&robot_mode).with_min_posterior(Some(0.99));
+        let constraints =
+            RuntimeRobotConstraints::from_policy(&robot_mode).with_min_posterior(Some(0.99));
 
         assert_eq!(constraints.min_posterior, 0.99);
         assert_eq!(
@@ -789,7 +801,8 @@ mod tests {
         assert_eq!(constraints.max_kills, 3);
 
         // CLI specifies higher value - should use policy
-        let constraints2 = RuntimeRobotConstraints::from_policy(&robot_mode).with_max_kills(Some(10));
+        let constraints2 =
+            RuntimeRobotConstraints::from_policy(&robot_mode).with_max_kills(Some(10));
         assert_eq!(constraints2.max_kills, 5);
     }
 
@@ -1043,8 +1056,8 @@ mod tests {
 
     #[test]
     fn test_json_serialization() {
-        let constraints = RuntimeRobotConstraints::from_policy(&test_robot_mode())
-            .with_min_posterior(Some(0.99));
+        let constraints =
+            RuntimeRobotConstraints::from_policy(&test_robot_mode()).with_min_posterior(Some(0.99));
 
         let json = serde_json::to_string(&constraints).unwrap();
         assert!(json.contains("min_posterior"));

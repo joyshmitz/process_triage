@@ -95,10 +95,10 @@ impl RetentionTier {
     /// Get the maximum age for this tier.
     pub fn max_age(&self) -> Duration {
         match self {
-            RetentionTier::Hot => Duration::from_secs(3600),         // 1 hour
-            RetentionTier::Warm => Duration::from_secs(86400),       // 1 day
-            RetentionTier::Cold => Duration::from_secs(604800),      // 7 days
-            RetentionTier::Archive => Duration::from_secs(2592000),  // 30 days
+            RetentionTier::Hot => Duration::from_secs(3600), // 1 hour
+            RetentionTier::Warm => Duration::from_secs(86400), // 1 day
+            RetentionTier::Cold => Duration::from_secs(604800), // 7 days
+            RetentionTier::Archive => Duration::from_secs(2592000), // 30 days
         }
     }
 
@@ -618,9 +618,8 @@ impl ShadowStorage {
         // Process hot cache
         for (pid, cache) in self.hot_cache.iter_mut() {
             // Partition by age
-            let (hot, older): (Vec<_>, Vec<_>) = cache
-                .drain(..)
-                .partition(|o| o.timestamp >= hot_cutoff);
+            let (hot, older): (Vec<_>, Vec<_>) =
+                cache.drain(..).partition(|o| o.timestamp >= hot_cutoff);
 
             // Keep hot observations in cache
             *cache = hot;
@@ -639,7 +638,7 @@ impl ShadowStorage {
                 for obs in older {
                     if obs.timestamp >= warm_cutoff {
                         // Warm tier: sample at 1-minute intervals
-                        let should_keep = last_warm_ts.map_or(true, |last| {
+                        let should_keep = last_warm_ts.is_none_or(|last| {
                             obs.timestamp.signed_duration_since(last).num_seconds()
                                 >= warm_interval.as_secs() as i64
                         });
@@ -649,7 +648,7 @@ impl ShadowStorage {
                         }
                     } else if obs.timestamp >= cold_cutoff {
                         // Cold tier: sample at 5-minute intervals
-                        let should_keep = last_cold_ts.map_or(true, |last| {
+                        let should_keep = last_cold_ts.is_none_or(|last| {
                             obs.timestamp.signed_duration_since(last).num_seconds()
                                 >= cold_interval.as_secs() as i64
                         });
@@ -686,11 +685,7 @@ impl ShadowStorage {
         self.stats.archive_observations += archive_count;
 
         // Update stats
-        self.stats.hot_observations = self
-            .hot_cache
-            .values()
-            .map(|v| v.len() as u64)
-            .sum();
+        self.stats.hot_observations = self.hot_cache.values().map(|v| v.len() as u64).sum();
         self.stats.unique_pids = self.hot_cache.len() as u64;
         self.stats.unique_identities = self.identity_index.len() as u64;
         self.stats.last_compact = Some(now);
@@ -893,10 +888,7 @@ mod tests {
 
     #[test]
     fn test_retention_tier_sample_interval() {
-        assert_eq!(
-            RetentionTier::Hot.sample_interval(),
-            Duration::from_secs(0)
-        );
+        assert_eq!(RetentionTier::Hot.sample_interval(), Duration::from_secs(0));
         assert_eq!(
             RetentionTier::Warm.sample_interval(),
             Duration::from_secs(60)
