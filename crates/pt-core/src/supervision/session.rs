@@ -177,74 +177,8 @@ impl From<SessionEvidence> for SupervisionEvidence {
     }
 }
 
-/// Parsed /proc/<pid>/stat information.
-#[derive(Debug, Clone)]
-pub struct ProcStat {
-    pub pid: u32,
-    pub comm: String,
-    pub state: char,
-    pub ppid: u32,
-    pub pgrp: u32,
-    pub session: u32,
-    pub tty_nr: i32,
-    pub tpgid: i32,
-}
-
-impl ProcStat {
-    /// Parse from /proc/<pid>/stat content.
-    pub fn parse(content: &str) -> Option<Self> {
-        // Format: pid (comm) state ppid pgrp session tty_nr tpgid ...
-        // comm can contain spaces and parentheses, so find the last ')'
-        let comm_start = content.find('(')?;
-        let comm_end = content.rfind(')')?;
-
-        let pid_str = content[..comm_start].trim();
-        let pid: u32 = pid_str.parse().ok()?;
-
-        let comm = content[comm_start + 1..comm_end].to_string();
-
-        let rest = content.get(comm_end + 2..)?;
-        let fields: Vec<&str> = rest.split_whitespace().collect();
-
-        if fields.len() < 6 {
-            return None;
-        }
-
-        Some(Self {
-            pid,
-            comm,
-            state: fields[0].chars().next()?,
-            ppid: fields[1].parse().ok()?,
-            pgrp: fields[2].parse().ok()?,
-            session: fields[3].parse().ok()?,
-            tty_nr: fields[4].parse().ok()?,
-            tpgid: fields[5].parse().ok()?,
-        })
-    }
-}
-
-/// Read and parse /proc/<pid>/stat.
 #[cfg(target_os = "linux")]
-pub fn read_proc_stat(pid: u32) -> Result<ProcStat, SessionError> {
-    let path = format!("/proc/{}/stat", pid);
-    let content = fs::read_to_string(&path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            SessionError::ProcessNotFound(pid)
-        } else {
-            SessionError::IoError { pid, source: e }
-        }
-    })?;
-
-    ProcStat::parse(&content).ok_or(SessionError::StatParseError {
-        pid,
-        reason: "failed to parse stat fields".to_string(),
-    })
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn read_proc_stat(pid: u32) -> Result<ProcStat, SessionError> {
-    Err(SessionError::ProcessNotFound(pid))
-}
+use crate::collect::{parse_proc_stat, ProcessStat};
 
 /// SSH connection information.
 #[derive(Debug, Clone, Serialize)]
@@ -455,7 +389,8 @@ const SHELL_NAMES: &[&str] = &[
 pub struct SessionAnalyzer {
     config: SessionConfig,
     /// Cache of parsed proc stats.
-    stat_cache: HashMap<u32, ProcStat>,
+    #[cfg(target_os = "linux")]
+    stat_cache: HashMap<u32, ProcessStat>,
 }
 
 impl SessionAnalyzer {
@@ -463,6 +398,7 @@ impl SessionAnalyzer {
     pub fn new() -> Self {
         Self {
             config: SessionConfig::default(),
+            #[cfg(target_os = "linux")]
             stat_cache: HashMap::new(),
         }
     }
@@ -471,22 +407,25 @@ impl SessionAnalyzer {
     pub fn with_config(config: SessionConfig) -> Self {
         Self {
             config,
+            #[cfg(target_os = "linux")]
             stat_cache: HashMap::new(),
         }
     }
 
     /// Clear the internal cache.
     pub fn clear_cache(&mut self) {
+        #[cfg(target_os = "linux")]
         self.stat_cache.clear();
     }
 
-    /// Get or fetch ProcStat for a pid.
-    fn get_stat(&mut self, pid: u32) -> Option<ProcStat> {
+    /// Get or fetch ProcessStat for a pid.
+    #[cfg(target_os = "linux")]
+    fn get_stat(&mut self, pid: u32) -> Option<ProcessStat> {
         if let Some(stat) = self.stat_cache.get(&pid) {
             return Some(stat.clone());
         }
 
-        if let Ok(stat) = read_proc_stat(pid) {
+        if let Some(stat) = parse_proc_stat(pid) {
             self.stat_cache.insert(pid, stat.clone());
             Some(stat)
         } else {
@@ -494,23 +433,32 @@ impl SessionAnalyzer {
         }
     }
 
+    #[cfg(not(target_os = "linux"))]
+    fn get_stat(&mut self, _pid: u32) -> Option<()> {
+        None
+    }
+
     /// Walk the parent chain from a PID up to init.
     fn get_ancestry(&mut self, pid: u32) -> Vec<u32> {
         let mut chain = vec![pid];
-        let mut current = pid;
-        let mut visited = HashSet::new();
-        visited.insert(pid);
+        
+        #[cfg(target_os = "linux")]
+        {
+            let mut current = pid;
+            let mut visited = HashSet::new();
+            visited.insert(pid);
 
-        for _ in 0..self.config.max_ancestry_depth {
-            if let Some(stat) = self.get_stat(current) {
-                if stat.ppid == 0 || stat.ppid == current || visited.contains(&stat.ppid) {
+            for _ in 0..self.config.max_ancestry_depth {
+                if let Some(stat) = self.get_stat(current) {
+                    if stat.ppid == 0 || stat.ppid == current || visited.contains(&stat.ppid) {
+                        break;
+                    }
+                    visited.insert(stat.ppid);
+                    chain.push(stat.ppid);
+                    current = stat.ppid;
+                } else {
                     break;
                 }
-                visited.insert(stat.ppid);
-                chain.push(stat.ppid);
-                current = stat.ppid;
-            } else {
-                break;
             }
         }
 
@@ -529,66 +477,93 @@ impl SessionAnalyzer {
         let mut protection_types = Vec::new();
         let mut evidence = Vec::new();
 
-        // Get stat info for both processes
-        let target_stat = self
-            .get_stat(target_pid)
-            .ok_or(SessionError::ProcessNotFound(target_pid))?;
-        let pt_stat = self
-            .get_stat(pt_pid)
-            .ok_or(SessionError::ProcessNotFound(pt_pid))?;
+        #[cfg(target_os = "linux")]
+        {
+            // Get stat info for both processes
+            let target_stat = self
+                .get_stat(target_pid)
+                .ok_or(SessionError::ProcessNotFound(target_pid))?;
+            let pt_stat = self
+                .get_stat(pt_pid)
+                .ok_or(SessionError::ProcessNotFound(pt_pid))?;
 
-        // Check 1: Is target a session leader?
-        if target_stat.pid == target_stat.session {
-            protection_types.push(SessionProtectionType::SessionLeader);
-            evidence.push(SessionEvidence {
-                protection_type: SessionProtectionType::SessionLeader,
-                description: format!(
-                    "PID {} is session leader (SID={})",
-                    target_pid, target_stat.session
-                ),
-                weight: 1.0,
-            });
-            debug!(
-                target_pid,
-                session = target_stat.session,
-                "target is session leader"
-            );
-        }
+            // Check 1: Is target a session leader?
+            if target_stat.pid == target_stat.session {
+                protection_types.push(SessionProtectionType::SessionLeader);
+                evidence.push(SessionEvidence {
+                    protection_type: SessionProtectionType::SessionLeader,
+                    description: format!(
+                        "PID {} is session leader (SID={})",
+                        target_pid, target_stat.session
+                    ),
+                    weight: 1.0,
+                });
+                debug!(
+                    target_pid,
+                    session = target_stat.session,
+                    "target is session leader"
+                );
+            }
 
-        // Check 2: Same session as pt?
-        if self.config.protect_same_session && target_stat.session == pt_stat.session {
-            protection_types.push(SessionProtectionType::SameSession);
-            evidence.push(SessionEvidence {
-                protection_type: SessionProtectionType::SameSession,
-                description: format!(
-                    "PID {} is in same session as pt (SID={})",
-                    target_pid, pt_stat.session
-                ),
-                weight: 0.95,
-            });
-            debug!(
-                target_pid,
-                session = pt_stat.session,
-                "target in same session as pt"
-            );
-        }
+            // Check 2: Same session as pt?
+            if self.config.protect_same_session && target_stat.session == pt_stat.session {
+                protection_types.push(SessionProtectionType::SameSession);
+                evidence.push(SessionEvidence {
+                    protection_type: SessionProtectionType::SameSession,
+                    description: format!(
+                        "PID {} is in same session as pt (SID={})",
+                        target_pid, pt_stat.session
+                    ),
+                    weight: 0.95,
+                });
+                debug!(
+                    target_pid,
+                    session = pt_stat.session,
+                    "target in same session as pt"
+                );
+            }
 
-        // Check 3: Parent shell of pt?
-        if self.config.protect_parent_shells {
-            let pt_ancestry = self.get_ancestry(pt_pid);
-            if pt_ancestry.contains(&target_pid) {
-                if let Some(stat) = self.get_stat(target_pid) {
-                    if self.is_shell(&stat.comm) {
-                        protection_types.push(SessionProtectionType::ParentShell);
+            // Check 3: Parent shell of pt?
+            if self.config.protect_parent_shells {
+                let pt_ancestry = self.get_ancestry(pt_pid);
+                if pt_ancestry.contains(&target_pid) {
+                    if let Some(stat) = self.get_stat(target_pid) {
+                        if self.is_shell(&stat.comm) {
+                            protection_types.push(SessionProtectionType::ParentShell);
+                            evidence.push(SessionEvidence {
+                                protection_type: SessionProtectionType::ParentShell,
+                                description: format!(
+                                    "PID {} ({}) is parent shell of pt",
+                                    target_pid, stat.comm
+                                ),
+                                weight: 1.0,
+                            });
+                            debug!(target_pid, comm = %stat.comm, "target is parent shell of pt");
+                        }
+                    }
+                }
+            }
+            
+            // Check 6: Foreground process group
+            if self.config.protect_foreground_groups {
+                // pt's foreground process group
+                if pt_stat.tpgid > 0 {
+                    // If target is in pt's terminal's foreground group
+                    if target_stat.pgrp == pt_stat.tpgid as u32 {
+                        protection_types.push(SessionProtectionType::ForegroundGroup);
                         evidence.push(SessionEvidence {
-                            protection_type: SessionProtectionType::ParentShell,
+                            protection_type: SessionProtectionType::ForegroundGroup,
                             description: format!(
-                                "PID {} ({}) is parent shell of pt",
-                                target_pid, stat.comm
+                                "PID {} is in pt's foreground process group (PGID={})",
+                                target_pid, pt_stat.tpgid
                             ),
-                            weight: 1.0,
+                            weight: 0.9,
                         });
-                        debug!(target_pid, comm = %stat.comm, "target is parent shell of pt");
+                        debug!(
+                            target_pid,
+                            pgid = pt_stat.tpgid,
+                            "target in pt's foreground group"
+                        );
                     }
                 }
             }
@@ -613,7 +588,8 @@ impl SessionAnalyzer {
                     }
                 }
 
-                // Also check if target is in a tmux process tree
+                // Also check if target is in a tmux process tree (Linux only for ancestry check)
+                #[cfg(target_os = "linux")]
                 if let Some(stat) = self.get_stat(target_pid) {
                     if stat.comm == "tmux" || stat.comm == "tmux: server" {
                         // Check if this tmux serves our session
@@ -651,6 +627,7 @@ impl SessionAnalyzer {
                 }
 
                 // Also check if target is in a screen process tree
+                #[cfg(target_os = "linux")]
                 if let Some(stat) = self.get_stat(target_pid) {
                     if stat.comm == "screen" || stat.comm == "SCREEN" {
                         let target_ancestry = self.get_ancestry(pt_pid);
@@ -675,6 +652,7 @@ impl SessionAnalyzer {
             // Check if pt is in an SSH session
             if let Some(pt_ssh) = detect_ssh_connection(pt_pid) {
                 // If target is sshd and in our ancestry, protect it
+                #[cfg(target_os = "linux")]
                 if let Some(stat) = self.get_stat(target_pid) {
                     if stat.comm == "sshd" {
                         let pt_ancestry = self.get_ancestry(pt_pid);
@@ -719,30 +697,6 @@ impl SessionAnalyzer {
             }
         }
 
-        // Check 6: Foreground process group
-        if self.config.protect_foreground_groups {
-            // pt's foreground process group
-            if pt_stat.tpgid > 0 {
-                // If target is in pt's terminal's foreground group
-                if target_stat.pgrp == pt_stat.tpgid as u32 {
-                    protection_types.push(SessionProtectionType::ForegroundGroup);
-                    evidence.push(SessionEvidence {
-                        protection_type: SessionProtectionType::ForegroundGroup,
-                        description: format!(
-                            "PID {} is in pt's foreground process group (PGID={})",
-                            target_pid, pt_stat.tpgid
-                        ),
-                        weight: 0.9,
-                    });
-                    debug!(
-                        target_pid,
-                        pgid = pt_stat.tpgid,
-                        "target in pt's foreground group"
-                    );
-                }
-            }
-        }
-
         // Build result
         let is_protected = !protection_types.is_empty();
         let reason = if is_protected {
@@ -758,8 +712,10 @@ impl SessionAnalyzer {
             SessionResult::not_protected()
         };
 
-        result =
-            result.with_session_info(target_stat.session, target_stat.pgrp, target_stat.tty_nr);
+        #[cfg(target_os = "linux")]
+        if let Some(stat) = self.get_stat(target_pid) {
+            result = result.with_session_info(stat.session, stat.pgrp, stat.tty_nr);
+        }
 
         Ok(result)
     }
@@ -834,11 +790,14 @@ pub fn check_session_protection(target_pid: u32, pt_pid: u32) -> (bool, Option<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    use crate::collect::parse_proc_stat_content;
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn test_proc_stat_parse() {
-        let content = "1234 (bash) S 1000 1234 1234 34816 1234 4194304";
-        let stat = ProcStat::parse(content).unwrap();
+        let content = "1234 (bash) S 1000 1234 1234 34816 1234 4194304 0 0 0 0 0 0 0 0 0 0 0 0 12345";
+        let stat = parse_proc_stat_content(content).unwrap();
 
         assert_eq!(stat.pid, 1234);
         assert_eq!(stat.comm, "bash");
@@ -848,10 +807,11 @@ mod tests {
         assert_eq!(stat.session, 1234);
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn test_proc_stat_parse_with_spaces_in_comm() {
-        let content = "5678 (Web Content) S 1000 5678 5678 0 -1 4194304";
-        let stat = ProcStat::parse(content).unwrap();
+        let content = "5678 (Web Content) S 1000 5678 5678 0 -1 4194304 0 0 0 0 0 0 0 0 0 0 0 0 12345";
+        let stat = parse_proc_stat_content(content).unwrap();
 
         assert_eq!(stat.pid, 5678);
         assert_eq!(stat.comm, "Web Content");
@@ -916,11 +876,12 @@ mod tests {
     #[cfg(target_os = "linux")]
     mod linux_tests {
         use super::*;
+        use crate::collect::parse_proc_stat;
 
         #[test]
         fn test_read_proc_stat_current_process() {
             let pid = std::process::id();
-            let stat = read_proc_stat(pid).expect("should read current process stat");
+            let stat = parse_proc_stat(pid).expect("should read current process stat");
 
             assert_eq!(stat.pid, pid);
             assert!(!stat.comm.is_empty());
