@@ -1062,4 +1062,113 @@ mod tests {
             "Kill should appear in disabled_actions"
         );
     }
+
+    // =========================================================================
+    // Risk-Sensitive Control (CVaR) Integration Tests
+    // =========================================================================
+
+    #[test]
+    fn test_apply_risk_sensitive_no_trigger() {
+        let policy = policy_for_tests();
+        let posterior = ClassScores {
+            useful: 0.8,
+            useful_bad: 0.1,
+            abandoned: 0.05,
+            zombie: 0.05,
+        };
+
+        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
+            .expect("decision");
+
+        let trigger = CvarTrigger {
+            robot_mode: false,
+            low_confidence: false,
+            high_blast_radius: false,
+            explicit_conservative: false,
+            blast_radius_mb: None,
+        };
+
+        let result = apply_risk_sensitive_control(outcome, &posterior, &policy, &trigger, 0.95);
+
+        assert!(result.risk_sensitive.is_some());
+        let rs = result.risk_sensitive.unwrap();
+        assert!(!rs.applied, "CVaR should not be applied without trigger");
+        assert!(!rs.action_changed);
+    }
+
+    #[test]
+    fn test_apply_risk_sensitive_with_robot_mode() {
+        let policy = policy_for_tests();
+        // Posterior where Kill has low E[L] but high tail risk
+        let posterior = ClassScores {
+            useful: 0.01,
+            useful_bad: 0.01,
+            abandoned: 0.97,
+            zombie: 0.01,
+        };
+
+        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
+            .expect("decision");
+        assert_eq!(
+            outcome.optimal_action,
+            Action::Kill,
+            "Kill should be optimal by E[L]"
+        );
+
+        let trigger = CvarTrigger {
+            robot_mode: true,
+            low_confidence: false,
+            high_blast_radius: false,
+            explicit_conservative: false,
+            blast_radius_mb: None,
+        };
+
+        let result = apply_risk_sensitive_control(outcome, &posterior, &policy, &trigger, 0.95);
+
+        assert!(result.risk_sensitive.is_some());
+        let rs = result.risk_sensitive.unwrap();
+        assert!(rs.applied, "CVaR should be applied in robot mode");
+        assert!(
+            rs.reason.contains("robot_mode"),
+            "Reason should mention robot_mode"
+        );
+        // CVaR may or may not change the action depending on tail risk
+        // The key is that it was applied and computed
+        assert!(!rs.cvar_losses.is_empty(), "CVaR losses should be computed");
+    }
+
+    #[test]
+    fn test_apply_risk_sensitive_high_blast_radius() {
+        let policy = policy_for_tests();
+        let posterior = ClassScores {
+            useful: 0.25,
+            useful_bad: 0.25,
+            abandoned: 0.25,
+            zombie: 0.25,
+        };
+
+        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
+            .expect("decision");
+
+        let trigger = CvarTrigger {
+            robot_mode: false,
+            low_confidence: false,
+            high_blast_radius: true,
+            explicit_conservative: false,
+            blast_radius_mb: Some(8192.0),
+        };
+
+        let result = apply_risk_sensitive_control(outcome, &posterior, &policy, &trigger, 0.95);
+
+        assert!(result.risk_sensitive.is_some());
+        let rs = result.risk_sensitive.unwrap();
+        assert!(
+            rs.applied,
+            "CVaR should be applied for high blast radius"
+        );
+        assert!(
+            rs.reason.contains("high_blast_radius"),
+            "Reason should mention blast radius"
+        );
+    }
 }
