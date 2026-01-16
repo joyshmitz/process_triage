@@ -616,7 +616,12 @@ fn test_fdr_selection_invalid_inputs() {
 fn test_alpha_investing_persistence() {
     let tmp = tempdir().expect("tempdir");
     let store = AlphaInvestingStore::new(tmp.path());
-    let policy = Policy::default();
+    let mut policy = Policy::default();
+    policy.fdr_control.alpha_investing = Some(pt_core::config::policy::AlphaInvesting {
+        w0: Some(0.05),
+        alpha_spend: Some(0.02),
+        alpha_earn: Some(0.01),
+    });
     let user_id = 1000u32;
 
     // Initial load should create state
@@ -655,7 +660,12 @@ fn test_alpha_investing_persistence() {
 #[test]
 fn test_alpha_investing_wealth_formula() {
     // Verify: wealth_next = max(0, wealth_prev - alpha_spend + alpha_earn * discoveries)
-    let policy = Policy::default();
+    let mut policy = Policy::default();
+    policy.fdr_control.alpha_investing = Some(pt_core::config::policy::AlphaInvesting {
+        w0: Some(0.05),
+        alpha_spend: Some(0.02),
+        alpha_earn: Some(0.01),
+    });
 
     // Get the policy parameters
     let alpha_policy = AlphaInvestingPolicy::from_policy(&policy).expect("policy");
@@ -699,7 +709,12 @@ fn test_alpha_investing_wealth_formula() {
 fn test_alpha_investing_wealth_depletion() {
     let tmp = tempdir().expect("tempdir");
     let store = AlphaInvestingStore::new(tmp.path());
-    let policy = Policy::default();
+    let mut policy = Policy::default();
+    policy.fdr_control.alpha_investing = Some(pt_core::config::policy::AlphaInvesting {
+        w0: Some(0.05),
+        alpha_spend: Some(0.02),
+        alpha_earn: Some(0.01),
+    });
 
     // Repeatedly update with no discoveries to deplete wealth
     let _state = store.load_or_init(&policy, 1000).expect("init");
