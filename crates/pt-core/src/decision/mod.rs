@@ -4,6 +4,7 @@ pub mod alpha_investing;
 pub mod causal_interventions;
 pub mod cvar;
 pub mod dependency_loss;
+pub mod dro;
 pub mod enforcer;
 pub mod expected_loss;
 pub mod fdr_selection;
@@ -29,8 +30,8 @@ pub use enforcer::{
     ProcessCandidate, ViolationKind,
 };
 pub use expected_loss::{
-    apply_risk_sensitive_control, decide_action, decide_action_with_recovery, Action,
-    ActionFeasibility, DecisionError, DecisionOutcome, DecisionRationale, DisabledAction,
+    apply_dro_control, apply_risk_sensitive_control, decide_action, decide_action_with_recovery,
+    Action, ActionFeasibility, DecisionError, DecisionOutcome, DecisionRationale, DisabledAction,
     ExpectedLoss, SprtBoundary,
 };
 pub use fdr_selection::{
@@ -48,4 +49,8 @@ pub use cvar::{
 pub use voi::{
     compute_voi, select_probe_by_information_gain, ProbeCost, ProbeCostModel, ProbeInformationGain,
     ProbeType, ProbeVoi, VoiAnalysis, VoiError,
+};
+pub use dro::{
+    apply_dro_gate, compute_adaptive_epsilon, compute_wasserstein_dro, decide_with_dro,
+    is_de_escalation, DroError, DroLoss, DroOutcome, DroTrigger,
 };
