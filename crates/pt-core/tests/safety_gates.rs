@@ -89,6 +89,7 @@ fn make_test_plan(pid: u32, uid: u32, pre_checks: Vec<PreCheck>) -> Plan {
             disabled_actions: vec![],
             used_recovery_preference: false,
         },
+        risk_sensitive: None,
     };
     let bundle = DecisionBundle {
         session_id: pt_common::SessionId("pt-test-session".to_string()),
