@@ -10,8 +10,9 @@
 //! 4. **Global** - Default priors from config
 
 use crate::config::priors::Priors;
-use crate::supervision::signature::{BetaParams, MatchLevel, SignatureMatch, SignaturePriors};
-use serde::Serialize;
+use crate::config::priors::BetaParams;
+use crate::supervision::signature::{MatchLevel, SignatureMatch, SignaturePriors};
+use serde::{Deserialize, Serialize};
 
 /// Source of a prior value in the override hierarchy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

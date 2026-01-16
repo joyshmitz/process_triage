@@ -55,6 +55,7 @@ pub mod signature;
 mod supervision_tests;
 mod types;
 pub mod pattern_persistence;
+pub mod pattern_learning;
 
 pub use ancestry::{
     analyze_supervision, analyze_supervision_batch, AncestryAnalyzer, AncestryConfig,
@@ -96,6 +97,10 @@ pub use pattern_persistence::{
     AllPatternStats, ConflictResolution, ConfidenceSnapshot, DisabledPatterns, ImportConflict,
     ImportResult, PatternLibrary, PatternLifecycle, PatternSource, PatternStats, PersistedPattern,
     PersistedSchema, PersistenceError, SchemaMetadata, migrate_schema,
+};
+pub use pattern_learning::{
+    CommandNormalizer, DecisionAction, LearningError, PatternCandidate, PatternLearner,
+    PatternObservation, SpecificityLevel,
 };
 pub use types::{
     AncestryEntry, EvidenceType, SupervisionEvidence, SupervisionResult, SupervisorCategory,

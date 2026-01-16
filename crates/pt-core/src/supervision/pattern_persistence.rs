@@ -687,6 +687,15 @@ impl PatternLibrary {
         Ok(Self::new(config_dir))
     }
 
+    /// Create a new library manager with the given config directory.
+    /// The second parameter is reserved for future configuration options.
+    pub fn with_config(
+        config_dir: impl Into<PathBuf>,
+        _config: Option<()>,
+    ) -> Result<Self, PersistenceError> {
+        Ok(Self::new(config_dir))
+    }
+
     /// Get the patterns directory path.
     pub fn patterns_dir(&self) -> PathBuf {
         self.config_dir.join(PATTERNS_DIR_NAME)

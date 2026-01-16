@@ -37,6 +37,7 @@
 use super::environ::EnvPattern;
 use super::ipc::IpcPattern;
 use super::types::{SupervisorCategory, SupervisorPattern};
+pub use crate::config::priors::BetaParams;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -68,73 +69,14 @@ pub enum SignatureError {
 
     #[error("Invalid regex pattern '{pattern}': {error}")]
     InvalidRegex { pattern: String, error: String },
+
+    #[error("Validation error: {0}")]
+    Validation(String),
 }
 
-/// Beta distribution parameters for Bayesian priors.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
-pub struct BetaParams {
-    /// Alpha (shape1) parameter, must be positive.
-    pub alpha: f64,
-    /// Beta (shape2) parameter, must be positive.
-    pub beta: f64,
-}
-
-impl BetaParams {
-    /// Create new Beta distribution parameters.
-    pub fn new(alpha: f64, beta: f64) -> Self {
-        Self { alpha, beta }
-    }
-
-    /// Create a uniform prior Beta(1, 1).
-    pub fn uniform() -> Self {
-        Self {
-            alpha: 1.0,
-            beta: 1.0,
-        }
-    }
-
-    /// Create a weakly informative prior Beta(2, 2).
-    pub fn weakly_informative() -> Self {
-        Self {
-            alpha: 2.0,
-            beta: 2.0,
-        }
-    }
-
-    /// Compute the mean of the distribution: alpha / (alpha + beta).
-    pub fn mean(&self) -> f64 {
-        self.alpha / (self.alpha + self.beta)
-    }
-
-    /// Compute the mode of the distribution (for alpha, beta > 1).
-    pub fn mode(&self) -> Option<f64> {
-        if self.alpha > 1.0 && self.beta > 1.0 {
-            Some((self.alpha - 1.0) / (self.alpha + self.beta - 2.0))
-        } else {
-            None
-        }
-    }
-
-    /// Compute variance of the distribution.
-    pub fn variance(&self) -> f64 {
-        let sum = self.alpha + self.beta;
-        (self.alpha * self.beta) / (sum * sum * (sum + 1.0))
-    }
-
-    /// Validate that parameters are positive.
-    pub fn validate(&self) -> Result<(), SignatureError> {
-        if self.alpha <= 0.0 || self.beta <= 0.0 {
-            return Err(SignatureError::Invalid(
-                "Beta parameters alpha and beta must be positive".into(),
-            ));
-        }
-        Ok(())
-    }
-}
-
-impl Default for BetaParams {
-    fn default() -> Self {
-        Self::uniform()
+impl From<String> for SignatureError {
+    fn from(s: String) -> Self {
+        SignatureError::Validation(s)
     }
 }
 
@@ -192,16 +134,16 @@ impl SignaturePriors {
     /// Validate all set priors.
     pub fn validate(&self) -> Result<(), SignatureError> {
         if let Some(ref p) = self.abandoned {
-            p.validate()?;
+            p.validate().map_err(SignatureError::Invalid)?;
         }
         if let Some(ref p) = self.useful {
-            p.validate()?;
+            p.validate().map_err(SignatureError::Invalid)?;
         }
         if let Some(ref p) = self.useful_bad {
-            p.validate()?;
+            p.validate().map_err(SignatureError::Invalid)?;
         }
         if let Some(ref p) = self.zombie {
-            p.validate()?;
+            p.validate().map_err(SignatureError::Invalid)?;
         }
         Ok(())
     }
@@ -488,6 +430,12 @@ impl SupervisorSignature {
     /// Add working directory patterns.
     pub fn with_working_dir_patterns(mut self, patterns: Vec<&str>) -> Self {
         self.patterns.working_dir_patterns = patterns.into_iter().map(String::from).collect();
+        self
+    }
+
+    /// Add parent process patterns.
+    pub fn with_parent_patterns(mut self, patterns: Vec<&str>) -> Self {
+        self.patterns.parent_patterns = patterns.into_iter().map(String::from).collect();
         self
     }
 
