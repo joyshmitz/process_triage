@@ -430,7 +430,19 @@ impl CpuThrottleActionRunner {
                 let cpu_max_path = format!("/sys/fs/cgroup{}/cpu.max", metadata.cgroup_path);
                 if Path::new(&cpu_max_path).exists() {
                     fs::write(&cpu_max_path, "max 100000").map_err(|e| {
-                        ActionError::Failed(format!("failed to restore to unlimited: {}", e))
+                        ActionError::Failed(format!("failed to restore to unlimited (v2): {}", e))
+                    })?;
+                    return Ok(());
+                }
+
+                // Try v1 fallback
+                let quota_path = format!(
+                    "/sys/fs/cgroup/cpu{}/cpu.cfs_quota_us",
+                    metadata.cgroup_path
+                );
+                if Path::new(&quota_path).exists() {
+                    fs::write(&quota_path, "-1").map_err(|e| {
+                        ActionError::Failed(format!("failed to restore to unlimited (v1): {}", e))
                     })?;
                 }
                 Ok(())
