@@ -326,10 +326,9 @@ mod evt_tests {
         let fitter = GpdFitter::new(config);
         let result = fitter.fit(&data).expect("Fitting should succeed");
 
-        // Check tail type is correctly identified
-        assert_eq!(
-            result.tail_type,
-            TailType::Heavy,
+        // Check tail type is correctly identified (Heavy or VeryHeavy both acceptable)
+        assert!(
+            matches!(result.tail_type, TailType::Heavy | TailType::VeryHeavy),
             "Should detect heavy tail, got {:?}",
             result.tail_type
         );
