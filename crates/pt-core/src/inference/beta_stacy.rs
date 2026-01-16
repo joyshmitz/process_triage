@@ -353,4 +353,43 @@ mod tests {
         assert!(curve[0] >= curve[1]);
         assert!(curve[1] >= curve[2]);
     }
+
+    #[test]
+    fn test_beta_stacy_out_of_bounds_handling() {
+        // Create a scheme covering 0..30s (bins: 0-10, 10-20, 20-30)
+        let scheme = BinningScheme::fixed(10.0, 3);
+        let prior = BetaParams::new(1.0, 1.0);
+        let mut model = BetaStacyModel::new(scheme, prior).unwrap();
+
+        // Sample 1: 5.0s, event=true (in bin 0)
+        // Sample 2: 40.0s, event=true (out of bounds)
+        // Sample 3: 50.0s, event=false (out of bounds)
+        let samples = vec![
+            LifetimeSample { duration_s: 5.0, event: true },
+            LifetimeSample { duration_s: 40.0, event: true },
+            LifetimeSample { duration_s: 50.0, event: false },
+        ];
+
+        model.update_from_samples(&samples).unwrap();
+
+        // Bin 0 (0-10s):
+        // - Sample 1 was at risk, event happened.
+        // - Sample 2 survived this bin.
+        // - Sample 3 survived this bin.
+        // Expected at_risk: 3
+        assert_eq!(model.bins[0].at_risk, 3, "Bin 0 at_risk should include out-of-bounds samples");
+
+        // Bin 1 (10-20s):
+        // - Sample 1 already failed/censored.
+        // - Sample 2 survived this bin.
+        // - Sample 3 survived this bin.
+        // Expected at_risk: 2
+        assert_eq!(model.bins[1].at_risk, 2, "Bin 1 at_risk should include out-of-bounds samples");
+
+        // Bin 2 (20-30s):
+        // - Sample 2 survived this bin.
+        // - Sample 3 survived this bin.
+        // Expected at_risk: 2
+        assert_eq!(model.bins[2].at_risk, 2, "Bin 2 at_risk should include out-of-bounds samples");
+    }
 }

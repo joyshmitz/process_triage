@@ -40,6 +40,9 @@ pub struct Policy {
 
     /// Data-loss prevention gates
     pub data_loss_gates: DataLossGates,
+    /// Load-aware decision tuning
+    #[serde(default)]
+    pub load_aware: LoadAwareDecision,
 
     /// Policy inheritance chain
     #[serde(default)]
@@ -73,6 +76,9 @@ impl Policy {
         // Validate FDR control
         self.fdr_control.validate()?;
 
+        // Validate load-aware decision tuning
+        self.load_aware.validate()?;
+
         Ok(())
     }
 }
@@ -88,6 +94,7 @@ impl Default for Policy {
             robot_mode: RobotMode::default(),
             fdr_control: FdrControl::default(),
             data_loss_gates: DataLossGates::default(),
+            load_aware: LoadAwareDecision::default(),
             inherits: vec![],
             notes: None,
         }
@@ -201,6 +208,67 @@ impl LossRow {
                 )));
             }
         }
+        Ok(())
+    }
+}
+
+impl LoadAwareDecision {
+    /// Validate load-aware configuration.
+    pub fn validate(&self) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+
+        let weight_sum = self.weights.queue + self.weights.load + self.weights.memory + self.weights.psi;
+        if weight_sum <= 0.0 {
+            return Err(Error::InvalidPolicy(
+                "load_aware.weights must have positive sum".to_string(),
+            ));
+        }
+
+        if self.weights.queue > 0.0 && self.queue_high == 0 {
+            return Err(Error::InvalidPolicy(
+                "load_aware.queue_high must be > 0 when queue weight is set".to_string(),
+            ));
+        }
+
+        if self.weights.load > 0.0 && self.load_per_core_high <= 0.0 {
+            return Err(Error::InvalidPolicy(
+                "load_aware.load_per_core_high must be > 0 when load weight is set".to_string(),
+            ));
+        }
+
+        if self.weights.memory > 0.0
+            && (self.memory_used_fraction_high <= 0.0 || self.memory_used_fraction_high > 1.0)
+        {
+            return Err(Error::InvalidPolicy(
+                "load_aware.memory_used_fraction_high must be in (0, 1] when memory weight is set"
+                    .to_string(),
+            ));
+        }
+
+        if self.weights.psi > 0.0 && self.psi_avg10_high <= 0.0 {
+            return Err(Error::InvalidPolicy(
+                "load_aware.psi_avg10_high must be > 0 when psi weight is set".to_string(),
+            ));
+        }
+
+        if self.multipliers.keep_max < 1.0 {
+            return Err(Error::InvalidPolicy(
+                "load_aware.multipliers.keep_max must be >= 1.0".to_string(),
+            ));
+        }
+        if self.multipliers.risky_max < 1.0 {
+            return Err(Error::InvalidPolicy(
+                "load_aware.multipliers.risky_max must be >= 1.0".to_string(),
+            ));
+        }
+        if self.multipliers.reversible_min <= 0.0 || self.multipliers.reversible_min > 1.0 {
+            return Err(Error::InvalidPolicy(
+                "load_aware.multipliers.reversible_min must be in (0, 1]".to_string(),
+            ));
+        }
+
         Ok(())
     }
 }
@@ -561,6 +629,100 @@ impl Default for DataLossGates {
             block_if_deleted_cwd: Some(true),
             block_if_active_tty: true,
             block_if_recent_io_seconds: Some(60),
+        }
+    }
+}
+
+/// Load-aware decision configuration for adaptive thresholds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadAwareDecision {
+    /// Whether load-aware adjustments are enabled.
+    pub enabled: bool,
+    /// Candidate queue length considered "high load".
+    #[serde(default = "default_queue_high")]
+    pub queue_high: u32,
+    /// Load average per core considered "high load".
+    #[serde(default = "default_load_per_core_high")]
+    pub load_per_core_high: f64,
+    /// Memory used fraction considered "high load".
+    #[serde(default = "default_memory_used_fraction_high")]
+    pub memory_used_fraction_high: f64,
+    /// PSI avg10 threshold considered "high load".
+    #[serde(default = "default_psi_avg10_high")]
+    pub psi_avg10_high: f64,
+    /// Weights for combining load signals.
+    #[serde(default)]
+    pub weights: LoadWeights,
+    /// Loss multipliers applied under load.
+    #[serde(default)]
+    pub multipliers: LoadMultipliers,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadWeights {
+    pub queue: f64,
+    pub load: f64,
+    pub memory: f64,
+    pub psi: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadMultipliers {
+    /// Maximum multiplier applied to keep losses at high load.
+    pub keep_max: f64,
+    /// Minimum multiplier applied to reversible actions at high load.
+    pub reversible_min: f64,
+    /// Maximum multiplier applied to risky actions (kill/restart) at high load.
+    pub risky_max: f64,
+}
+
+fn default_queue_high() -> u32 {
+    50
+}
+
+fn default_load_per_core_high() -> f64 {
+    1.0
+}
+
+fn default_memory_used_fraction_high() -> f64 {
+    0.85
+}
+
+fn default_psi_avg10_high() -> f64 {
+    20.0
+}
+
+impl Default for LoadWeights {
+    fn default() -> Self {
+        Self {
+            queue: 0.25,
+            load: 0.35,
+            memory: 0.25,
+            psi: 0.15,
+        }
+    }
+}
+
+impl Default for LoadMultipliers {
+    fn default() -> Self {
+        Self {
+            keep_max: 1.4,
+            reversible_min: 0.6,
+            risky_max: 1.8,
+        }
+    }
+}
+
+impl Default for LoadAwareDecision {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            queue_high: default_queue_high(),
+            load_per_core_high: default_load_per_core_high(),
+            memory_used_fraction_high: default_memory_used_fraction_high(),
+            psi_avg10_high: default_psi_avg10_high(),
+            weights: LoadWeights::default(),
+            multipliers: LoadMultipliers::default(),
         }
     }
 }

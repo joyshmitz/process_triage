@@ -189,7 +189,15 @@ impl ProcessHarness {
 
     /// Spawn a sleep process for the given duration (seconds).
     pub fn spawn_sleep(&self, seconds: u64) -> std::io::Result<ProcessHandle> {
-        self.spawn_shell(&format!("sleep {}", seconds.max(1)))
+        #[cfg(unix)]
+        {
+            ProcessHandle::spawn("sleep", &[&seconds.max(1).to_string()])
+        }
+        #[cfg(not(unix))]
+        {
+            // Fallback for non-unix (not really supported but keep signature)
+            self.spawn_shell(&format!("sleep {}", seconds.max(1)))
+        }
     }
 
     /// Spawn a CPU-busy process.

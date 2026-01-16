@@ -333,8 +333,8 @@ impl Default for Priors {
                 useful: ClassPriors {
                     prior_prob: 0.70,
                     cpu_beta: BetaParams {
-                        alpha: 5.0,
-                        beta: 3.0,
+                        alpha: 1.0,
+                        beta: 1.0,
                     },
                     runtime_gamma: Some(GammaParams {
                         shape: 2.0,

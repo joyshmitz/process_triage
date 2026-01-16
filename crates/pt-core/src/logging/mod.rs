@@ -39,7 +39,7 @@ pub use layer::JsonlLayer;
 
 use std::io::IsTerminal;
 use std::sync::OnceLock;
-use pt_redact::{RedactionEngine, RedactionPolicy};
+use pt_redact::{RedactionEngine, RedactionPolicy, FieldClass, Action};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -51,7 +51,10 @@ static REDACTOR: OnceLock<RedactionEngine> = OnceLock::new();
 /// Initializes with a default policy if not already set.
 pub fn get_redactor() -> &'static RedactionEngine {
     REDACTOR.get_or_init(|| {
-        RedactionEngine::new(RedactionPolicy::default())
+        let mut policy = RedactionPolicy::default();
+        // Allow free text in logs to be readable (default is DetectAction which might be too aggressive)
+        policy.set_action(FieldClass::FreeText, Action::Allow);
+        RedactionEngine::new(policy)
             .expect("Failed to initialize default redaction engine")
     })
 }

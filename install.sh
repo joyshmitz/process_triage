@@ -3,7 +3,7 @@
 # install.sh - Process Triage (pt) Installer
 #
 # One-liner installation:
-#   curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
 #
 # Environment variables:
 #   DEST        - Custom install directory (default: ~/.local/bin)
@@ -11,11 +11,12 @@
 #   PT_VERSION  - Install specific version (default: latest)
 #   PT_NO_PATH  - Set to 1 to skip PATH modification
 #   VERIFY      - Set to 1 to enable checksum verification
+#   PT_CORE_VERSION - Install specific pt-core version (default: same as PT_VERSION)
 #
 set -euo pipefail
 
 readonly GITHUB_REPO="Dicklesworthstone/process_triage"
-readonly RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main"
+readonly RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/master"
 readonly RELEASES_URL="https://github.com/${GITHUB_REPO}/releases"
 
 # ==============================================================================
@@ -219,7 +220,9 @@ get_installed_version() {
     echo "${version:-unknown}"
 }
 
-detect_arch() {
+# Detect platform (OS + architecture) for artifact naming
+# Returns: linux-x86_64, linux-aarch64, macos-x86_64, macos-aarch64
+detect_platform() {
     local arch; arch=$(uname -m)
     local os; os=$(uname -s | tr '[:upper:]' '[:lower:]')
 
@@ -227,6 +230,7 @@ detect_arch() {
         x86_64) arch="x86_64" ;;
         aarch64|arm64) arch="aarch64" ;;
         *)
+            log_error "Unsupported architecture: $arch"
             return 1
             ;;
     esac
@@ -235,6 +239,7 @@ detect_arch() {
         linux) ;;
         darwin) os="macos" ;;
         *)
+            log_error "Unsupported OS: $os"
             return 1
             ;;
     esac
@@ -367,6 +372,8 @@ verify_file_checksum() {
 # Installation
 # ==============================================================================
 
+# Atomically install a binary with optional backup of existing version
+# Uses rename (mv) for atomicity - either the install completes or it doesn't
 install_binary() {
     local source_file="$1"
     local dest_dir="$2"
@@ -379,7 +386,7 @@ install_binary() {
         mkdir -p "$dest_dir"
     fi
 
-    # Check for existing installation
+    # Check for existing installation and create backup
     local current_version=""
     if [[ -f "$dest_file" ]]; then
         if [[ "$binary_name" == "pt" ]]; then
@@ -388,11 +395,32 @@ install_binary() {
                 log_info "Current $binary_name version: $current_version"
             fi
         fi
+
+        # Create backup of existing binary for rollback
+        local backup_file="${dest_file}.bak"
+        if cp "$dest_file" "$backup_file" 2>/dev/null; then
+            log_info "Backed up existing ${binary_name} to ${backup_file}"
+        fi
     fi
 
-    # Copy file
-    cp "$source_file" "$dest_file"
-    chmod +x "$dest_file"
+    # Make source executable before moving
+    chmod +x "$source_file"
+
+    # Atomic install using rename (mv)
+    # On the same filesystem, mv is atomic; we ensure this by copying to dest_dir first
+    local temp_dest="${dest_file}.new"
+    cp "$source_file" "$temp_dest" || {
+        log_error "Failed to copy ${binary_name} to destination"
+        return 1
+    }
+    chmod +x "$temp_dest"
+
+    # Atomic rename
+    mv "$temp_dest" "$dest_file" || {
+        log_error "Failed to install ${binary_name} (atomic rename failed)"
+        rm -f "$temp_dest" 2>/dev/null
+        return 1
+    }
 
     log_success "Installed: $dest_file"
 }
@@ -515,6 +543,12 @@ main() {
     fi
     log_info "Version: $version"
 
+    # Determine pt-core version (may differ from pt wrapper version)
+    local core_version="${PT_CORE_VERSION:-$version}"
+    if [[ "$core_version" != "$version" ]]; then
+        log_info "pt-core version: $core_version (decoupled from wrapper)"
+    fi
+
     # Determine install location
     local dest="${DEST:-$HOME/.local/bin}"
     if [[ "${PT_SYSTEM:-}" == "1" ]]; then
@@ -527,50 +561,96 @@ main() {
         fi
     fi
 
+    log_info "Install directory: $dest"
+
     # Create temp directory
     local temp_dir
     temp_dir=$(mktemp_dir)
-    trap 'rm -rf "$temp_dir"' EXIT
+    trap 'rm -rf "${temp_dir:-}"' EXIT
 
-    # Download pt script
+    # Download consolidated checksums file (for verification)
+    local checksums_file="$temp_dir/checksums.sha256"
+    local have_checksums=false
+    if [[ "${VERIFY:-}" == "1" ]]; then
+        log_step "Downloading checksums..."
+        if download_checksums "$core_version" "$checksums_file"; then
+            have_checksums=true
+            log_success "Downloaded checksums.sha256"
+        fi
+    fi
+
+    # Download pt wrapper script
     log_step "Downloading pt wrapper..."
     local download_url
     download_url=$(append_cache_buster "${RAW_URL}/pt")
     download "$download_url" "$temp_dir/pt" || {
-        log_error "Failed to download pt"
+        log_error "Failed to download pt wrapper"
         exit 1
     }
 
-    # Verify if requested
-    if ! verify_download "$temp_dir/pt" "$version"; then
-        log_error "Installation aborted due to verification failure"
-        exit 1
+    # Verify pt wrapper if requested
+    if [[ "${VERIFY:-}" == "1" ]]; then
+        if [[ "$have_checksums" == "true" ]]; then
+            if ! verify_file_checksum "$temp_dir/pt" "pt" "$checksums_file"; then
+                log_error "Installation aborted: pt wrapper verification failed"
+                exit 1
+            fi
+        else
+            # Fallback to individual checksum file
+            if ! verify_download "$temp_dir/pt" "$version"; then
+                log_error "Installation aborted: pt wrapper verification failed"
+                exit 1
+            fi
+        fi
     fi
 
-    # Download pt-core
+    # Download and verify pt-core
     local target
-    if target=$(detect_arch); then
+    local core_installed=false
+    if target=$(detect_platform); then
         log_step "Downloading pt-core (${target})..."
-        local archive_name="pt-core-${target}-${version}.tar.gz"
-        local core_url="${RELEASES_URL}/download/v${version}/${archive_name}"
-        
+        local archive_name="pt-core-${target}-${core_version}.tar.gz"
+        local core_url="${RELEASES_URL}/download/v${core_version}/${archive_name}"
+
         if download "$core_url" "$temp_dir/$archive_name"; then
-            # Extract
-            if tar -xzf "$temp_dir/$archive_name" -C "$temp_dir" pt-core; then
-                install_binary "$temp_dir/pt-core" "$dest" "pt-core"
+            # Verify pt-core archive if requested
+            if [[ "${VERIFY:-}" == "1" ]]; then
+                if [[ "$have_checksums" == "true" ]]; then
+                    if ! verify_file_checksum "$temp_dir/$archive_name" "$archive_name" "$checksums_file"; then
+                        log_error "Installation aborted: pt-core verification failed"
+                        exit 1
+                    fi
+                else
+                    log_warn "Checksums not available; skipping pt-core verification"
+                fi
+            fi
+
+            # Extract pt-core binary from archive
+            if tar -xzf "$temp_dir/$archive_name" -C "$temp_dir" pt-core 2>/dev/null || \
+               tar -xzf "$temp_dir/$archive_name" -C "$temp_dir" 2>/dev/null; then
+                if [[ -f "$temp_dir/pt-core" ]]; then
+                    if install_binary "$temp_dir/pt-core" "$dest" "pt-core"; then
+                        core_installed=true
+                    fi
+                else
+                    log_warn "pt-core binary not found in archive"
+                fi
             else
                 log_warn "Failed to extract pt-core from archive"
             fi
         else
             log_warn "Failed to download pt-core binary for $target"
-            log_warn "You may need to install Rust and run: cargo install pt-core"
+            log_warn "You may need to build from source: cargo install --path crates/pt-core"
         fi
     else
         log_warn "Skipping pt-core (unsupported architecture)"
     fi
 
     # Install pt wrapper
-    install_binary "$temp_dir/pt" "$dest" "pt"
+    if ! install_binary "$temp_dir/pt" "$dest" "pt"; then
+        log_error "Failed to install pt wrapper"
+        exit 1
+    fi
 
     # Add to PATH if needed and not disabled
     if [[ "${PT_NO_PATH:-}" != "1" ]]; then
@@ -584,7 +664,13 @@ main() {
 
     echo ""
     log_success "pt v${version} installed successfully!"
-    log_info "Run 'pt help' to get started."
+    if [[ "$core_installed" == "true" ]]; then
+        log_success "pt-core v${core_version} installed successfully!"
+    else
+        log_warn "pt-core was not installed. Some features may be unavailable."
+        log_warn "To build from source: cargo install --path crates/pt-core"
+    fi
+    log_info "Run 'pt --help' to get started."
 }
 
 main "$@"

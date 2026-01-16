@@ -332,7 +332,6 @@ mod tests {
 
         let output = buffer.lock().unwrap();
         let json_str = String::from_utf8_lossy(&output);
-        println!("JSON output: {}", json_str); // Debug print
         assert!(json_str.contains("\"level\":\"info\""));
         assert!(json_str.contains("\"message\":\"test message\""));
     }

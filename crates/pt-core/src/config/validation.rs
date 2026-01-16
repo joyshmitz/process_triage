@@ -77,6 +77,9 @@ pub enum ValidationError {
 
     #[error("Geometric p for change-point must be in (0, 1] (got {value:.4})")]
     ChangePointGeometricRange { value: f64 },
+
+    #[error("Invalid value for {field}: {message}")]
+    InvalidValue { field: String, message: String },
 }
 
 /// Validate priors configuration semantically.
@@ -355,6 +358,78 @@ pub fn validate_policy(policy: &Policy) -> Result<(), ValidationError> {
     if policy.robot_mode.min_posterior <= 0.0 || policy.robot_mode.min_posterior > 1.0 {
         return Err(ValidationError::RobotPosteriorRange {
             value: policy.robot_mode.min_posterior,
+        });
+    }
+
+    validate_load_aware(&policy.load_aware)?;
+
+    Ok(())
+}
+
+fn validate_load_aware(
+    load_aware: &super::policy::LoadAwareDecision,
+) -> Result<(), ValidationError> {
+    if !load_aware.enabled {
+        return Ok(());
+    }
+
+    let weight_sum =
+        load_aware.weights.queue + load_aware.weights.load + load_aware.weights.memory + load_aware.weights.psi;
+    if weight_sum <= 0.0 {
+        return Err(ValidationError::InvalidValue {
+            field: "load_aware.weights".to_string(),
+            message: "weights must have positive sum".to_string(),
+        });
+    }
+
+    if load_aware.weights.queue > 0.0 && load_aware.queue_high == 0 {
+        return Err(ValidationError::InvalidValue {
+            field: "load_aware.queue_high".to_string(),
+            message: "must be > 0 when queue weight is set".to_string(),
+        });
+    }
+
+    if load_aware.weights.load > 0.0 && load_aware.load_per_core_high <= 0.0 {
+        return Err(ValidationError::InvalidValue {
+            field: "load_aware.load_per_core_high".to_string(),
+            message: "must be > 0 when load weight is set".to_string(),
+        });
+    }
+
+    if load_aware.weights.memory > 0.0
+        && (load_aware.memory_used_fraction_high <= 0.0
+            || load_aware.memory_used_fraction_high > 1.0)
+    {
+        return Err(ValidationError::InvalidValue {
+            field: "load_aware.memory_used_fraction_high".to_string(),
+            message: "must be in (0, 1] when memory weight is set".to_string(),
+        });
+    }
+
+    if load_aware.weights.psi > 0.0 && load_aware.psi_avg10_high <= 0.0 {
+        return Err(ValidationError::InvalidValue {
+            field: "load_aware.psi_avg10_high".to_string(),
+            message: "must be > 0 when psi weight is set".to_string(),
+        });
+    }
+
+    if load_aware.multipliers.keep_max < 1.0 {
+        return Err(ValidationError::InvalidValue {
+            field: "load_aware.multipliers.keep_max".to_string(),
+            message: "must be >= 1.0".to_string(),
+        });
+    }
+    if load_aware.multipliers.risky_max < 1.0 {
+        return Err(ValidationError::InvalidValue {
+            field: "load_aware.multipliers.risky_max".to_string(),
+            message: "must be >= 1.0".to_string(),
+        });
+    }
+    if load_aware.multipliers.reversible_min <= 0.0 || load_aware.multipliers.reversible_min > 1.0
+    {
+        return Err(ValidationError::InvalidValue {
+            field: "load_aware.multipliers.reversible_min".to_string(),
+            message: "must be in (0, 1]".to_string(),
         });
     }
 

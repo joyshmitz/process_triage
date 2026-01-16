@@ -92,5 +92,23 @@
     "block_if_deleted_cwd": true,
     "block_if_active_tty": true,
     "block_if_recent_io_seconds": 60
+  },
+  "load_aware": {
+    "enabled": false,
+    "queue_high": 50,
+    "load_per_core_high": 1.0,
+    "memory_used_fraction_high": 0.85,
+    "psi_avg10_high": 20.0,
+    "weights": {
+      "queue": 0.25,
+      "load": 0.35,
+      "memory": 0.25,
+      "psi": 0.15
+    },
+    "multipliers": {
+      "keep_max": 1.4,
+      "reversible_min": 0.6,
+      "risky_max": 1.8
+    }
   }
 }

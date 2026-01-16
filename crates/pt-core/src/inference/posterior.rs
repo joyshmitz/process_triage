@@ -336,8 +336,11 @@ fn log_lik_cpu(
                     message: format!("expected in [0,1], got {occupancy}"),
                 });
             }
+            // Clamp occupancy to avoid -inf at boundaries when alpha/beta > 1
+            // 1e-6 corresponds to very low but non-zero probability density
+            let clamped = occupancy.clamp(1e-6, 1.0 - 1e-6);
             Ok(log_beta_pdf(
-                *occupancy,
+                clamped,
                 priors.cpu_beta.alpha,
                 priors.cpu_beta.beta,
             ))

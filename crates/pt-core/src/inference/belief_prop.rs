@@ -495,6 +495,15 @@ impl BeliefPropagator {
         let mut children: HashMap<u32, Vec<u32>> = HashMap::new();
         let mut depths = HashMap::new();
 
+        // Build adjacency map for O(1) children lookup
+        // Map parent_pid -> Vec<child_pid>
+        let mut adjacency: HashMap<u32, Vec<u32>> = HashMap::new();
+        for (&pid, process) in &self.processes {
+            if all_pids.contains(&process.ppid) {
+                adjacency.entry(process.ppid).or_default().push(pid);
+            }
+        }
+
         let mut queue = VecDeque::new();
         queue.push_back((root, 0usize));
         let mut visited = HashSet::new();
@@ -509,15 +518,14 @@ impl BeliefPropagator {
             nodes.push(pid);
             depths.insert(pid, depth);
 
-            // Find children
-            for (&child_pid, process) in &self.processes {
-                if process.ppid == pid
-                    && all_pids.contains(&child_pid)
-                    && !visited.contains(&child_pid)
-                {
-                    children.entry(pid).or_default().push(child_pid);
-                    parents.insert(child_pid, pid);
-                    queue.push_back((child_pid, depth + 1));
+            // Find children using adjacency map
+            if let Some(child_pids) = adjacency.get(&pid) {
+                for &child_pid in child_pids {
+                    if !visited.contains(&child_pid) {
+                        children.entry(pid).or_default().push(child_pid);
+                        parents.insert(child_pid, pid);
+                        queue.push_back((child_pid, depth + 1));
+                    }
                 }
             }
         }

@@ -6,6 +6,7 @@ pub mod dependency_loss;
 pub mod enforcer;
 pub mod expected_loss;
 pub mod fdr_selection;
+pub mod load_aware;
 pub mod robot_constraints;
 pub mod voi;
 
@@ -34,6 +35,7 @@ pub use fdr_selection::{
     by_correction_factor, select_fdr, CandidateSelection, FdrCandidate, FdrError, FdrMethod,
     FdrSelectionResult, TargetIdentity,
 };
+pub use load_aware::{apply_load_to_loss_matrix, compute_load_adjustment, LoadAdjustment, LoadSignals};
 pub use robot_constraints::{
     ConstraintCheckResult, ConstraintChecker, ConstraintKind, ConstraintMetrics, ConstraintSource,
     ConstraintSources, ConstraintViolation, RobotCandidate, RuntimeRobotConstraints,

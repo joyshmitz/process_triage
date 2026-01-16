@@ -29,6 +29,8 @@ pub struct Policy {
     pub robot_mode: RobotMode,
     pub fdr_control: FdrControl,
     pub data_loss_gates: DataLossGates,
+    #[serde(default)]
+    pub load_aware: LoadAwareDecision,
 
     #[serde(default)]
     pub notes: Option<String>,
@@ -222,6 +224,90 @@ pub struct DataLossGates {
 
     #[serde(default)]
     pub block_if_recent_io_seconds: Option<u64>,
+}
+
+/// Load-aware decision configuration for adaptive thresholds.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadAwareDecision {
+    pub enabled: bool,
+    #[serde(default = "default_queue_high")]
+    pub queue_high: u32,
+    #[serde(default = "default_load_per_core_high")]
+    pub load_per_core_high: f64,
+    #[serde(default = "default_memory_used_fraction_high")]
+    pub memory_used_fraction_high: f64,
+    #[serde(default = "default_psi_avg10_high")]
+    pub psi_avg10_high: f64,
+    #[serde(default)]
+    pub weights: LoadWeights,
+    #[serde(default)]
+    pub multipliers: LoadMultipliers,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadWeights {
+    pub queue: f64,
+    pub load: f64,
+    pub memory: f64,
+    pub psi: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadMultipliers {
+    pub keep_max: f64,
+    pub reversible_min: f64,
+    pub risky_max: f64,
+}
+
+fn default_queue_high() -> u32 {
+    50
+}
+
+fn default_load_per_core_high() -> f64 {
+    1.0
+}
+
+fn default_memory_used_fraction_high() -> f64 {
+    0.85
+}
+
+fn default_psi_avg10_high() -> f64 {
+    20.0
+}
+
+impl Default for LoadWeights {
+    fn default() -> Self {
+        Self {
+            queue: 0.25,
+            load: 0.35,
+            memory: 0.25,
+            psi: 0.15,
+        }
+    }
+}
+
+impl Default for LoadMultipliers {
+    fn default() -> Self {
+        Self {
+            keep_max: 1.4,
+            reversible_min: 0.6,
+            risky_max: 1.8,
+        }
+    }
+}
+
+impl Default for LoadAwareDecision {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            queue_high: default_queue_high(),
+            load_per_core_high: default_load_per_core_high(),
+            memory_used_fraction_high: default_memory_used_fraction_high(),
+            psi_avg10_high: default_psi_avg10_high(),
+            weights: LoadWeights::default(),
+            multipliers: LoadMultipliers::default(),
+        }
+    }
 }
 
 impl Policy {

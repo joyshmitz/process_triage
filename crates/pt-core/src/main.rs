@@ -654,7 +654,10 @@ fn run_interactive(global: &GlobalOpts, _args: &RunArgs) -> ExitCode {
 }
 
 use pt_core::collect::{quick_scan, ProcessRecord, QuickScanOptions};
-use pt_core::decision::{decide_action, Action, ActionFeasibility};
+use pt_core::decision::{
+    apply_load_to_loss_matrix, compute_load_adjustment, decide_action, Action, ActionFeasibility,
+    LoadSignals,
+};
 use pt_core::inference::{compute_posterior, CpuEvidence, Evidence, EvidenceLedger};
 
 fn progress_emitter(global: &GlobalOpts) -> Option<Arc<dyn ProgressEmitter>> {
@@ -2531,6 +2534,22 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         "Protected filter applied"
     );
 
+    let system_state = collect_system_state();
+    let load_adjustment = if policy.load_aware.enabled {
+        let signals = LoadSignals::from_system_state(&system_state, filter_result.passed.len());
+        compute_load_adjustment(&policy.load_aware, &signals)
+    } else {
+        None
+    };
+
+    let decision_policy = if let Some(adjustment) = &load_adjustment {
+        let mut adjusted = policy.clone();
+        adjusted.loss_matrix = apply_load_to_loss_matrix(&policy.loss_matrix, adjustment);
+        adjusted
+    } else {
+        policy.clone()
+    };
+
     // Process each candidate: compute posterior, make decision, build candidate output
     // Collect ALL candidates above threshold with their max_posterior for sorting
     // Then sort by max_posterior descending and take top N
@@ -2567,7 +2586,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
 
         // Compute decision (optimal action based on expected loss)
         let decision_outcome =
-            match decide_action(&posterior_result.posterior, &policy, &feasibility) {
+            match decide_action(&posterior_result.posterior, &decision_policy, &feasibility) {
                 Ok(d) => d,
                 Err(_) => continue, // Skip processes that fail decision
             };

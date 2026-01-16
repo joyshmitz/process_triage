@@ -238,10 +238,12 @@ mod tests {
             risky_multiplier: 1.5,
         };
         let adjusted = apply_load_to_loss_matrix(&loss, &adjustment);
-        assert_eq!(adjusted.useful.keep, 12.0);
-        assert_eq!(adjusted.useful.pause, Some(3.2));
-        assert_eq!(adjusted.useful.renice, Some(2.4));
-        assert_eq!(adjusted.useful.kill, 150.0);
-        assert_eq!(adjusted.useful.restart, Some(75.0));
+
+        let epsilon = 1e-10;
+        assert!((adjusted.useful.keep - 12.0).abs() < epsilon);
+        assert!((adjusted.useful.pause.unwrap() - 3.2).abs() < epsilon);
+        assert!((adjusted.useful.renice.unwrap() - 2.4).abs() < epsilon);
+        assert!((adjusted.useful.kill - 150.0).abs() < epsilon);
+        assert!((adjusted.useful.restart.unwrap() - 75.0).abs() < epsilon);
     }
 }

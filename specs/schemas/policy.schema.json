@@ -52,6 +52,9 @@
     "data_loss_gates": {
       "$ref": "#/$defs/data_loss_gates"
     },
+    "load_aware": {
+      "$ref": "#/$defs/load_aware"
+    },
     "notes": {
       "type": "string",
       "description": "Freeform notes for operators"
@@ -223,6 +226,40 @@
         "block_if_deleted_cwd": { "type": "boolean" },
         "block_if_active_tty": { "type": "boolean" },
         "block_if_recent_io_seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "load_weights": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "queue": { "type": "number", "minimum": 0 },
+        "load": { "type": "number", "minimum": 0 },
+        "memory": { "type": "number", "minimum": 0 },
+        "psi": { "type": "number", "minimum": 0 }
+      }
+    },
+    "load_multipliers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keep_max": { "type": "number", "minimum": 0 },
+        "reversible_min": { "type": "number", "minimum": 0 },
+        "risky_max": { "type": "number", "minimum": 0 }
+      }
+    },
+    "load_aware": {
+      "type": "object",
+      "description": "Load-aware decision tuning for adaptive thresholds",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "queue_high": { "type": "integer", "minimum": 0 },
+        "load_per_core_high": { "type": "number", "minimum": 0 },
+        "memory_used_fraction_high": { "type": "number", "minimum": 0, "maximum": 1 },
+        "psi_avg10_high": { "type": "number", "minimum": 0 },
+        "weights": { "$ref": "#/$defs/load_weights" },
+        "multipliers": { "$ref": "#/$defs/load_multipliers" }
       }
     }
   }
