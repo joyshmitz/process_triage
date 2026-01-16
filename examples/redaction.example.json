@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "default_profile": "safe",
+  "hash_truncation_bytes": 8,
+  "detection_enabled": true,
+  "entropy_threshold": 4.5,
+  "field_rules": {
+    "cmdline": { "action": "normalize+hash" },
+    "env_value": { "action": "redact" },
+    "path_home": { "action": "normalize+hash" },
+    "hostname": { "action": "hash" },
+    "ip_address": { "action": "hash" }
+  },
+  "detection_patterns": [],
+  "custom_rules": []
+}

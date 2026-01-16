@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "metadata": {
+    "description": "Example signature set",
+    "author": "you"
+  },
+  "signatures": [
+    {
+      "name": "jest-worker",
+      "category": "agent",
+      "confidence_weight": 0.85,
+      "notes": "Jest test worker",
+      "priority": 120,
+      "patterns": {
+        "process_names": ["^node$"],
+        "arg_patterns": ["jest", "--runInBand"],
+        "environment_vars": {"JEST_WORKER_ID": ".*"},
+        "working_dir_patterns": ["/repo/.+"],
+        "socket_paths": ["/tmp/jest-"],
+        "pid_files": [],
+        "parent_patterns": ["^bash$", "^zsh$"],
+        "min_matches": 2
+      },
+      "priors": {
+        "abandoned": {"alpha": 2.0, "beta": 6.0},
+        "useful": {"alpha": 6.0, "beta": 2.0}
+      },
+      "expectations": {
+        "typical_lifetime_seconds": 600,
+        "max_normal_lifetime_seconds": 3600,
+        "cpu_during_run": 0.7,
+        "idle_cpu_normal": false,
+        "expected_memory_bytes": 536870912,
+        "expects_network": false,
+        "expects_disk_io": true
+      }
+    }
+  ]
+}

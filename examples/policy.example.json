@@ -1,0 +1,16 @@
+{
+  "protected_patterns": [
+    "systemd",
+    "sshd",
+    "dbus",
+    "docker",
+    "postgres"
+  ],
+  "min_process_age_seconds": 3600,
+  "robot_mode": {
+    "enabled": false,
+    "min_posterior": 0.99,
+    "max_kills_per_session": 5,
+    "max_blast_radius_mb": 2048
+  }
+}
