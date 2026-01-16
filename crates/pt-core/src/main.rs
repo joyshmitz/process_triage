@@ -4778,6 +4778,13 @@ fn run_agent_tail(_global: &GlobalOpts, args: &AgentTailArgs) -> ExitCode {
 
             print!("{}", line);
             let _ = std::io::stdout().flush();
+
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(line.trim_end()) {
+                let event_name = value.get("event").and_then(|v| v.as_str());
+                if event_name == Some(pt_core::events::event_names::SESSION_ENDED) {
+                    return ExitCode::Clean;
+                }
+            }
         }
     }
 }
