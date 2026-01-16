@@ -565,7 +565,9 @@ impl BocpdDetector {
         }
 
         // Add fresh stats for new run length 0
-        self.stats.push_front(self.new_stats());
+        let mut new_stats = self.new_stats();
+        new_stats.update(observation);
+        self.stats.push_front(new_stats);
 
         // Truncate stats to match distribution
         while self.stats.len() > new_log_dist.len() {
