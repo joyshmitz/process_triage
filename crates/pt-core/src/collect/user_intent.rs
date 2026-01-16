@@ -560,8 +560,8 @@ fn detect_recent_tty_activity(pid: u32, config: &UserIntentConfig) -> Option<Int
             let target_str = target.to_string_lossy();
             // Check if it's a tty/pts device
             if target_str.contains("/dev/pts/") || target_str.contains("/dev/tty") {
-                // Check modification time of the link itself (approximation)
-                if let Ok(metadata) = fs::symlink_metadata(&link_path) {
+                // Check modification time of the target file (not the symlink)
+                if let Ok(metadata) = fs::metadata(&link_path) {
                     if let Ok(accessed) = metadata.accessed() {
                         if let Ok(age) = SystemTime::now().duration_since(accessed) {
                             if age.as_secs() < config.recent_tty_secs {
