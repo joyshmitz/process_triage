@@ -14,7 +14,9 @@ use pt_core::collect::protected::ProtectedFilter;
 #[cfg(target_os = "linux")]
 use pt_core::collect::{systemd::collect_systemd_unit, ContainerRuntime};
 use pt_core::config::{load_config, ConfigError, ConfigOptions, Priors};
-use pt_core::events::{JsonlWriter, Phase, ProgressEmitter, ProgressEvent};
+use pt_core::events::{
+    FanoutEmitter, JsonlWriter, Phase, ProgressEmitter, ProgressEvent, SessionEmitter,
+};
 use pt_core::exit_codes::ExitCode;
 use pt_core::session::{
     ListSessionsOptions, SessionContext, SessionManifest, SessionMode, SessionState, SessionStore,
@@ -359,6 +361,9 @@ enum AgentCommands {
     /// View pending plans and notifications
     Inbox(AgentInboxArgs),
 
+    /// Stream session progress events (JSONL)
+    Tail(AgentTailArgs),
+
     /// Export priors to file for transfer between machines
     ExportPriors(AgentExportPriorsArgs),
 
@@ -368,6 +373,17 @@ enum AgentCommands {
     /// Generate HTML report from session
     #[cfg(feature = "report")]
     Report(AgentReportArgs),
+}
+
+#[derive(Args, Debug)]
+struct AgentTailArgs {
+    /// Session ID to tail
+    #[arg(long)]
+    session: String,
+
+    /// Follow the file for new events
+    #[arg(long)]
+    follow: bool,
 }
 
 #[derive(Args, Debug)]
@@ -862,6 +878,51 @@ fn progress_emitter(global: &GlobalOpts) -> Option<Arc<dyn ProgressEmitter>> {
         }
         _ => None,
     }
+}
+
+fn session_progress_emitter(
+    global: &GlobalOpts,
+    handle: &pt_core::session::SessionHandle,
+    session_id: &SessionId,
+) -> Option<Arc<dyn ProgressEmitter>> {
+    let mut emitters: Vec<Arc<dyn ProgressEmitter>> = Vec::new();
+
+    if let Some(stderr_emitter) = progress_emitter(global) {
+        emitters.push(stderr_emitter);
+    }
+
+    let log_path = handle.dir.join("logs").join("session.jsonl");
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+    {
+        Ok(file) => {
+            emitters.push(Arc::new(JsonlWriter::new(file)));
+        }
+        Err(e) => {
+            eprintln!(
+                "agent plan: warning: failed to open session log {}: {}",
+                log_path.display(),
+                e
+            );
+        }
+    }
+
+    if emitters.is_empty() {
+        return None;
+    }
+
+    let fanout: Arc<dyn ProgressEmitter> = if emitters.len() == 1 {
+        emitters[0].clone()
+    } else {
+        Arc::new(FanoutEmitter::new(emitters))
+    };
+
+    Some(Arc::new(SessionEmitter::new(
+        session_id.to_string(),
+        fanout,
+    )))
 }
 
 fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
@@ -1767,6 +1828,7 @@ fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
         AgentCommands::Sessions(args) => run_agent_sessions(global, args),
         AgentCommands::ListPriors(args) => run_agent_list_priors(global, args),
         AgentCommands::Inbox(args) => run_agent_inbox(global, args),
+        AgentCommands::Tail(args) => run_agent_tail(global, args),
         AgentCommands::ExportPriors(args) => run_agent_export_priors(global, args),
         AgentCommands::ImportPriors(args) => run_agent_import_priors(global, args),
         #[cfg(feature = "report")]
@@ -2678,16 +2740,17 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     let priors = config.priors.clone();
     let policy = config.policy.clone();
 
-    // Progress emitter for streaming updates
-    let emitter = progress_emitter(global);
+    // Progress emitter for streaming updates + session log
+    let emitter = session_progress_emitter(global, &handle, &session_id);
     if let Some(ref e) = emitter {
-        e.emit(
-            ProgressEvent::new(
-                pt_core::events::event_names::QUICK_SCAN_STARTED,
-                Phase::QuickScan,
-            )
-            .with_session_id(session_id.to_string()),
-        );
+        e.emit(ProgressEvent::new(
+            pt_core::events::event_names::SESSION_STARTED,
+            Phase::Session,
+        ));
+        e.emit(ProgressEvent::new(
+            pt_core::events::event_names::QUICK_SCAN_STARTED,
+            Phase::QuickScan,
+        ));
     }
 
     // Perform quick scan to enumerate processes
@@ -3038,6 +3101,13 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
                 println!("- PID {}: {} ({}) → {}", pid, cmd, class, action);
             }
         }
+    }
+
+    if let Some(ref e) = emitter {
+        e.emit(ProgressEvent::new(
+            pt_core::events::event_names::SESSION_ENDED,
+            Phase::Session,
+        ));
     }
 
     // Return appropriate exit code
@@ -4624,6 +4694,92 @@ fn run_agent_inbox(global: &GlobalOpts, args: &AgentInboxArgs) -> ExitCode {
     }
 
     ExitCode::Clean
+}
+
+fn run_agent_tail(_global: &GlobalOpts, args: &AgentTailArgs) -> ExitCode {
+    use std::io::{BufRead, BufReader, Write};
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("agent tail: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    let sid = match SessionId::parse(&args.session) {
+        Some(sid) => sid,
+        None => {
+            eprintln!("agent tail: invalid --session {}", args.session);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    let handle = match store.open(&sid) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("agent tail: {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    let log_path = handle.dir.join("logs").join("session.jsonl");
+
+    loop {
+        if !log_path.exists() {
+            if args.follow {
+                sleep(Duration::from_millis(250));
+                continue;
+            }
+            eprintln!(
+                "agent tail: no session log found at {}",
+                log_path.display()
+            );
+            return ExitCode::ArgsError;
+        }
+
+        let file = match std::fs::File::open(&log_path) {
+            Ok(file) => file,
+            Err(e) => {
+                if args.follow {
+                    eprintln!(
+                        "agent tail: waiting for session log {} ({})",
+                        log_path.display(),
+                        e
+                    );
+                    sleep(Duration::from_millis(250));
+                    continue;
+                }
+                eprintln!("agent tail: failed to open {}: {}", log_path.display(), e);
+                return ExitCode::IoError;
+            }
+        };
+
+        let mut reader = BufReader::new(file);
+        loop {
+            let mut line = String::new();
+            let bytes = match reader.read_line(&mut line) {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    eprintln!("agent tail: read error: {}", e);
+                    return ExitCode::IoError;
+                }
+            };
+
+            if bytes == 0 {
+                if args.follow {
+                    sleep(Duration::from_millis(250));
+                    continue;
+                }
+                return ExitCode::Clean;
+            }
+
+            print!("{}", line);
+            let _ = std::io::stdout().flush();
+        }
+    }
 }
 
 #[cfg(feature = "report")]

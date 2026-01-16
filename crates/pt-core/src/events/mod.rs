@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::{mpsc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 
 /// Standard progress event names.
 pub mod event_names {
@@ -183,9 +183,53 @@ impl<W: Write + Send> ProgressEmitter for JsonlWriter<W> {
     }
 }
 
+/// Fan-out progress emitter that forwards events to multiple emitters.
+pub struct FanoutEmitter {
+    emitters: Vec<Arc<dyn ProgressEmitter>>,
+}
+
+impl FanoutEmitter {
+    pub fn new(emitters: Vec<Arc<dyn ProgressEmitter>>) -> Self {
+        Self { emitters }
+    }
+}
+
+impl ProgressEmitter for FanoutEmitter {
+    fn emit(&self, event: ProgressEvent) {
+        for emitter in &self.emitters {
+            emitter.emit(event.clone());
+        }
+    }
+}
+
+/// Progress emitter that ensures a session ID is attached to each event.
+pub struct SessionEmitter {
+    session_id: String,
+    inner: Arc<dyn ProgressEmitter>,
+}
+
+impl SessionEmitter {
+    pub fn new(session_id: impl Into<String>, inner: Arc<dyn ProgressEmitter>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            inner,
+        }
+    }
+}
+
+impl ProgressEmitter for SessionEmitter {
+    fn emit(&self, mut event: ProgressEvent) {
+        if event.session_id.is_none() {
+            event.session_id = Some(self.session_id.clone());
+        }
+        self.inner.emit(event);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
 
     #[test]
     fn test_progress_event_jsonl() {
@@ -209,5 +253,32 @@ mod tests {
         ));
         let received = rx.recv().expect("event should be delivered");
         assert_eq!(received.event, event_names::SESSION_STARTED);
+    }
+
+    #[test]
+    fn test_session_emitter_attaches_session_id() {
+        struct Capture {
+            last: Mutex<Option<ProgressEvent>>,
+        }
+
+        impl Capture {
+            fn new() -> Self {
+                Self {
+                    last: Mutex::new(None),
+                }
+            }
+        }
+
+        impl ProgressEmitter for Capture {
+            fn emit(&self, event: ProgressEvent) {
+                *self.last.lock().unwrap() = Some(event);
+            }
+        }
+
+        let capture = Arc::new(Capture::new());
+        let emitter = SessionEmitter::new("sess-123", capture.clone());
+        emitter.emit(ProgressEvent::new(event_names::PLAN_READY, Phase::Plan));
+        let recorded = capture.last.lock().unwrap().clone().expect("event");
+        assert_eq!(recorded.session_id.as_deref(), Some("sess-123"));
     }
 }
