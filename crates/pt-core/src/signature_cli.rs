@@ -4,6 +4,7 @@
 //! for managing user-defined process signatures.
 
 use crate::exit_codes::ExitCode;
+use crate::supervision::pattern_persistence::{AllPatternStats, DisabledPatterns};
 use crate::supervision::signature::ProcessMatchContext;
 use crate::supervision::{
     SignatureDatabase, SignaturePatterns, SignatureSchema, SupervisorCategory, SupervisorSignature,
@@ -95,6 +96,28 @@ pub enum SignatureCommands {
         #[arg(long)]
         user_only: bool,
     },
+    /// Disable a signature without deleting it
+    Disable {
+        /// Name of the signature to disable
+        name: String,
+        /// Optional reason for disabling
+        #[arg(long)]
+        reason: Option<String>,
+    },
+    /// Re-enable a previously disabled signature
+    Enable {
+        /// Name of the signature to enable
+        name: String,
+    },
+    /// Show signature performance statistics
+    Stats {
+        /// Only show signatures with at least this many matches
+        #[arg(long, default_value = "0")]
+        min_matches: u32,
+        /// Sort by: matches, accepts, rejects, rate
+        #[arg(long, default_value = "matches")]
+        sort: String,
+    },
 }
 
 /// Get the path to user signatures file
@@ -136,6 +159,33 @@ pub fn save_user_signatures(schema: &SignatureSchema) -> Result<(), std::io::Err
     let content = serde_json::to_string_pretty(schema)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     std::fs::write(&path, content)
+}
+
+/// Get the path to disabled signatures file
+fn disabled_signatures_path() -> std::path::PathBuf {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("process_triage")
+        .join("patterns");
+    config_dir.join("disabled.json")
+}
+
+/// Get the path to pattern statistics file
+fn pattern_stats_path() -> std::path::PathBuf {
+    let config_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("process_triage");
+    config_dir.join("pattern_stats.json")
+}
+
+/// Save disabled patterns to config directory
+pub fn save_disabled_patterns(disabled: &DisabledPatterns) -> Result<(), std::io::Error> {
+    let path = disabled_signatures_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    // Convert PersistenceError to io::Error for compatibility
+    disabled.save_to_file(&path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
 }
 
 /// Parse a category string into SupervisorCategory
@@ -189,6 +239,13 @@ pub fn run_signature(format: &OutputFormat, args: &SignatureArgs) -> ExitCode {
         SignatureCommands::Validate => run_signature_validate(format),
         SignatureCommands::Export { output, user_only } => {
             run_signature_export(format, output, *user_only)
+        }
+        SignatureCommands::Disable { name, reason } => {
+            run_signature_disable(format, name, reason.as_deref())
+        }
+        SignatureCommands::Enable { name } => run_signature_enable(format, name),
+        SignatureCommands::Stats { min_matches, sort } => {
+            run_signature_stats(format, *min_matches, sort)
         }
     }
 }
@@ -741,6 +798,290 @@ fn run_signature_export(format: &OutputFormat, output_path: &str, user_only: boo
                 export_schema.signatures.len(),
                 output_path
             );
+        }
+    }
+
+    ExitCode::Clean
+}
+
+fn run_signature_disable(format: &OutputFormat, name: &str, reason: Option<&str>) -> ExitCode {
+    let session_id = SessionId::new();
+
+    // First check if the signature exists (in either built-in or user signatures)
+    let mut db = SignatureDatabase::new();
+    db.add_default_signatures();
+
+    let mut found = db.signatures().iter().any(|s| s.name == name);
+
+    // Also check user signatures
+    if !found {
+        if let Some(user_schema) = load_user_signatures() {
+            found = user_schema.signatures.iter().any(|s| s.name == name);
+        }
+    }
+
+    if !found {
+        match format {
+            OutputFormat::Json => {
+                let output = serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "session_id": session_id.0,
+                    "generated_at": chrono::Utc::now().to_rfc3339(),
+                    "command": "signature disable",
+                    "status": "error",
+                    "error": format!("Signature '{}' not found", name),
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            }
+            _ => eprintln!("Error: Signature '{}' not found", name),
+        }
+        return ExitCode::ArgsError;
+    }
+
+    // Load or create disabled patterns
+    let disabled_path = disabled_signatures_path();
+    let mut disabled = if disabled_path.exists() {
+        match DisabledPatterns::from_file(&disabled_path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("Warning: Failed to load disabled patterns: {}", e);
+                DisabledPatterns::default()
+            }
+        }
+    } else {
+        DisabledPatterns::default()
+    };
+
+    // Check if already disabled
+    if disabled.is_disabled(name) {
+        match format {
+            OutputFormat::Json => {
+                let output = serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "session_id": session_id.0,
+                    "generated_at": chrono::Utc::now().to_rfc3339(),
+                    "command": "signature disable",
+                    "status": "already_disabled",
+                    "name": name,
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            }
+            _ => println!("Signature '{}' is already disabled", name),
+        }
+        return ExitCode::Clean;
+    }
+
+    // Disable the signature
+    disabled.disable(name, reason);
+
+    // Save
+    if let Err(e) = save_disabled_patterns(&disabled) {
+        eprintln!("Failed to save disabled patterns: {}", e);
+        return ExitCode::ArgsError;
+    }
+
+    match format {
+        OutputFormat::Json => {
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "session_id": session_id.0,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "command": "signature disable",
+                "status": "success",
+                "name": name,
+                "reason": reason,
+            });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        _ => {
+            println!("Disabled signature '{}'", name);
+            if let Some(r) = reason {
+                println!("  Reason: {}", r);
+            }
+        }
+    }
+
+    ExitCode::Clean
+}
+
+fn run_signature_enable(format: &OutputFormat, name: &str) -> ExitCode {
+    let session_id = SessionId::new();
+
+    // Load disabled patterns
+    let disabled_path = disabled_signatures_path();
+    let mut disabled = if disabled_path.exists() {
+        match DisabledPatterns::from_file(&disabled_path) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("Warning: Failed to load disabled patterns: {}", e);
+                DisabledPatterns::default()
+            }
+        }
+    } else {
+        DisabledPatterns::default()
+    };
+
+    // Check if it's actually disabled
+    if !disabled.is_disabled(name) {
+        match format {
+            OutputFormat::Json => {
+                let output = serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "session_id": session_id.0,
+                    "generated_at": chrono::Utc::now().to_rfc3339(),
+                    "command": "signature enable",
+                    "status": "not_disabled",
+                    "name": name,
+                    "message": format!("Signature '{}' is not disabled", name),
+                });
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            }
+            _ => println!("Signature '{}' is not disabled", name),
+        }
+        return ExitCode::Clean;
+    }
+
+    // Enable (remove from disabled set)
+    disabled.enable(name);
+
+    // Save
+    if let Err(e) = save_disabled_patterns(&disabled) {
+        eprintln!("Failed to save disabled patterns: {}", e);
+        return ExitCode::ArgsError;
+    }
+
+    match format {
+        OutputFormat::Json => {
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "session_id": session_id.0,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "command": "signature enable",
+                "status": "success",
+                "name": name,
+            });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        _ => {
+            println!("Enabled signature '{}'", name);
+        }
+    }
+
+    ExitCode::Clean
+}
+
+fn run_signature_stats(format: &OutputFormat, min_matches: u32, sort_by: &str) -> ExitCode {
+    let session_id = SessionId::new();
+
+    // Load pattern stats
+    let stats_path = pattern_stats_path();
+    let stats = if stats_path.exists() {
+        match AllPatternStats::from_file(&stats_path) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Warning: Failed to load pattern stats: {}", e);
+                AllPatternStats::default()
+            }
+        }
+    } else {
+        AllPatternStats::default()
+    };
+
+    // Collect and filter stats
+    let mut stat_entries: Vec<(&String, &crate::supervision::pattern_persistence::PatternStats)> =
+        stats
+            .patterns
+            .iter()
+            .filter(|(_, s)| s.match_count >= min_matches)
+            .collect();
+
+    // Sort based on sort_by parameter
+    match sort_by {
+        "accepts" => {
+            stat_entries.sort_by(|a, b| b.1.accept_count.cmp(&a.1.accept_count));
+        }
+        "rejects" => {
+            stat_entries.sort_by(|a, b| b.1.reject_count.cmp(&a.1.reject_count));
+        }
+        "rate" => {
+            stat_entries.sort_by(|a, b| {
+                let rate_a = a.1.acceptance_rate().unwrap_or(0.0);
+                let rate_b = b.1.acceptance_rate().unwrap_or(0.0);
+                rate_b.partial_cmp(&rate_a).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+        _ => {
+            // Default: sort by matches
+            stat_entries.sort_by(|a, b| b.1.match_count.cmp(&a.1.match_count));
+        }
+    }
+
+    match format {
+        OutputFormat::Json => {
+            let stats_json: Vec<serde_json::Value> = stat_entries
+                .iter()
+                .map(|(name, s)| {
+                    serde_json::json!({
+                        "name": name,
+                        "match_count": s.match_count,
+                        "accept_count": s.accept_count,
+                        "reject_count": s.reject_count,
+                        "acceptance_rate": s.acceptance_rate(),
+                        "computed_confidence": s.computed_confidence,
+                        "first_seen": s.first_seen,
+                        "last_match": s.last_match,
+                    })
+                })
+                .collect();
+
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "session_id": session_id.0,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "command": "signature stats",
+                "filters": {
+                    "min_matches": min_matches,
+                    "sort_by": sort_by,
+                },
+                "stats": stats_json,
+                "count": stat_entries.len(),
+            });
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        }
+        _ => {
+            if stat_entries.is_empty() {
+                println!("No signature statistics available.");
+                if min_matches > 0 {
+                    println!("  (filtered by min_matches={})", min_matches);
+                }
+            } else {
+                println!("# Signature Statistics ({} patterns)", stat_entries.len());
+                println!();
+                println!(
+                    "{:30} {:>8} {:>8} {:>8} {:>8}",
+                    "NAME", "MATCHES", "ACCEPTS", "REJECTS", "RATE"
+                );
+                println!("{}", "-".repeat(66));
+
+                for (name, s) in &stat_entries {
+                    let rate: String = s
+                        .acceptance_rate()
+                        .map(|r| format!("{:.1}%", r * 100.0))
+                        .unwrap_or_else(|| "-".to_string());
+
+                    // Truncate name if too long
+                    let display_name: String = if name.len() > 30 {
+                        format!("{}...", &name[..27])
+                    } else {
+                        name.to_string()
+                    };
+
+                    println!(
+                        "{:30} {:>8} {:>8} {:>8} {:>8}",
+                        display_name, s.match_count, s.accept_count, s.reject_count, rate
+                    );
+                }
+            }
         }
     }
 
