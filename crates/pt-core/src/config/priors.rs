@@ -464,7 +464,29 @@ impl Default for Priors {
             change_point: None,
             causal_interventions: None,
             command_categories: None,
-            state_flags: None,
+            state_flags: Some(StateFlags {
+                flag_names: vec![
+                    "R".to_string(),
+                    "S".to_string(),
+                    "D".to_string(),
+                    "Z".to_string(),
+                    "T".to_string(),
+                    "t".to_string(),
+                    "X".to_string(),
+                ],
+                useful: Some(DirichletParams {
+                    alpha: vec![5.0, 8.0, 2.0, 0.1, 1.0, 0.5, 0.1],
+                }),
+                useful_bad: Some(DirichletParams {
+                    alpha: vec![7.0, 3.0, 4.0, 0.1, 2.0, 1.0, 0.1],
+                }),
+                abandoned: Some(DirichletParams {
+                    alpha: vec![1.0, 8.0, 1.0, 0.5, 3.0, 2.0, 0.1],
+                }),
+                zombie: Some(DirichletParams {
+                    alpha: vec![0.1, 0.1, 0.5, 10.0, 0.1, 0.1, 1.0],
+                }),
+            }),
             hierarchical: Some(Hierarchical {
                 shrinkage_enabled: Some(true),
                 shrinkage_strength: Some(0.3),

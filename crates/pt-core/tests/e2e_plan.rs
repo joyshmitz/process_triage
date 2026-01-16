@@ -293,6 +293,49 @@ mod plan_schema {
             generated_at
         );
     }
+
+    #[test]
+    fn candidates_include_ppid_and_state_fields() {
+        let output = pt_core()
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--threshold",
+                "0",
+                "--max-candidates",
+                "5",
+            ])
+            .assert()
+            // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
+            .code(predicate::in_iter([0, 1]))
+            .get_output()
+            .stdout
+            .clone();
+
+        let json: Value = serde_json::from_slice(&output).expect("Output should be valid JSON");
+        let candidates = json
+            .get("candidates")
+            .and_then(|v| v.as_array())
+            .expect("candidates must be an array");
+
+        assert!(
+            !candidates.is_empty(),
+            "expected at least one candidate at threshold 0"
+        );
+
+        for candidate in candidates {
+            assert!(
+                candidate.get("ppid").is_some(),
+                "candidate missing ppid field"
+            );
+            assert!(
+                candidate.get("state").is_some(),
+                "candidate missing state field"
+            );
+        }
+    }
 }
 
 // ============================================================================
