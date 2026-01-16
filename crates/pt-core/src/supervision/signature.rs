@@ -1542,6 +1542,572 @@ impl SignatureDatabase {
                 )]))
                 .as_builtin(),
         );
+
+        let _ = self.add(
+            SupervisorSignature::new("podman", SupervisorCategory::Orchestrator)
+                .with_confidence(0.85)
+                .with_notes("Podman container engine")
+                .with_process_patterns(vec![r"^podman$", r"^conmon$"])
+                .with_env_patterns(HashMap::from([("CONTAINER_HOST".into(), ".*".into())]))
+                .as_builtin(),
+        );
+
+        // AI Agents (additional)
+        let _ = self.add(
+            SupervisorSignature::new("copilot", SupervisorCategory::Agent)
+                .with_confidence(0.90)
+                .with_notes("GitHub Copilot")
+                .with_process_patterns(vec![r"^copilot$", r"^copilot-agent$"])
+                .with_env_patterns(HashMap::from([
+                    ("GITHUB_COPILOT_TOKEN".into(), ".*".into()),
+                ]))
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("codeium", SupervisorCategory::Agent)
+                .with_confidence(0.85)
+                .with_notes("Codeium AI coding assistant")
+                .with_process_patterns(vec![r"^codeium$", r"^codeium_language_server$"])
+                .with_env_patterns(HashMap::from([("CODEIUM_API_KEY".into(), ".*".into())]))
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("tabnine", SupervisorCategory::Agent)
+                .with_confidence(0.85)
+                .with_notes("Tabnine AI assistant")
+                .with_process_patterns(vec![r"^TabNine$", r"^tabnine$"])
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("continue", SupervisorCategory::Agent)
+                .with_confidence(0.85)
+                .with_notes("Continue AI coding assistant")
+                .with_process_patterns(vec![r"^continue$"])
+                .with_env_patterns(HashMap::from([("CONTINUE_GLOBAL_DIR".into(), ".*".into())]))
+                .as_builtin(),
+        );
+
+        // Test Runners
+        let _ = self.add(
+            SupervisorSignature::new("jest", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Jest JavaScript test runner")
+                .with_process_patterns(vec![r"^jest$"])
+                .with_arg_patterns(vec![r"jest"])
+                .with_env_patterns(HashMap::from([("JEST_WORKER_ID".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("mocha", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Mocha JavaScript test runner")
+                .with_process_patterns(vec![r"^mocha$", r"^_mocha$"])
+                .with_arg_patterns(vec![r"mocha"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("vitest", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Vitest test runner")
+                .with_process_patterns(vec![r"^vitest$"])
+                .with_arg_patterns(vec![r"vitest"])
+                .with_env_patterns(HashMap::from([("VITEST".into(), "true".into())]))
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("pytest", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("pytest Python test runner")
+                .with_process_patterns(vec![r"^pytest$", r"^py\.test$"])
+                .with_arg_patterns(vec![r"pytest", r"py\.test"])
+                .with_env_patterns(HashMap::from([("PYTEST_CURRENT_TEST".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("cargo-test", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Cargo test runner for Rust")
+                .with_arg_patterns(vec![r"cargo.*test", r"cargo-nextest"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("go-test", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Go test runner")
+                .with_arg_patterns(vec![r"go\s+test"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("rspec", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("RSpec Ruby test runner")
+                .with_process_patterns(vec![r"^rspec$"])
+                .with_arg_patterns(vec![r"rspec"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("phpunit", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("PHPUnit test runner")
+                .with_process_patterns(vec![r"^phpunit$"])
+                .with_arg_patterns(vec![r"phpunit"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("junit", SupervisorCategory::Other)
+                .with_confidence(0.75)
+                .with_notes("JUnit Java test runner")
+                .with_arg_patterns(vec![r"junit", r"org\.junit"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("playwright", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Playwright E2E test runner")
+                .with_process_patterns(vec![r"^playwright$"])
+                .with_arg_patterns(vec![r"playwright"])
+                .with_env_patterns(HashMap::from([("PLAYWRIGHT_BROWSERS_PATH".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("cypress", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Cypress E2E test runner")
+                .with_process_patterns(vec![r"^Cypress$", r"^cypress$"])
+                .with_arg_patterns(vec![r"cypress"])
+                .with_env_patterns(HashMap::from([("CYPRESS_CACHE_FOLDER".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        // Dev Servers
+        let _ = self.add(
+            SupervisorSignature::new("next-dev", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Next.js development server")
+                .with_arg_patterns(vec![r"next\s+dev", r"next-server"])
+                .with_env_patterns(HashMap::from([("NEXT_RUNTIME".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::dev_server())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("vite", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Vite development server")
+                .with_process_patterns(vec![r"^vite$"])
+                .with_arg_patterns(vec![r"vite"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::dev_server())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("webpack-dev-server", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Webpack development server")
+                .with_arg_patterns(vec![r"webpack-dev-server", r"webpack\s+serve"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::dev_server())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("create-react-app", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Create React App dev server")
+                .with_arg_patterns(vec![r"react-scripts\s+start"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::dev_server())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("flask", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Flask Python web server")
+                .with_arg_patterns(vec![r"flask\s+run", r"-m\s+flask"])
+                .with_env_patterns(HashMap::from([("FLASK_APP".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::dev_server())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("django", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Django Python web server")
+                .with_arg_patterns(vec![r"manage\.py\s+runserver", r"django"])
+                .with_env_patterns(HashMap::from([("DJANGO_SETTINGS_MODULE".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::dev_server())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("rails", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Ruby on Rails server")
+                .with_arg_patterns(vec![r"rails\s+server", r"rails\s+s\b"])
+                .with_env_patterns(HashMap::from([("RAILS_ENV".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::dev_server())
+                .as_builtin(),
+        );
+
+        // Build Tools
+        let _ = self.add(
+            SupervisorSignature::new("webpack", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Webpack bundler")
+                .with_process_patterns(vec![r"^webpack$"])
+                .with_arg_patterns(vec![r"webpack"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("esbuild", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("esbuild bundler")
+                .with_process_patterns(vec![r"^esbuild$"])
+                .with_arg_patterns(vec![r"esbuild"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("rollup", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Rollup bundler")
+                .with_process_patterns(vec![r"^rollup$"])
+                .with_arg_patterns(vec![r"rollup"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("tsc", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("TypeScript compiler")
+                .with_process_patterns(vec![r"^tsc$"])
+                .with_arg_patterns(vec![r"tsc\b", r"typescript"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("cargo-build", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Cargo build for Rust")
+                .with_arg_patterns(vec![r"cargo\s+build", r"cargo\s+check"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("go-build", SupervisorCategory::Other)
+                .with_confidence(0.85)
+                .with_notes("Go build")
+                .with_arg_patterns(vec![r"go\s+build", r"go\s+install"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("make", SupervisorCategory::Other)
+                .with_confidence(0.70)
+                .with_notes("GNU Make")
+                .with_process_patterns(vec![r"^make$", r"^gmake$"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("cmake", SupervisorCategory::Other)
+                .with_confidence(0.75)
+                .with_notes("CMake build system")
+                .with_process_patterns(vec![r"^cmake$"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("maven", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Apache Maven")
+                .with_process_patterns(vec![r"^mvn$"])
+                .with_arg_patterns(vec![r"mvn", r"maven"])
+                .with_env_patterns(HashMap::from([("MAVEN_HOME".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("gradle", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Gradle build tool")
+                .with_process_patterns(vec![r"^gradle$", r"^gradlew$"])
+                .with_env_patterns(HashMap::from([("GRADLE_HOME".into(), ".*".into())]))
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        // Databases
+        let _ = self.add(
+            SupervisorSignature::new("postgres", SupervisorCategory::Other)
+                .with_confidence(0.90)
+                .with_notes("PostgreSQL database")
+                .with_process_patterns(vec![r"^postgres$", r"^postmaster$"])
+                .with_pid_files(vec!["/var/run/postgresql/", "/tmp/.s.PGSQL"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("mysql", SupervisorCategory::Other)
+                .with_confidence(0.90)
+                .with_notes("MySQL database")
+                .with_process_patterns(vec![r"^mysqld$", r"^mariadbd?$"])
+                .with_pid_files(vec!["/var/run/mysqld/", "/var/lib/mysql/"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("redis", SupervisorCategory::Other)
+                .with_confidence(0.90)
+                .with_notes("Redis in-memory store")
+                .with_process_patterns(vec![r"^redis-server$"])
+                .with_pid_files(vec!["/var/run/redis/"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("mongodb", SupervisorCategory::Other)
+                .with_confidence(0.90)
+                .with_notes("MongoDB database")
+                .with_process_patterns(vec![r"^mongod$", r"^mongos$"])
+                .with_pid_files(vec!["/var/run/mongodb/"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("sqlite", SupervisorCategory::Other)
+                .with_confidence(0.70)
+                .with_notes("SQLite database CLI")
+                .with_process_patterns(vec![r"^sqlite3$"])
+                .as_builtin(),
+        );
+
+        // Language Servers (LSP)
+        let _ = self.add(
+            SupervisorSignature::new("rust-analyzer", SupervisorCategory::Ide)
+                .with_confidence(0.90)
+                .with_notes("Rust language server")
+                .with_process_patterns(vec![r"^rust-analyzer$"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("gopls", SupervisorCategory::Ide)
+                .with_confidence(0.90)
+                .with_notes("Go language server")
+                .with_process_patterns(vec![r"^gopls$"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("typescript-language-server", SupervisorCategory::Ide)
+                .with_confidence(0.90)
+                .with_notes("TypeScript language server")
+                .with_process_patterns(vec![r"^tsserver$", r"^typescript-language-server$"])
+                .with_arg_patterns(vec![r"tsserver", r"typescript-language-server"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("pylsp", SupervisorCategory::Ide)
+                .with_confidence(0.85)
+                .with_notes("Python language server")
+                .with_process_patterns(vec![r"^pylsp$", r"^pyls$", r"^python-language-server$"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("clangd", SupervisorCategory::Ide)
+                .with_confidence(0.90)
+                .with_notes("C/C++ language server")
+                .with_process_patterns(vec![r"^clangd$"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("solargraph", SupervisorCategory::Ide)
+                .with_confidence(0.85)
+                .with_notes("Ruby language server")
+                .with_process_patterns(vec![r"^solargraph$"])
+                .with_priors(SignaturePriors::likely_useful())
+                .with_expectations(ProcessExpectations::daemon())
+                .as_builtin(),
+        );
+
+        // Package Managers / Installers
+        let _ = self.add(
+            SupervisorSignature::new("npm", SupervisorCategory::Other)
+                .with_confidence(0.70)
+                .with_notes("npm package manager")
+                .with_process_patterns(vec![r"^npm$"])
+                .with_arg_patterns(vec![r"npm\s+(install|ci|run)"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("yarn", SupervisorCategory::Other)
+                .with_confidence(0.70)
+                .with_notes("Yarn package manager")
+                .with_process_patterns(vec![r"^yarn$"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("pnpm", SupervisorCategory::Other)
+                .with_confidence(0.70)
+                .with_notes("pnpm package manager")
+                .with_process_patterns(vec![r"^pnpm$"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("pip", SupervisorCategory::Other)
+                .with_confidence(0.70)
+                .with_notes("pip Python package manager")
+                .with_process_patterns(vec![r"^pip$", r"^pip3$"])
+                .with_arg_patterns(vec![r"pip\s+install"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        // Linters / Formatters
+        let _ = self.add(
+            SupervisorSignature::new("eslint", SupervisorCategory::Other)
+                .with_confidence(0.75)
+                .with_notes("ESLint JavaScript linter")
+                .with_process_patterns(vec![r"^eslint$"])
+                .with_arg_patterns(vec![r"eslint"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("prettier", SupervisorCategory::Other)
+                .with_confidence(0.75)
+                .with_notes("Prettier code formatter")
+                .with_process_patterns(vec![r"^prettier$"])
+                .with_arg_patterns(vec![r"prettier"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("black", SupervisorCategory::Other)
+                .with_confidence(0.75)
+                .with_notes("Black Python formatter")
+                .with_process_patterns(vec![r"^black$"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("rustfmt", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Rust code formatter")
+                .with_process_patterns(vec![r"^rustfmt$"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
+
+        let _ = self.add(
+            SupervisorSignature::new("clippy", SupervisorCategory::Other)
+                .with_confidence(0.80)
+                .with_notes("Clippy Rust linter")
+                .with_arg_patterns(vec![r"clippy"])
+                .with_priors(SignaturePriors::likely_abandoned())
+                .with_expectations(ProcessExpectations::short_lived_task())
+                .as_builtin(),
+        );
     }
 
     /// Export to the legacy SupervisorDatabase format.

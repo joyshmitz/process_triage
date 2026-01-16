@@ -58,6 +58,60 @@ log_warn() {
 }
 
 # ==============================================================================
+# Platform Detection
+# ==============================================================================
+
+detect_os() {
+    local os
+    os=$(uname -s | tr '[:upper:]' '[:lower:]')
+
+    case "$os" in
+        linux)
+            echo "linux"
+            ;;
+        darwin)
+            echo "macos"
+            ;;
+        *)
+            log_error "Unsupported operating system: $os"
+            log_error "pt-core supports Linux and macOS only"
+            return 1
+            ;;
+    esac
+}
+
+detect_arch() {
+    local arch
+    arch=$(uname -m)
+
+    case "$arch" in
+        x86_64|amd64)
+            echo "x86_64"
+            ;;
+        aarch64|arm64)
+            echo "aarch64"
+            ;;
+        *)
+            log_error "Unsupported architecture: $arch"
+            log_error "pt-core supports x86_64 and aarch64 only"
+            return 1
+            ;;
+    esac
+}
+
+# Build artifact name for pt-core binary
+# Format: pt-core-{os}-{arch}-{version}.tar.gz
+get_pt_core_artifact_name() {
+    local version="$1"
+    local os arch
+
+    os=$(detect_os) || return 1
+    arch=$(detect_arch) || return 1
+
+    echo "pt-core-${os}-${arch}-${version}.tar.gz"
+}
+
+# ==============================================================================
 # Utilities
 # ==============================================================================
 
