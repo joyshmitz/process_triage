@@ -406,7 +406,8 @@ pub fn parse_fd_dir(dir: &Path, fdinfo_dir: Option<&Path>) -> Option<FdInfo> {
     let entries = fs::read_dir(dir).ok()?;
     let mut inspected_count = 0;
     // Limit inspection to prevent stall on processes with massive FD counts (e.g. databases)
-    const MAX_INSPECT: usize = 2000;
+    // Increased to 50k to ensure we don't miss critical locks in heavy workloads
+    const MAX_INSPECT: usize = 50_000;
 
     for entry in entries.flatten() {
         // Parse FD number from filename; skip non-numeric entries defensively.
