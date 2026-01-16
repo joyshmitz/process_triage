@@ -299,6 +299,29 @@ impl EnvironDatabase {
             "PYCHARM_VM_OPTIONS",
             0.85,
         ));
+
+        // macOS launchd (Orchestrator)
+        // XPC_SERVICE_NAME is set for XPC services managed by launchd
+        self.add(EnvPattern::new(
+            "launchd",
+            SupervisorCategory::Orchestrator,
+            "XPC_SERVICE_NAME",
+            0.95,
+        ));
+        // __CFBundleIdentifier is set for application bundles launched by launchd
+        self.add(EnvPattern::new(
+            "launchd",
+            SupervisorCategory::Orchestrator,
+            "__CFBundleIdentifier",
+            0.80,
+        ));
+        // LAUNCH_DAEMON indicates a daemon managed by launchd
+        self.add(EnvPattern::new(
+            "launchd",
+            SupervisorCategory::Orchestrator,
+            "LAUNCH_DAEMON",
+            0.90,
+        ));
     }
 
     /// Find matching patterns in an environment.
@@ -521,5 +544,58 @@ mod tests {
 
         // Should have at least PATH
         assert!(!env.is_empty());
+    }
+
+    #[test]
+    fn test_launchd_xpc_service_name_detection() {
+        let analyzer = EnvironAnalyzer::new();
+        let mut env = HashMap::new();
+        env.insert(
+            "XPC_SERVICE_NAME".to_string(),
+            "com.apple.Spotlight".to_string(),
+        );
+
+        let result = analyzer.analyze_env(&env);
+        assert!(result.is_supervised);
+        assert_eq!(result.supervisor_name, Some("launchd".to_string()));
+        assert_eq!(result.category, Some(SupervisorCategory::Orchestrator));
+        assert!(result.confidence >= 0.9);
+    }
+
+    #[test]
+    fn test_launchd_cfbundle_detection() {
+        let analyzer = EnvironAnalyzer::new();
+        let mut env = HashMap::new();
+        env.insert(
+            "__CFBundleIdentifier".to_string(),
+            "com.apple.Safari".to_string(),
+        );
+
+        let result = analyzer.analyze_env(&env);
+        assert!(result.is_supervised);
+        assert_eq!(result.supervisor_name, Some("launchd".to_string()));
+        assert_eq!(result.category, Some(SupervisorCategory::Orchestrator));
+    }
+
+    #[test]
+    fn test_launchd_database_patterns_exist() {
+        let db = EnvironDatabase::with_defaults();
+
+        // Verify XPC_SERVICE_NAME pattern exists
+        let has_xpc = db
+            .patterns
+            .iter()
+            .any(|p| p.var_name == "XPC_SERVICE_NAME" && p.supervisor_name == "launchd");
+        assert!(has_xpc, "should have XPC_SERVICE_NAME pattern for launchd");
+
+        // Verify __CFBundleIdentifier pattern exists
+        let has_cfbundle = db
+            .patterns
+            .iter()
+            .any(|p| p.var_name == "__CFBundleIdentifier" && p.supervisor_name == "launchd");
+        assert!(
+            has_cfbundle,
+            "should have __CFBundleIdentifier pattern for launchd"
+        );
     }
 }

@@ -70,6 +70,8 @@ pub enum SupervisorActionError {
 pub enum SupervisorType {
     /// systemd service manager
     Systemd,
+    /// macOS launchd service manager
+    Launchd,
     /// pm2 Node.js process manager
     Pm2,
     /// supervisord process control system
@@ -92,6 +94,7 @@ impl std::fmt::Display for SupervisorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SupervisorType::Systemd => write!(f, "systemd"),
+            SupervisorType::Launchd => write!(f, "launchd"),
             SupervisorType::Pm2 => write!(f, "pm2"),
             SupervisorType::Supervisord => write!(f, "supervisord"),
             SupervisorType::Docker => write!(f, "docker"),
@@ -181,6 +184,14 @@ pub struct SupervisorParameters {
     /// For systemd: unit name (e.g., "nginx.service")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub systemd_unit: Option<String>,
+
+    /// For launchd: service label (e.g., "com.apple.Spotlight")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launchd_label: Option<String>,
+
+    /// For launchd: domain target (e.g., "gui/501", "system")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub launchd_domain: Option<String>,
 
     /// For pm2: process name or ID
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -443,6 +454,7 @@ impl SupervisorActionRunner {
     ) -> Result<(String, Vec<String>), SupervisorActionError> {
         match action.supervisor_type {
             SupervisorType::Systemd => self.build_systemd_command(action),
+            SupervisorType::Launchd => self.build_launchd_command(action),
             SupervisorType::Pm2 => self.build_pm2_command(action),
             SupervisorType::Supervisord => self.build_supervisord_command(action),
             SupervisorType::Docker => self.build_docker_command(action),
@@ -483,6 +495,65 @@ impl SupervisorActionRunner {
             "systemctl".to_string(),
             vec![subcmd.to_string(), unit.clone()],
         ))
+    }
+
+    /// Build launchd command using launchctl.
+    ///
+    /// # launchctl Command Reference
+    ///
+    /// Modern launchctl (macOS 10.10+) uses domain-based commands:
+    /// - `launchctl bootout <domain-target> [service-path]` - Stop and unload a service
+    /// - `launchctl bootstrap <domain-target> <service-path>` - Load and start a service
+    /// - `launchctl kickstart [-k] <service-target>` - Force start (with -k: kill and restart)
+    /// - `launchctl kill <signal> <service-target>` - Send signal to service
+    ///
+    /// Domain targets:
+    /// - `system` - System-wide services (root)
+    /// - `gui/<uid>` - User GUI session (e.g., gui/501)
+    /// - `user/<uid>` - User background services
+    /// - `pid/<pid>` - Per-process services
+    fn build_launchd_command(
+        &self,
+        action: &SupervisorPlanAction,
+    ) -> Result<(String, Vec<String>), SupervisorActionError> {
+        let label = action
+            .parameters
+            .launchd_label
+            .as_ref()
+            .unwrap_or(&action.unit_identifier);
+
+        // Default to system domain if not specified
+        let domain = action
+            .parameters
+            .launchd_domain
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("system");
+
+        // Build the service-target for kickstart/kill commands
+        let service_target = format!("{}/{}", domain, label);
+
+        let args = match action.command {
+            SupervisorCommand::Stop => {
+                // bootout stops and unloads the service
+                vec!["bootout".to_string(), service_target]
+            }
+            SupervisorCommand::Restart => {
+                // kickstart -k kills the running process and restarts it
+                vec!["kickstart".to_string(), "-k".to_string(), service_target]
+            }
+            SupervisorCommand::Kill => {
+                // Send SIGKILL to the service
+                vec!["kill".to_string(), "KILL".to_string(), service_target]
+            }
+            SupervisorCommand::Delete => {
+                // bootout is also used to unload/remove
+                // For persistent removal, the plist file would need to be deleted
+                vec!["bootout".to_string(), service_target]
+            }
+        };
+
+        Ok(("launchctl".to_string(), args))
     }
 
     fn build_pm2_command(
@@ -710,6 +781,7 @@ impl SupervisorActionRunner {
     fn detect_respawn(&self, action: &SupervisorPlanAction) -> bool {
         match action.supervisor_type {
             SupervisorType::Systemd => self.detect_systemd_respawn(action),
+            SupervisorType::Launchd => self.detect_launchd_respawn(action),
             SupervisorType::Pm2 => self.detect_pm2_respawn(action),
             SupervisorType::Docker | SupervisorType::Podman | SupervisorType::Containerd => {
                 self.detect_container_respawn(action)
@@ -732,6 +804,47 @@ impl SupervisorActionRunner {
         if let Ok(output) = output {
             let status = String::from_utf8_lossy(&output.stdout);
             status.trim() == "active"
+        } else {
+            false
+        }
+    }
+
+    /// Detect if a launchd service respawned after being stopped.
+    ///
+    /// Uses `launchctl list` to check if the service is running.
+    /// Output format: `<pid>\t<last_exit_status>\t<label>`
+    /// A non-hyphen PID indicates the service is running.
+    fn detect_launchd_respawn(&self, action: &SupervisorPlanAction) -> bool {
+        let label = action
+            .parameters
+            .launchd_label
+            .as_ref()
+            .unwrap_or(&action.unit_identifier);
+
+        // launchctl list <label> returns info about a specific service
+        // Output: <pid>\t<last_exit_status>\t<label>
+        // If PID is "-", the service is not running
+        let output = Command::new("launchctl").args(["list", label]).output();
+
+        if let Ok(output) = output {
+            if !output.status.success() {
+                // Service not found or not loaded
+                return false;
+            }
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            // Parse the output - first column is PID
+            // Example: "12345\t0\tcom.example.myservice"
+            // Or: "-\t0\tcom.example.myservice" (not running)
+            if let Some(first_line) = stdout.lines().next() {
+                let parts: Vec<&str> = first_line.split('\t').collect();
+                if let Some(pid_str) = parts.first() {
+                    // If PID is not "-" and parses as a number, service is running
+                    if *pid_str != "-" && pid_str.parse::<u32>().is_ok() {
+                        return true;
+                    }
+                }
+            }
+            false
         } else {
             false
         }
@@ -1140,5 +1253,130 @@ mod tests {
             SupervisorType::from(AppSupervisorType::Nodemon),
             SupervisorType::Nodemon
         );
+    }
+
+    #[test]
+    fn test_launchd_type_display() {
+        assert_eq!(SupervisorType::Launchd.to_string(), "launchd");
+    }
+
+    #[test]
+    fn test_build_launchd_command_stop() {
+        let runner = SupervisorActionRunner::new();
+        let action = SupervisorPlanAction {
+            action_id: "test-launchd-stop".to_string(),
+            pid: 1234,
+            supervisor_type: SupervisorType::Launchd,
+            unit_identifier: "com.example.myservice".to_string(),
+            command: SupervisorCommand::Stop,
+            display_command: "launchctl bootout system/com.example.myservice".to_string(),
+            parameters: SupervisorParameters {
+                launchd_label: Some("com.example.myservice".to_string()),
+                launchd_domain: Some("system".to_string()),
+                ..Default::default()
+            },
+            timeout: Duration::from_secs(30),
+            blocked: false,
+            block_reason: None,
+        };
+
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "launchctl");
+        assert_eq!(args, vec!["bootout", "system/com.example.myservice"]);
+    }
+
+    #[test]
+    fn test_build_launchd_command_restart() {
+        let runner = SupervisorActionRunner::new();
+        let action = SupervisorPlanAction {
+            action_id: "test-launchd-restart".to_string(),
+            pid: 1234,
+            supervisor_type: SupervisorType::Launchd,
+            unit_identifier: "com.apple.Spotlight".to_string(),
+            command: SupervisorCommand::Restart,
+            display_command: "launchctl kickstart -k gui/501/com.apple.Spotlight".to_string(),
+            parameters: SupervisorParameters {
+                launchd_label: Some("com.apple.Spotlight".to_string()),
+                launchd_domain: Some("gui/501".to_string()),
+                ..Default::default()
+            },
+            timeout: Duration::from_secs(30),
+            blocked: false,
+            block_reason: None,
+        };
+
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "launchctl");
+        assert_eq!(
+            args,
+            vec!["kickstart", "-k", "gui/501/com.apple.Spotlight"]
+        );
+    }
+
+    #[test]
+    fn test_build_launchd_command_kill() {
+        let runner = SupervisorActionRunner::new();
+        let action = SupervisorPlanAction {
+            action_id: "test-launchd-kill".to_string(),
+            pid: 1234,
+            supervisor_type: SupervisorType::Launchd,
+            unit_identifier: "com.example.daemon".to_string(),
+            command: SupervisorCommand::Kill,
+            display_command: "launchctl kill KILL system/com.example.daemon".to_string(),
+            parameters: SupervisorParameters {
+                launchd_label: Some("com.example.daemon".to_string()),
+                launchd_domain: Some("system".to_string()),
+                ..Default::default()
+            },
+            timeout: Duration::from_secs(30),
+            blocked: false,
+            block_reason: None,
+        };
+
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "launchctl");
+        assert_eq!(args, vec!["kill", "KILL", "system/com.example.daemon"]);
+    }
+
+    #[test]
+    fn test_build_launchd_command_default_domain() {
+        // Test that system domain is used when launchd_domain is not specified
+        let runner = SupervisorActionRunner::new();
+        let action = SupervisorPlanAction {
+            action_id: "test-launchd-default".to_string(),
+            pid: 1234,
+            supervisor_type: SupervisorType::Launchd,
+            unit_identifier: "com.example.service".to_string(),
+            command: SupervisorCommand::Stop,
+            display_command: "launchctl bootout system/com.example.service".to_string(),
+            parameters: SupervisorParameters {
+                launchd_label: Some("com.example.service".to_string()),
+                // launchd_domain is None - should default to "system"
+                ..Default::default()
+            },
+            timeout: Duration::from_secs(30),
+            blocked: false,
+            block_reason: None,
+        };
+
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "launchctl");
+        assert_eq!(args, vec!["bootout", "system/com.example.service"]);
+    }
+
+    #[test]
+    fn test_supervisor_parameters_launchd_fields() {
+        let params = SupervisorParameters {
+            launchd_label: Some("com.example.myservice".to_string()),
+            launchd_domain: Some("gui/501".to_string()),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            params.launchd_label,
+            Some("com.example.myservice".to_string())
+        );
+        assert_eq!(params.launchd_domain, Some("gui/501".to_string()));
+        assert!(params.systemd_unit.is_none());
     }
 }
