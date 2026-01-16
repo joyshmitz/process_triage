@@ -184,11 +184,7 @@ impl MixtureSprtState {
         Self {
             log_lambda: 0.0,
             n_observations: 0,
-            increments: if config.track_increments {
-                Vec::new()
-            } else {
-                Vec::new()
-            },
+            increments: Vec::new(),
             config,
         }
     }

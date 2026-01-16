@@ -712,7 +712,7 @@ impl BeliefPropagator {
             let log_sum = log_marginal
                 .iter()
                 .cloned()
-                .fold(f64::NEG_INFINITY, |a, b| log_sum_exp(a, b));
+                .fold(f64::NEG_INFINITY, log_sum_exp);
             let mut state_probs = HashMap::new();
 
             for state in State::all() {

@@ -357,15 +357,13 @@ fn get_process_socket_inodes(pid: u32) -> Option<HashSet<u64>> {
     let mut inodes = HashSet::new();
 
     let entries = fs::read_dir(&fd_path).ok()?;
-    let mut inspected_count = 0;
     // Limit inspection to prevent stall on processes with massive FD counts
     const MAX_INSPECT: usize = 50_000;
 
-    for entry in entries.flatten() {
+    for (inspected_count, entry) in entries.flatten().enumerate() {
         if inspected_count >= MAX_INSPECT {
             break;
         }
-        inspected_count += 1;
 
         if let Ok(target) = fs::read_link(entry.path()) {
             let target_str = target.to_string_lossy();
@@ -394,37 +392,35 @@ pub fn parse_proc_net_tcp(path: &str, is_ipv6: bool) -> Option<Vec<TcpConnection
 pub fn parse_proc_net_tcp_reader<R: BufRead>(reader: R, is_ipv6: bool) -> Vec<TcpConnection> {
     let mut connections = Vec::new();
 
-    for line in reader.lines().skip(1) {
-        // Skip header line (handled by skip(1) for the first line, but we need to handle iterator errors)
-        if let Ok(line) = line {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 10 {
-                continue;
-            }
-
-            // Format: sl local_address rem_address st tx_queue:rx_queue tr:tm->when retrnsmt uid timeout inode
-            let local = parts[1];
-            let remote = parts[2];
-            let state_hex = parts[3];
-            let inode_str = parts[9];
-
-            let (local_addr, local_port) = parse_addr_port(local, is_ipv6);
-            let (remote_addr, remote_port) = parse_addr_port(remote, is_ipv6);
-            let state = u8::from_str_radix(state_hex, 16)
-                .map(TcpState::from_hex)
-                .unwrap_or(TcpState::Unknown);
-            let inode = inode_str.parse().unwrap_or(0);
-
-            connections.push(TcpConnection {
-                local_addr,
-                local_port,
-                remote_addr,
-                remote_port,
-                state,
-                inode,
-                is_ipv6,
-            });
+    // Skip header line using skip(1), flatten() to ignore I/O errors on individual lines
+    for line in reader.lines().skip(1).flatten() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 10 {
+            continue;
         }
+
+        // Format: sl local_address rem_address st tx_queue:rx_queue tr:tm->when retrnsmt uid timeout inode
+        let local = parts[1];
+        let remote = parts[2];
+        let state_hex = parts[3];
+        let inode_str = parts[9];
+
+        let (local_addr, local_port) = parse_addr_port(local, is_ipv6);
+        let (remote_addr, remote_port) = parse_addr_port(remote, is_ipv6);
+        let state = u8::from_str_radix(state_hex, 16)
+            .map(TcpState::from_hex)
+            .unwrap_or(TcpState::Unknown);
+        let inode = inode_str.parse().unwrap_or(0);
+
+        connections.push(TcpConnection {
+            local_addr,
+            local_port,
+            remote_addr,
+            remote_port,
+            state,
+            inode,
+            is_ipv6,
+        });
     }
 
     connections
@@ -446,30 +442,28 @@ pub fn parse_proc_net_udp(path: &str, is_ipv6: bool) -> Option<Vec<UdpSocket>> {
 pub fn parse_proc_net_udp_reader<R: BufRead>(reader: R, is_ipv6: bool) -> Vec<UdpSocket> {
     let mut sockets = Vec::new();
 
-    for line in reader.lines().skip(1) {
-        if let Ok(line) = line {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 10 {
-                continue;
-            }
-
-            let local = parts[1];
-            let remote = parts[2];
-            let inode_str = parts[9];
-
-            let (local_addr, local_port) = parse_addr_port(local, is_ipv6);
-            let (remote_addr, remote_port) = parse_addr_port(remote, is_ipv6);
-            let inode = inode_str.parse().unwrap_or(0);
-
-            sockets.push(UdpSocket {
-                local_addr,
-                local_port,
-                remote_addr,
-                remote_port,
-                inode,
-                is_ipv6,
-            });
+    for line in reader.lines().skip(1).flatten() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 10 {
+            continue;
         }
+
+        let local = parts[1];
+        let remote = parts[2];
+        let inode_str = parts[9];
+
+        let (local_addr, local_port) = parse_addr_port(local, is_ipv6);
+        let (remote_addr, remote_port) = parse_addr_port(remote, is_ipv6);
+        let inode = inode_str.parse().unwrap_or(0);
+
+        sockets.push(UdpSocket {
+            local_addr,
+            local_port,
+            remote_addr,
+            remote_port,
+            inode,
+            is_ipv6,
+        });
     }
 
     sockets
@@ -491,38 +485,36 @@ pub fn parse_proc_net_unix(path: &str) -> Option<Vec<UnixSocket>> {
 pub fn parse_proc_net_unix_reader<R: BufRead>(reader: R) -> Vec<UnixSocket> {
     let mut sockets = Vec::new();
 
-    for line in reader.lines().skip(1) {
-        if let Ok(line) = line {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 7 {
-                continue;
-            }
-
-            // Format: Num RefCount Protocol Flags Type St Inode Path
-            let socket_type = parts[4]
-                .parse()
-                .ok()
-                .map(UnixSocketType::from_type)
-                .unwrap_or(UnixSocketType::Unknown);
-            let state = parts[5]
-                .parse()
-                .ok()
-                .map(UnixSocketState::from_state)
-                .unwrap_or(UnixSocketState::Unknown);
-            let inode = parts[6].parse().unwrap_or(0);
-            let path = if parts.len() > 7 {
-                Some(parts[7..].join(" "))
-            } else {
-                None
-            };
-
-            sockets.push(UnixSocket {
-                path,
-                socket_type,
-                state,
-                inode,
-            });
+    for line in reader.lines().skip(1).flatten() {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 7 {
+            continue;
         }
+
+        // Format: Num RefCount Protocol Flags Type St Inode Path
+        let socket_type = parts[4]
+            .parse()
+            .ok()
+            .map(UnixSocketType::from_type)
+            .unwrap_or(UnixSocketType::Unknown);
+        let state = parts[5]
+            .parse()
+            .ok()
+            .map(UnixSocketState::from_state)
+            .unwrap_or(UnixSocketState::Unknown);
+        let inode = parts[6].parse().unwrap_or(0);
+        let path = if parts.len() > 7 {
+            Some(parts[7..].join(" "))
+        } else {
+            None
+        };
+
+        sockets.push(UnixSocket {
+            path,
+            socket_type,
+            state,
+            inode,
+        });
     }
 
     sockets

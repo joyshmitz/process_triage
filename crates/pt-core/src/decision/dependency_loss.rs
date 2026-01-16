@@ -497,7 +497,7 @@ pub fn compute_critical_file_inflation(
     let soft_count = critical_files.len() - hard_count;
 
     let mut categories: Vec<CriticalFileCategory> =
-        critical_files.iter().map(|f| f.category.clone()).collect();
+        critical_files.iter().map(|f| f.category).collect();
     categories.sort_by_key(|c| format!("{:?}", c));
     categories.dedup();
 

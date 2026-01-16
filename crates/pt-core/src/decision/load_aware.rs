@@ -27,7 +27,7 @@ impl LoadSignals {
         let load1 = system_state
             .get("load")
             .and_then(|v| v.as_array())
-            .and_then(|arr| arr.get(0))
+            .and_then(|arr| arr.first())
             .and_then(|v| v.as_f64());
 
         let cores = system_state
@@ -50,11 +50,11 @@ impl LoadSignals {
             None
         };
 
-        let psi_avg10 = system_state.get("psi").and_then(|psi| {
+        let psi_avg10 = system_state.get("psi").map(|psi| {
             let cpu = psi.get("cpu").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let mem = psi.get("memory").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let io = psi.get("io").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            Some(cpu.max(mem).max(io))
+            cpu.max(mem).max(io)
         });
 
         Self {

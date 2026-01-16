@@ -445,12 +445,10 @@ fn compute_probe_voi(
 
     let ratio = if cost > 0.0 {
         -voi / cost // Higher ratio = better (more loss reduction per cost)
+    } else if voi < 0.0 {
+        f64::INFINITY
     } else {
-        if voi < 0.0 {
-            f64::INFINITY
-        } else {
-            0.0
-        }
+        0.0
     };
 
     Ok(ProbeVoi {

@@ -704,7 +704,7 @@ impl ConstraintChecker {
 }
 
 /// Candidate information needed for constraint checking.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct RobotCandidate {
     /// Posterior probability for the predicted class.
     pub posterior: Option<f64>,
@@ -725,20 +725,6 @@ pub struct RobotCandidate {
     pub has_policy_snapshot: bool,
     /// Whether process is supervised by an agent/IDE/CI.
     pub is_supervised: bool,
-}
-
-impl Default for RobotCandidate {
-    fn default() -> Self {
-        Self {
-            posterior: None,
-            memory_mb: None,
-            has_known_signature: false,
-            category: None,
-            is_kill_action: false,
-            has_policy_snapshot: false,
-            is_supervised: false,
-        }
-    }
 }
 
 impl RobotCandidate {
