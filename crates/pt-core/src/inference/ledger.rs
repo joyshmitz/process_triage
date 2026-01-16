@@ -221,7 +221,7 @@ fn evidence_to_json(evidence: &crate::inference::Evidence) -> serde_json::Value 
 }
 
 // Re-export Classification if needed by other modules
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Classification {
     Useful,

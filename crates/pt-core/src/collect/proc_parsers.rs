@@ -603,7 +603,7 @@ pub fn parse_fdinfo_content(content: &str) -> Option<OpenMode> {
 }
 
 /// Detect if a file path is a critical file for safety gates.
-pub(crate) fn detect_critical_file(fd: u32, path: &str) -> Option<CriticalFile> {
+fn detect_critical_file(fd: u32, path: &str) -> Option<CriticalFile> {
     let path_lower = path.to_lowercase();
 
     // SQLite WAL and journal files - HARD block (active transaction in progress)
@@ -1627,14 +1627,13 @@ nice                                         :                    0
     }
 
     #[test]
-    fn test_repro_run_lock_misclassification() {
-        // A standard application lock file in /run/lock
+    fn test_critical_file_run_lock_is_soft() {
+        // A standard application lock file in /run/lock should be treated as a generic AppLock
         let path = "/run/lock/my-custom-app.lock";
         
         let cf = detect_critical_file(123, path).expect("Should detect as critical file");
         
-        // Expectation: This should be an AppLock (Soft), not SystemPackageLock (Hard)
-        // Fixed behavior:
+        // Should be an AppLock (Soft), not SystemPackageLock (Hard)
         assert_eq!(cf.category, CriticalFileCategory::AppLock, "Should be classified as generic AppLock");
         assert_eq!(cf.strength, DetectionStrength::Soft, "Should be a Soft block");
     }
