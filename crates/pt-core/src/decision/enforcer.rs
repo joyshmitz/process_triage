@@ -354,16 +354,13 @@ impl RateLimiter {
 
     fn check_and_increment(&self, override_limit: Option<u32>) -> Result<(), String> {
         // Use compare_exchange loop to avoid race condition.
-        // The previous implementation (fetch_add + conditional fetch_sub) had a TOCTOU bug:
-        // two threads could both increment, both see the overflow, and both decrement,
-        // resulting in incorrect count and bypassed rate limiting.
         let limit = match override_limit {
             Some(l) => std::cmp::min(l, self.max_per_run),
             None => self.max_per_run,
         };
 
+        let mut current = self.kills_this_run.load(Ordering::Acquire);
         loop {
-            let current = self.kills_this_run.load(Ordering::Acquire);
             if current >= limit {
                 return Err(format!(
                     "rate limit exceeded: {} kills already performed this run (max {})",
@@ -378,7 +375,7 @@ impl RateLimiter {
                 Ordering::Relaxed,
             ) {
                 Ok(_) => return Ok(()),
-                Err(_) => continue, // Value changed, retry
+                Err(actual) => current = actual, // Retry with the actual value seen
             }
         }
     }
@@ -1269,12 +1266,7 @@ mod tests {
 
         let result = enforcer.check_action(&candidate, Action::Kill, true);
         assert!(!result.allowed);
-        assert!(result
-            .violation
-            .as_ref()
-            .unwrap()
-            .message
-            .contains("memory"));
+        assert!(result.violation.as_ref().unwrap().message.contains("memory"));
     }
 
     #[test]
@@ -1303,12 +1295,7 @@ mod tests {
 
         let result = enforcer.check_action(&candidate, Action::Kill, false);
         assert!(!result.allowed);
-        assert!(result
-            .violation
-            .as_ref()
-            .unwrap()
-            .message
-            .contains("locked"));
+        assert!(result.violation.as_ref().unwrap().message.contains("locked"));
     }
 
     #[test]
@@ -1372,7 +1359,6 @@ mod tests {
             case_insensitive: true,
             notes: None,
         }];
-
         let enforcer = PolicyEnforcer::new(&policy).unwrap();
 
         let mut candidate = test_candidate();
@@ -1392,7 +1378,6 @@ mod tests {
             case_insensitive: false,
             notes: None,
         }];
-
         let enforcer = PolicyEnforcer::new(&policy).unwrap();
 
         let mut candidate = test_candidate();
@@ -1428,7 +1413,6 @@ mod tests {
             case_insensitive: false,
             notes: None,
         }];
-
         let enforcer = PolicyEnforcer::new(&policy).unwrap();
 
         let mut candidate = test_candidate();
@@ -1451,7 +1435,6 @@ mod tests {
             case_insensitive: false,
             notes: None,
         }];
-
         let enforcer = PolicyEnforcer::new(&policy).unwrap();
 
         let mut candidate = test_candidate();
@@ -1473,7 +1456,6 @@ mod tests {
             case_insensitive: true,
             notes: None,
         }];
-
         let enforcer = PolicyEnforcer::new(&policy).unwrap();
 
         let mut candidate = test_candidate();

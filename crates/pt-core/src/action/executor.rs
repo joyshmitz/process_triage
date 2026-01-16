@@ -5,7 +5,7 @@ use crate::plan::{Plan, PlanAction, PreCheck};
 use pt_common::ProcessIdentity;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -236,67 +236,61 @@ fn status_from_error(err: ActionError) -> ActionStatus {
 }
 
 struct ActionLock {
-    lock_path: PathBuf,
+    file: std::fs::File,
 }
 
 impl ActionLock {
     fn acquire(path: &Path) -> Result<Self, ExecutionError> {
-        let file = OpenOptions::new().create_new(true).write(true).open(path);
-        match file {
-            Ok(mut handle) => {
-                // Write PID to lock file for stale lock detection
-                let _ = handle.write_all(format!("{}", std::process::id()).as_bytes());
-                Ok(Self {
-                    lock_path: path.to_path_buf(),
-                })
-            }
-            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
-                // Check if the lock is stale (holder process is dead)
-                if Self::is_stale_lock(path) {
-                    // Try to remove stale lock and acquire
-                    if fs::remove_file(path).is_ok() {
-                        return Self::acquire(path); // Retry acquisition
-                    }
-                }
-                Err(ExecutionError::LockUnavailable)
-            }
-            Err(err) => Err(ExecutionError::Io(err)),
-        }
-    }
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)?;
 
-    /// Check if a lock file is stale (holder process no longer exists).
-    fn is_stale_lock(path: &Path) -> bool {
-        if let Ok(contents) = fs::read_to_string(path) {
-            if let Ok(pid) = contents.trim().parse::<u32>() {
-                // Check if process with this PID exists
-                #[cfg(unix)]
-                {
-                    let result = unsafe { libc::kill(pid as i32, 0) };
-                    if result == 0 {
-                        return false;
-                    }
-                    let err = std::io::Error::last_os_error();
-                    return match err.raw_os_error() {
-                        Some(code) if code == libc::ESRCH => true,
-                        Some(code) if code == libc::EPERM => false,
-                        _ => true,
-                    };
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            let fd = file.as_raw_fd();
+            // LOCK_EX = Exclusive lock
+            // LOCK_NB = Non-blocking (fail if held)
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            
+            if result != 0 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::WouldBlock {
+                    return Err(ExecutionError::LockUnavailable);
                 }
-                #[cfg(not(unix))]
-                {
-                    let _ = pid;
-                    return false;
-                }
+                return Err(ExecutionError::Io(err));
             }
         }
-        // Can't read/parse lock file - might be corrupted, treat as stale
-        true
+
+        // On non-unix, we just hold the file handle (basic locking)
+        // Ideally we'd use a crate like fs2 for cross-platform, but we stick to libc/std
+        
+        // Truncate and write our PID
+        file.set_len(0)?;
+        let mut writer = &file;
+        let _ = writer.write_all(format!("{}", std::process::id()).as_bytes());
+        let _ = writer.flush();
+
+        Ok(Self {
+            file,
+        })
     }
 }
 
 impl Drop for ActionLock {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.lock_path);
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            // Best effort unlock
+            unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN); }
+        }
+        // Do NOT remove the lock file. Removing it introduces a race condition
+        // where a waiting process might acquire a lock on a file descriptor
+        // that refers to a deleted inode, while a new process creates a new file.
+        // Letting the empty lock file persist is safe and standard practice.
     }
 }
 
