@@ -3,8 +3,8 @@
 //! Detects supervision through environment variables injected by supervisors
 //! into child processes.
 
-use crate::collect::parse_environ_content;
 use super::types::{EvidenceType, SupervisionEvidence, SupervisorCategory};
+use crate::collect::parse_environ_content;
 use std::collections::HashMap;
 use std::fs;
 use thiserror::Error;

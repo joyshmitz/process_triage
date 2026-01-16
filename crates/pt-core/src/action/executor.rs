@@ -328,6 +328,7 @@ mod tests {
                 used_recovery_preference: false,
             },
             risk_sensitive: None,
+            dro: None,
         };
         let bundle = DecisionBundle {
             session_id: SessionId("pt-20260115-120000-abcd".to_string()),

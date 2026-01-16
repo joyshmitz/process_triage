@@ -50,7 +50,7 @@ mod ipc;
 mod nohup;
 mod orphan;
 pub mod session;
-mod signature;
+pub mod signature;
 #[cfg(test)]
 mod supervision_tests;
 mod types;

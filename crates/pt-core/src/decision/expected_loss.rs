@@ -4,6 +4,7 @@ use crate::config::policy::{LossMatrix, LossRow, Policy};
 use crate::config::priors::Priors;
 use crate::decision::causal_interventions::{expected_recovery_by_action, RecoveryExpectation};
 use crate::decision::cvar::{decide_with_cvar, CvarTrigger, RiskSensitiveOutcome};
+use crate::decision::dro::{apply_dro_gate, DroOutcome, DroTrigger};
 use crate::inference::ClassScores;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -225,6 +226,9 @@ pub struct DecisionOutcome {
     /// Risk-sensitive (CVaR) decision information, if applied.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub risk_sensitive: Option<RiskSensitiveOutcome>,
+    /// Distributionally robust (DRO) decision information, if applied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dro: Option<DroOutcome>,
 }
 
 /// Errors raised during decisioning.
@@ -289,6 +293,7 @@ pub fn decide_action(
             used_recovery_preference: false,
         },
         risk_sensitive: None,
+        dro: None,
     })
 }
 
@@ -364,6 +369,7 @@ pub fn decide_action_with_recovery(
             used_recovery_preference,
         },
         risk_sensitive: None,
+        dro: None,
     })
 }
 
@@ -452,6 +458,55 @@ pub fn apply_risk_sensitive_control(
         }
     }
 
+    outcome
+}
+
+/// Apply DRO (Distributionally Robust Optimization) gating to a decision outcome.
+///
+/// This function applies worst-case expected loss computation when distribution
+/// shift or model misspecification is detected, potentially de-escalating
+/// the action to a safer alternative.
+///
+/// # Arguments
+/// * `outcome` - The base decision outcome (from decide_action or decide_action_with_recovery)
+/// * `posterior` - Class probabilities
+/// * `policy` - Policy containing loss matrix
+/// * `trigger` - Conditions that determine whether DRO should be applied
+/// * `epsilon` - Ambiguity radius for the Wasserstein ball
+///
+/// # Returns
+/// The decision outcome with dro field populated if DRO was applied.
+pub fn apply_dro_control(
+    mut outcome: DecisionOutcome,
+    posterior: &ClassScores,
+    policy: &Policy,
+    trigger: &DroTrigger,
+    epsilon: f64,
+) -> DecisionOutcome {
+    // Get feasible actions from the expected loss results
+    let feasible_actions: Vec<Action> = outcome
+        .expected_loss
+        .iter()
+        .map(|e| e.action)
+        .collect();
+
+    // Apply DRO gate
+    let dro_outcome = apply_dro_gate(
+        outcome.optimal_action,
+        posterior,
+        policy,
+        trigger,
+        epsilon,
+        &feasible_actions,
+    );
+
+    // Update optimal action if DRO de-escalated
+    if dro_outcome.applied && dro_outcome.action_changed {
+        outcome.optimal_action = dro_outcome.robust_action;
+        outcome.rationale.chosen_action = dro_outcome.robust_action;
+    }
+
+    outcome.dro = Some(dro_outcome);
     outcome
 }
 
@@ -1170,5 +1225,151 @@ mod tests {
             rs.reason.contains("high_blast_radius"),
             "Reason should mention blast radius"
         );
+    }
+
+    // =========================================================================
+    // DRO (Distributionally Robust Optimization) Integration Tests
+    // =========================================================================
+
+    #[test]
+    fn test_apply_dro_no_trigger() {
+        let policy = policy_for_tests();
+        let posterior = ClassScores {
+            useful: 0.8,
+            useful_bad: 0.1,
+            abandoned: 0.05,
+            zombie: 0.05,
+        };
+
+        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
+            .expect("decision");
+
+        let trigger = DroTrigger::none();
+
+        let result = apply_dro_control(outcome, &posterior, &policy, &trigger, 0.1);
+
+        assert!(result.dro.is_some());
+        let dro = result.dro.unwrap();
+        assert!(!dro.applied, "DRO should not be applied without trigger");
+        assert!(!dro.action_changed);
+    }
+
+    #[test]
+    fn test_apply_dro_with_ppc_failure() {
+        let policy = policy_for_tests();
+        // Posterior where Kill is nominally optimal
+        let posterior = ClassScores {
+            useful: 0.05,
+            useful_bad: 0.05,
+            abandoned: 0.85,
+            zombie: 0.05,
+        };
+
+        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
+            .expect("decision");
+        assert_eq!(
+            outcome.optimal_action,
+            Action::Kill,
+            "Kill should be optimal by E[L]"
+        );
+
+        let trigger = DroTrigger {
+            ppc_failure: true,
+            drift_detected: false,
+            wasserstein_divergence: None,
+            eta_tempering_reduced: false,
+            explicit_conservative: false,
+            low_model_confidence: false,
+        };
+
+        // Use a significant epsilon to trigger de-escalation
+        let result = apply_dro_control(outcome, &posterior, &policy, &trigger, 0.3);
+
+        assert!(result.dro.is_some());
+        let dro = result.dro.unwrap();
+        assert!(dro.applied, "DRO should be applied with PPC failure");
+        assert!(
+            dro.reason.contains("ppc_failure"),
+            "Reason should mention PPC failure"
+        );
+        assert!(!dro.dro_losses.is_empty(), "DRO losses should be computed");
+    }
+
+    #[test]
+    fn test_apply_dro_with_drift() {
+        let policy = policy_for_tests();
+        let posterior = ClassScores {
+            useful: 0.10,
+            useful_bad: 0.10,
+            abandoned: 0.70,
+            zombie: 0.10,
+        };
+
+        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
+            .expect("decision");
+
+        let trigger = DroTrigger {
+            ppc_failure: false,
+            drift_detected: true,
+            wasserstein_divergence: Some(0.25),
+            eta_tempering_reduced: false,
+            explicit_conservative: false,
+            low_model_confidence: false,
+        };
+
+        let result = apply_dro_control(outcome, &posterior, &policy, &trigger, 0.2);
+
+        assert!(result.dro.is_some());
+        let dro = result.dro.unwrap();
+        assert!(dro.applied, "DRO should be applied with drift detection");
+        assert!(
+            dro.reason.contains("drift_detected"),
+            "Reason should mention drift"
+        );
+        assert!(
+            dro.reason.contains("0.25"),
+            "Reason should include divergence value"
+        );
+    }
+
+    #[test]
+    fn test_apply_dro_de_escalates() {
+        let policy = policy_for_tests();
+        // Posterior where Kill would be optimal but has high Lipschitz
+        let posterior = ClassScores {
+            useful: 0.10,
+            useful_bad: 0.05,
+            abandoned: 0.80,
+            zombie: 0.05,
+        };
+
+        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
+            .expect("decision");
+        let original_action = outcome.optimal_action;
+
+        let trigger = DroTrigger {
+            ppc_failure: true,
+            drift_detected: true,
+            wasserstein_divergence: Some(0.5),
+            eta_tempering_reduced: true,
+            explicit_conservative: false,
+            low_model_confidence: true,
+        };
+
+        // Large epsilon to force de-escalation
+        let result = apply_dro_control(outcome, &posterior, &policy, &trigger, 0.5);
+
+        assert!(result.dro.is_some());
+        let dro = result.dro.unwrap();
+        assert!(dro.applied, "DRO should be applied");
+
+        // If Kill was original and DRO changed it, it should de-escalate
+        if original_action == Action::Kill && dro.action_changed {
+            assert_ne!(
+                result.optimal_action,
+                Action::Kill,
+                "DRO should de-escalate away from Kill"
+            );
+        }
     }
 }

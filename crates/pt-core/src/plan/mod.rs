@@ -659,6 +659,7 @@ mod tests {
                 used_recovery_preference: false,
             },
             risk_sensitive: None,
+            dro: None,
         }
     }
 
