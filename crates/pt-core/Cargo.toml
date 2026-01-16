@@ -40,11 +40,12 @@ pt-config = { path = "../pt-config" }
 pt-math = { path = "../pt-math" }
 pt-redact = { path = "../pt-redact" }
 pt-bundle = { path = "../pt-bundle" }
+pt-report = { path = "../pt-report", optional = true }
 
 [features]
 default = []
 deep = []           # Enable expensive/privileged probes (lsof, ss, perf/eBPF)
-report = []         # HTML report generator
+report = ["pt-report"]  # HTML report generator
 daemon = []         # Dormant monitoring mode
 ui = []             # Premium TUI experience
 test-utils = []     # Export test utilities for integration tests

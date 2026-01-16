@@ -40,4 +40,4 @@ pub mod sections;
 
 pub use config::{CdnLibrary, ReportConfig, ReportSections, ReportTheme};
 pub use error::{ReportError, Result};
-pub use generator::ReportGenerator;
+pub use generator::{ReportData, ReportGenerator};

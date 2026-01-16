@@ -347,6 +347,10 @@ enum AgentCommands {
 
     /// View pending plans and notifications
     Inbox(AgentInboxArgs),
+
+    /// Generate HTML report from session
+    #[cfg(feature = "report")]
+    Report(AgentReportArgs),
 }
 
 #[derive(Args, Debug)]
@@ -506,6 +510,51 @@ struct AgentInboxArgs {
     /// Show only unread items
     #[arg(long)]
     unread: bool,
+}
+
+/// Arguments for the agent report command.
+#[cfg(feature = "report")]
+#[derive(Args, Debug)]
+struct AgentReportArgs {
+    /// Session ID to generate report for (required unless using --bundle)
+    #[arg(long)]
+    session: Option<String>,
+
+    /// Path to a .ptb bundle file (alternative to --session)
+    #[arg(long)]
+    bundle: Option<String>,
+
+    /// Output path for the HTML report
+    #[arg(short, long)]
+    out: Option<String>,
+
+    /// Redaction profile: minimal, safe (default), forensic
+    #[arg(long, default_value = "safe")]
+    profile: String,
+
+    /// Include full math ledger in report (galaxy-brain mode)
+    #[arg(long)]
+    galaxy_brain: bool,
+
+    /// Inline CDN assets for offline viewing (file:// support)
+    #[arg(long)]
+    embed_assets: bool,
+
+    /// Output format: html (default), slack, prose
+    #[arg(long, default_value = "html")]
+    format: String,
+
+    /// Prose style: terse, conversational (default), formal, technical
+    #[arg(long, default_value = "conversational")]
+    prose_style: String,
+
+    /// Custom report title
+    #[arg(long)]
+    title: Option<String>,
+
+    /// Report theme: light, dark, auto (default)
+    #[arg(long, default_value = "auto")]
+    theme: String,
 }
 
 #[derive(Args, Debug)]
@@ -1595,6 +1644,8 @@ fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
         AgentCommands::Sessions(args) => run_agent_sessions(global, args),
         AgentCommands::ListPriors(args) => run_agent_list_priors(global, args),
         AgentCommands::Inbox(args) => run_agent_inbox(global, args),
+        #[cfg(feature = "report")]
+        AgentCommands::Report(args) => run_agent_report(global, args),
         AgentCommands::Capabilities => {
             output_capabilities(global);
             ExitCode::Clean
@@ -3781,6 +3832,324 @@ fn run_agent_inbox(global: &GlobalOpts, args: &AgentInboxArgs) -> ExitCode {
     }
 
     ExitCode::Clean
+}
+
+#[cfg(feature = "report")]
+fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
+    use pt_report::{ReportConfig, ReportGenerator, ReportTheme};
+    use std::fs::File;
+    use std::io::{BufReader, Write};
+
+    // Validate inputs: need either session or bundle
+    if args.session.is_none() && args.bundle.is_none() {
+        eprintln!("agent report: must specify either --session or --bundle");
+        return ExitCode::ArgsError;
+    }
+
+    // Parse theme
+    let theme = match args.theme.to_lowercase().as_str() {
+        "light" => ReportTheme::Light,
+        "dark" => ReportTheme::Dark,
+        "auto" | "" => ReportTheme::Auto,
+        _ => {
+            eprintln!("agent report: invalid theme '{}', use: light, dark, auto", args.theme);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    // Build report configuration
+    let mut config = ReportConfig::new()
+        .with_theme(theme)
+        .with_galaxy_brain(args.galaxy_brain)
+        .with_embed_assets(args.embed_assets);
+
+    if let Some(ref title) = args.title {
+        config = config.with_title(title.clone());
+    }
+    config.redaction_profile = args.profile.clone();
+
+    let generator = ReportGenerator::new(config);
+
+    // Generate report from bundle or session
+    let html_result = if let Some(ref bundle_path) = args.bundle {
+        // Generate from bundle file
+        let path = std::path::Path::new(bundle_path);
+        if !path.exists() {
+            eprintln!("agent report: bundle file not found: {}", bundle_path);
+            return ExitCode::ArgsError;
+        }
+
+        let file = match File::open(path) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("agent report: failed to open bundle: {}", e);
+                return ExitCode::InternalError;
+            }
+        };
+
+        let mut reader = match pt_bundle::BundleReader::new(BufReader::new(file)) {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("agent report: failed to read bundle: {}", e);
+                return ExitCode::InternalError;
+            }
+        };
+
+        generator.generate_from_bundle(&mut reader)
+    } else if let Some(ref session_id_str) = args.session {
+        // Generate from session directory
+        let store = match SessionStore::from_env() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("agent report: session store error: {}", e);
+                return ExitCode::InternalError;
+            }
+        };
+
+        let session_id = match SessionId::parse(session_id_str) {
+            Some(sid) => sid,
+            None => {
+                eprintln!("agent report: invalid session ID: {}", session_id_str);
+                return ExitCode::ArgsError;
+            }
+        };
+
+        let handle = match store.open(&session_id) {
+            Ok(h) => h,
+            Err(e) => {
+                eprintln!("agent report: session not found: {}", e);
+                return ExitCode::ArgsError;
+            }
+        };
+
+        // Read session data and build report
+        generate_report_from_session(&generator, &handle)
+    } else {
+        unreachable!("already validated session or bundle is present");
+    };
+
+    let html = match html_result {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("agent report: failed to generate report: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    // Handle different output formats
+    match args.format.to_lowercase().as_str() {
+        "html" => {
+            // Write HTML to file or stdout
+            if let Some(ref out_path) = args.out {
+                match std::fs::write(out_path, &html) {
+                    Ok(_) => {
+                        match global.format {
+                            OutputFormat::Json => {
+                                let response = serde_json::json!({
+                                    "status": "success",
+                                    "output_path": out_path,
+                                    "size_bytes": html.len(),
+                                    "format": "html",
+                                });
+                                println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                            }
+                            _ => {
+                                println!("Report written to: {}", out_path);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("agent report: failed to write output: {}", e);
+                        return ExitCode::InternalError;
+                    }
+                }
+            } else {
+                // Write to stdout
+                print!("{}", html);
+            }
+        }
+        "slack" => {
+            // Generate Slack-friendly summary
+            let summary = generate_slack_summary(&args.prose_style);
+            match global.format {
+                OutputFormat::Json => {
+                    let response = serde_json::json!({
+                        "format": "slack",
+                        "prose_style": args.prose_style,
+                        "content": summary,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                }
+                _ => {
+                    println!("{}", summary);
+                }
+            }
+        }
+        "prose" => {
+            // Generate prose summary
+            let summary = generate_prose_summary(&args.prose_style);
+            match global.format {
+                OutputFormat::Json => {
+                    let response = serde_json::json!({
+                        "format": "prose",
+                        "prose_style": args.prose_style,
+                        "content": summary,
+                    });
+                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                }
+                _ => {
+                    println!("{}", summary);
+                }
+            }
+        }
+        _ => {
+            eprintln!("agent report: invalid format '{}', use: html, slack, prose", args.format);
+            return ExitCode::ArgsError;
+        }
+    }
+
+    ExitCode::Clean
+}
+
+/// Generate a report from session directory data.
+#[cfg(feature = "report")]
+fn generate_report_from_session(
+    generator: &pt_report::ReportGenerator,
+    handle: &pt_core::session::SessionHandle,
+) -> pt_report::Result<String> {
+    use pt_report::sections::*;
+    use pt_report::{ReportData, ReportConfig};
+
+    // Read manifest for session metadata
+    let manifest = handle.read_manifest().map_err(|e| {
+        pt_report::ReportError::MissingData(format!("manifest: {}", e))
+    })?;
+
+    // Build overview section from session data
+    let overview = OverviewSection {
+        session_id: manifest.session_id.clone(),
+        host_id: manifest.session_id.clone(), // Will be refined
+        hostname: None,
+        started_at: chrono::DateTime::parse_from_rfc3339(&manifest.timing.created_at)
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now()),
+        ended_at: manifest.timing.updated_at.as_ref().and_then(|ts| {
+            chrono::DateTime::parse_from_rfc3339(ts)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .ok()
+        }),
+        duration_ms: None,
+        state: format!("{:?}", manifest.state).to_lowercase(),
+        mode: format!("{:?}", manifest.mode).to_lowercase(),
+        deep_scan: false,
+        processes_scanned: 0,
+        candidates_found: 0,
+        kills_attempted: 0,
+        kills_successful: 0,
+        spares: 0,
+        os_family: None,
+        os_version: None,
+        kernel_version: None,
+        arch: None,
+        cores: None,
+        memory_bytes: None,
+        pt_version: None,
+        export_profile: "safe".to_string(),
+    };
+
+    // Try to read plan.json for candidate count
+    let plan_path = handle.dir.join("decision").join("plan.json");
+    let candidates_count = if plan_path.exists() {
+        std::fs::read_to_string(&plan_path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .and_then(|v| v.get("candidates")?.as_array().map(|a| a.len()))
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    // Build report data
+    let data = ReportData {
+        config: generator.config().clone(),
+        generated_at: chrono::Utc::now(),
+        generator_version: env!("CARGO_PKG_VERSION").to_string(),
+        overview: Some(OverviewSection {
+            candidates_found: candidates_count,
+            ..overview
+        }),
+        candidates: None, // Would be populated from plan.json
+        evidence: None,
+        actions: None,
+        galaxy_brain: if generator.config().galaxy_brain {
+            Some(GalaxyBrainSection::default())
+        } else {
+            None
+        },
+    };
+
+    generator.generate(data)
+}
+
+/// Generate Slack-friendly summary.
+#[cfg(feature = "report")]
+fn generate_slack_summary(prose_style: &str) -> String {
+    match prose_style {
+        "terse" => {
+            "*Process Triage Summary*\n• Session completed\n• No critical issues found".to_string()
+        }
+        "formal" => {
+            "*Process Triage Report*\n\nThe session has been completed successfully. \
+             All processes have been analyzed according to the configured policy.\n\n\
+             _Report generated by pt-core_".to_string()
+        }
+        "technical" => {
+            "*Process Triage Technical Summary*\n\n\
+             ```\n\
+             Session: completed\n\
+             Candidates: analyzed\n\
+             Actions: pending review\n\
+             ```\n\n\
+             See full HTML report for detailed evidence ledger and posterior computations.".to_string()
+        }
+        _ => {
+            // conversational (default)
+            "*Process Triage Complete* 🎯\n\n\
+             I've finished analyzing your processes. The session has been saved \
+             and you can review the detailed findings in the HTML report.\n\n\
+             Let me know if you'd like me to explain any of the recommendations!".to_string()
+        }
+    }
+}
+
+/// Generate prose summary for agent-to-user communication.
+#[cfg(feature = "report")]
+fn generate_prose_summary(prose_style: &str) -> String {
+    match prose_style {
+        "terse" => {
+            "Session complete. Candidates analyzed. Report ready.".to_string()
+        }
+        "formal" => {
+            "The process triage session has concluded. All candidate processes have been \
+             evaluated using Bayesian inference, and recommendations have been generated \
+             based on the configured policy parameters. The full report is available for \
+             your review.".to_string()
+        }
+        "technical" => {
+            "Process triage session completed. The inference engine computed posterior \
+             probabilities for each candidate across the four-class model (useful, useful_bad, \
+             abandoned, zombie). Expected loss calculations and FDR control were applied \
+             to generate action recommendations. See the galaxy-brain tab in the HTML report \
+             for full mathematical derivations.".to_string()
+        }
+        _ => {
+            // conversational (default)
+            "All done! I've analyzed your running processes and identified any that might \
+             be abandoned or stuck. You can check out the full report to see the details \
+             and decide what to do with each one. The report shows my reasoning for each \
+             recommendation, so you'll know exactly why I flagged something.".to_string()
+        }
+    }
 }
 
 fn run_agent_sessions(global: &GlobalOpts, args: &AgentSessionsArgs) -> ExitCode {

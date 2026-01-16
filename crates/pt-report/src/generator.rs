@@ -57,6 +57,11 @@ impl ReportGenerator {
         Self::new(ReportConfig::default())
     }
 
+    /// Get the current configuration.
+    pub fn config(&self) -> &ReportConfig {
+        &self.config
+    }
+
     /// Generate report from a bundle reader.
     pub fn generate_from_bundle<R: Read + Seek>(
         &self,
