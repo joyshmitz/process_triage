@@ -257,15 +257,22 @@ impl BetaStacyModel {
                     value: sample.duration_s,
                 });
             }
-            let idx = match self.scheme.index_for_duration(sample.duration_s) {
-                Some(idx) => idx,
-                None => continue,
-            };
-            for i in 0..=idx {
-                at_risk[i] = at_risk[i].saturating_add(1);
-            }
-            if sample.event {
-                events[idx] = events[idx].saturating_add(1);
+            
+            if let Some(idx) = self.scheme.index_for_duration(sample.duration_s) {
+                // Sample falls within our binning range
+                for i in 0..=idx {
+                    at_risk[i] = at_risk[i].saturating_add(1);
+                }
+                if sample.event {
+                    events[idx] = events[idx].saturating_add(1);
+                }
+            } else {
+                // Sample exceeds the max bin range.
+                // It was at risk for all bins.
+                // We treat it as right-censored at the end of the last bin.
+                for i in 0..self.bins.len() {
+                    at_risk[i] = at_risk[i].saturating_add(1);
+                }
             }
         }
 
