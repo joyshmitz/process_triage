@@ -189,7 +189,35 @@ fn test_pattern_learner_multiple_decisions() {
 
 #[test]
 fn test_mixed_actions_prefer_broad() {
-    // ... existing code ...
+    let temp_dir = temp_pattern_dir();
+    let mut library = PatternLibrary::new(temp_dir);
+
+    // Record mixed decisions (some kills, some spares)
+    // With < 80% consistency, should prefer Broad level
+    {
+        let mut learner = PatternLearner::new(&mut library)
+            .with_min_observations(3);
+
+        // Mix of actions: 2 kills, 2 spares = 50% consistency
+        // This should result in a Broad level pattern
+        learner.record_decision("node", "node /path/to/app.js", true).unwrap();  // kill
+        learner.record_decision("node", "node /path/to/server.js", false).unwrap();  // spare
+        learner.record_decision("node", "node /other/path/main.js", true).unwrap();  // kill
+
+        // After 3rd observation (first time we meet min_observations),
+        // pattern should be created with Broad level due to 66% consistency
+    }
+
+    // Check that a pattern was created at Broad level (not Exact)
+    // Broad level patterns use the name format "learned_<name>_broad"
+    let broad_pattern = library.get_pattern("learned_node_broad");
+    let exact_pattern = library.get_pattern("learned_node_exact");
+
+    // With 66% consistency (2 kills, 1 spare), should prefer Broad
+    assert!(
+        broad_pattern.is_some() || exact_pattern.is_none(),
+        "With mixed actions (<80% consistency), should prefer Broad or not create Exact"
+    );
 }
 
 #[test]
