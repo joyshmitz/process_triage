@@ -356,7 +356,16 @@ fn get_process_socket_inodes(pid: u32) -> Option<HashSet<u64>> {
     let mut inodes = HashSet::new();
 
     let entries = fs::read_dir(&fd_path).ok()?;
+    let mut inspected_count = 0;
+    // Limit inspection to prevent stall on processes with massive FD counts
+    const MAX_INSPECT: usize = 50_000;
+
     for entry in entries.flatten() {
+        if inspected_count >= MAX_INSPECT {
+            break;
+        }
+        inspected_count += 1;
+
         if let Ok(target) = fs::read_link(entry.path()) {
             let target_str = target.to_string_lossy();
             // Socket links look like "socket:[12345]"

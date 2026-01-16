@@ -24,7 +24,6 @@ use crate::events::{event_names, Phase, ProgressEmitter, ProgressEvent};
 use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -430,17 +429,24 @@ fn scan_process(
 ) -> Result<DeepScanRecord, DeepScanError> {
     let proc_path = format!("/proc/{}", pid);
 
-    // Check if process exists
-    if !Path::new(&proc_path).exists() {
-        return Err(DeepScanError::ParseError {
-            pid,
-            message: "Process does not exist".to_string(),
-        });
-    }
-
     // Parse /proc/[pid]/stat for core info
-    let stat_content = fs::read_to_string(format!("{}/stat", proc_path))
-        .map_err(|_| DeepScanError::PermissionDenied(pid))?;
+    // We read this first; if it fails, the process likely doesn't exist or is inaccessible.
+    let stat_content = match fs::read_to_string(format!("{}/stat", proc_path)) {
+        Ok(c) => c,
+        Err(e) => {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                return Err(DeepScanError::ParseError {
+                    pid,
+                    message: "Process does not exist".to_string(),
+                });
+            } else if e.kind() == std::io::ErrorKind::PermissionDenied {
+                return Err(DeepScanError::PermissionDenied(pid));
+            } else {
+                return Err(DeepScanError::IoError(e));
+            }
+        }
+    };
+    
     let stat_info = parse_stat(&stat_content, pid)?;
 
     // Parse /proc/[pid]/status for UID and username

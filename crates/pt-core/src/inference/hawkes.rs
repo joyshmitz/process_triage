@@ -310,13 +310,13 @@ impl HawkesDetector {
 
         // Recursive computation of intensity at each event
         // A(t_i) = Σ_{j<i} exp(-β(t_i - t_j)) can be computed recursively:
-        // A(t_i) = A(t_{i-1}) * exp(-β(t_i - t_{i-1})) + 1
+        // A(t_i) = (A(t_{i-1}) + 1) * exp(-β(t_i - t_{i-1}))
         let mut a_recursive = 0.0; // Σ exp(-β(t_i - t_j)) for j < i
 
         for i in 0..n {
             if i > 0 {
                 let dt = events[i] - events[i - 1];
-                a_recursive = a_recursive * (-beta * dt).exp() + 1.0;
+                a_recursive = (a_recursive + 1.0) * (-beta * dt).exp();
             }
 
             // Intensity at event i (just before)
