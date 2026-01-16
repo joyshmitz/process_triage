@@ -60,8 +60,8 @@ pub use ancestry::{
     AncestryError, ProcessTreeCache,
 };
 pub use environ::{
-    detect_environ_supervision, EnvPattern, EnvironAnalyzer, EnvironDatabase, EnvironError,
-    EnvironResult,
+    detect_environ_supervision, read_environ, EnvPattern, EnvironAnalyzer, EnvironDatabase,
+    EnvironError, EnvironResult,
 };
 pub use ipc::{
     detect_ipc_supervision, IpcAnalyzer, IpcDatabase, IpcError, IpcPattern, IpcResult,

@@ -1,6 +1,7 @@
 //! Inference engine modules.
 
 pub mod belief_prop;
+pub mod belief_state;
 pub mod beta_stacy;
 pub mod bma;
 pub mod bocpd;
@@ -12,6 +13,7 @@ pub mod hawkes;
 pub mod hazard;
 #[cfg(target_os = "linux")]
 pub mod impact;
+pub mod imm;
 pub mod kalman;
 pub mod kl_surprisal;
 pub mod ledger;
@@ -27,6 +29,11 @@ pub mod wasserstein;
 pub use belief_prop::{
     propagate_beliefs, BeliefPropConfig, BeliefPropError, BeliefPropEvidence, BeliefPropResult,
     BeliefPropagator, ProcessNode, ProcessTree, State, TreeSummary,
+};
+pub use belief_state::{
+    belief_js_divergence, belief_kl_divergence, update_belief, update_belief_batch, BeliefState,
+    BeliefStateError, BeliefUpdateConfig, BeliefUpdateResult, ObservationLikelihood, ProcessState,
+    TransitionModel, NUM_STATES,
 };
 pub use beta_stacy::{
     BetaParams, BetaStacyError, BetaStacyModel, BetaStacyBin, BinningKind, BinningScheme,
@@ -112,4 +119,8 @@ pub use impact::{
     compute_impact_score, compute_impact_scores_batch, CriticalWriteCategory, ImpactComponents,
     ImpactConfig, ImpactError, ImpactEvidence, ImpactResult, ImpactScorer, ImpactSeverity,
     MissingDataSource, SupervisorLevel,
+};
+pub use imm::{
+    BatchImmAnalyzer, ImmAnalyzer, ImmConfig, ImmError, ImmEvidence, ImmResult, ImmState,
+    ImmUpdateResult, ModeFilterState, Regime as ImmRegime,
 };
