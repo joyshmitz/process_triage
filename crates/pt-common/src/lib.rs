@@ -30,7 +30,10 @@ pub use categories::{
     CommandPattern, CwdCategory, CwdCategoryDef, CwdPattern, PriorHints, CATEGORIES_SCHEMA_VERSION,
 };
 pub use config::{Config, ConfigPaths, ConfigResolver, ConfigSnapshot, Policy, Priors};
-pub use error::{Error, Result};
+pub use error::{
+    BatchError, BatchResult, BatchSummary, Error, ErrorCategory, Result, StructuredError,
+    SuggestedAction, format_batch_human, format_error_human,
+};
 pub use galaxy_brain::{
     CardId, CliHints, CliOutputFormat, CliVerbosity, ComputedValue, Equation, GalaxyBrainData,
     MathCard, MathRenderer, Reference, RenderHints, ReportHints, TuiColorScheme, TuiHints,
