@@ -68,6 +68,34 @@ impl Default for RobustConfig {
     }
 }
 
+/// Configuration for minimax (least-favorable prior) gating.
+#[derive(Debug, Clone)]
+pub struct MinimaxConfig {
+    /// Whether minimax gating is enabled.
+    pub enabled: bool,
+    /// Maximum allowed worst-case expected loss.
+    pub max_worst_case_loss: f64,
+}
+
+impl Default for MinimaxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_worst_case_loss: 0.25,
+        }
+    }
+}
+
+impl MinimaxConfig {
+    /// Disable minimax gating (fallback to baseline behavior).
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            ..Default::default()
+        }
+    }
+}
+
 impl RobustConfig {
     /// Conservative configuration for high-stakes decisions.
     pub fn conservative() -> Self {
@@ -350,6 +378,23 @@ pub struct RobustEvidence {
     pub effective_n: f64,
 }
 
+/// Result of minimax expected-loss gating.
+#[derive(Debug, Clone, Serialize)]
+pub struct MinimaxResult {
+    /// Whether the action passes the minimax gate.
+    pub is_safe: bool,
+    /// Whether minimax gating was enabled.
+    pub enabled: bool,
+    /// Worst-case expected loss over the credal set.
+    pub worst_case_loss: f64,
+    /// Best-case expected loss over the credal set.
+    pub best_case_loss: f64,
+    /// Loss threshold used for gating.
+    pub threshold: f64,
+    /// Human-readable reason for the decision.
+    pub reason: String,
+}
+
 /// Gate for robust decision making.
 pub struct RobustGate {
     config: RobustConfig,
@@ -465,6 +510,399 @@ impl RobustGate {
 impl Default for RobustGate {
     fn default() -> Self {
         Self::new(RobustConfig::default())
+    }
+}
+
+// =============================================================================
+// Minimax / Least-Favorable Prior Gating
+// =============================================================================
+
+/// The least-favorable prior distribution over classes.
+///
+/// This is the prior in the credal set that maximizes expected loss for a given action.
+#[derive(Debug, Clone, Serialize)]
+pub struct LeastFavorablePrior {
+    /// Probability assigned to each class under the least-favorable prior.
+    pub class_probs: Vec<f64>,
+    /// Names/labels for each class (for explainability).
+    pub class_names: Vec<String>,
+    /// The expected loss under this prior.
+    pub expected_loss: f64,
+    /// Description of why this prior is least favorable.
+    pub description: String,
+}
+
+impl LeastFavorablePrior {
+    /// Compute the least-favorable prior for a given loss row and credal sets.
+    ///
+    /// The least-favorable prior assigns maximum probability to high-loss classes
+    /// while respecting the credal constraints.
+    pub fn compute(
+        loss_row: &[f64],
+        credal_sets: &[CredalSet],
+        class_names: &[&str],
+    ) -> Self {
+        if loss_row.len() != credal_sets.len() || loss_row.len() != class_names.len() {
+            return Self {
+                class_probs: vec![],
+                class_names: vec![],
+                expected_loss: f64::INFINITY,
+                description: "Invalid input dimensions".to_string(),
+            };
+        }
+
+        // Sort classes by loss (highest first)
+        let mut indexed: Vec<(usize, f64)> = loss_row
+            .iter()
+            .enumerate()
+            .map(|(i, &l)| (i, l))
+            .collect();
+        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Greedily assign maximum probability to highest-loss classes
+        let mut probs = vec![0.0; loss_row.len()];
+        let mut remaining_prob = 1.0;
+        let mut loss = 0.0;
+        let mut high_loss_classes = Vec::new();
+
+        for (idx, class_loss) in &indexed {
+            let credal = &credal_sets[*idx];
+            let assign = credal.upper.min(remaining_prob);
+            probs[*idx] = assign;
+            loss += assign * class_loss;
+            remaining_prob -= assign;
+
+            if assign > 0.0 {
+                high_loss_classes.push(class_names[*idx].to_string());
+            }
+
+            if remaining_prob <= 1e-10 {
+                break;
+            }
+        }
+
+        // If we still have remaining probability, assign to lowest-loss class at minimum
+        if remaining_prob > 1e-10 {
+            for (idx, class_loss) in indexed.iter().rev() {
+                let credal = &credal_sets[*idx];
+                let needed = remaining_prob.min(credal.lower);
+                if needed > 0.0 {
+                    probs[*idx] += needed;
+                    loss += needed * class_loss;
+                    remaining_prob -= needed;
+                }
+                if remaining_prob <= 1e-10 {
+                    break;
+                }
+            }
+        }
+
+        let description = if high_loss_classes.is_empty() {
+            "No high-loss classes identified".to_string()
+        } else if high_loss_classes.len() == 1 {
+            format!(
+                "Concentrates probability on {} (highest loss)",
+                high_loss_classes[0]
+            )
+        } else {
+            format!(
+                "Concentrates probability on high-loss classes: {}",
+                high_loss_classes.join(", ")
+            )
+        };
+
+        Self {
+            class_probs: probs,
+            class_names: class_names.iter().map(|s| s.to_string()).collect(),
+            expected_loss: loss,
+            description,
+        }
+    }
+}
+
+/// Analysis of decision stability across the credal set.
+#[derive(Debug, Clone, Serialize)]
+pub struct DecisionStabilityAnalysis {
+    /// Whether the optimal action is stable across all priors in the credal set.
+    pub is_stable: bool,
+    /// The regret gap: worst-case loss - best-case loss.
+    pub regret_gap: f64,
+    /// Threshold shift: how much would the threshold need to change to flip the decision?
+    pub threshold_shift: Option<f64>,
+    /// Actions that are optimal under some prior in the credal set.
+    pub viable_actions: Vec<String>,
+    /// Human-readable explanation.
+    pub explanation: String,
+}
+
+impl DecisionStabilityAnalysis {
+    /// Analyze decision stability for multiple actions across credal priors.
+    ///
+    /// # Arguments
+    /// * `action_losses` - Vector of (action_name, loss_row) pairs
+    /// * `credal_sets` - Credal set for each class
+    /// * `threshold` - Decision threshold for action safety
+    pub fn analyze(
+        action_losses: &[(&str, &[f64])],
+        credal_sets: &[CredalSet],
+        threshold: f64,
+    ) -> Self {
+        if action_losses.is_empty() {
+            return Self {
+                is_stable: true,
+                regret_gap: 0.0,
+                threshold_shift: None,
+                viable_actions: vec![],
+                explanation: "No actions to analyze".to_string(),
+            };
+        }
+
+        // Compute worst-case and best-case losses for each action
+        let mut worst_cases: Vec<(&str, f64)> = Vec::new();
+        let mut best_cases: Vec<(&str, f64)> = Vec::new();
+
+        for (name, losses) in action_losses {
+            let worst = worst_case_expected_loss(losses, credal_sets);
+            let best = best_case_expected_loss(losses, credal_sets);
+            worst_cases.push((name, worst));
+            best_cases.push((name, best));
+        }
+
+        // Find actions that are optimal under some prior
+        // An action is viable if its best-case is better than others' worst-case
+        let mut viable_actions = Vec::new();
+        let global_best_worst = worst_cases
+            .iter()
+            .map(|(_, w)| *w)
+            .fold(f64::INFINITY, f64::min);
+
+        for ((name, _worst), (_, best)) in worst_cases.iter().zip(best_cases.iter()) {
+            // Action is viable if it could be optimal under some prior
+            if *best <= global_best_worst + 1e-10 {
+                viable_actions.push(name.to_string());
+            }
+        }
+
+        // Decision is stable if only one action is viable
+        let is_stable = viable_actions.len() <= 1;
+
+        // Compute regret gap
+        let min_worst = worst_cases
+            .iter()
+            .map(|(_, w)| *w)
+            .fold(f64::INFINITY, f64::min);
+        let min_best = best_cases
+            .iter()
+            .map(|(_, b)| *b)
+            .fold(f64::INFINITY, f64::min);
+        let regret_gap = min_worst - min_best;
+
+        // Compute threshold shift needed to flip the decision
+        let threshold_shift = if min_worst > threshold {
+            // Currently blocked; how much would threshold need to increase?
+            Some(min_worst - threshold)
+        } else if min_worst < threshold - regret_gap {
+            // Currently safe by a margin; how much could threshold decrease?
+            Some(threshold - min_worst)
+        } else {
+            None
+        };
+
+        let explanation = if is_stable {
+            if viable_actions.is_empty() {
+                "No viable actions under credal constraints".to_string()
+            } else {
+                format!(
+                    "Decision stable: {} is optimal across all priors (regret gap: {:.4})",
+                    viable_actions[0], regret_gap
+                )
+            }
+        } else {
+            format!(
+                "Decision unstable: {} actions are viable under different priors (regret gap: {:.4})",
+                viable_actions.len(),
+                regret_gap
+            )
+        };
+
+        Self {
+            is_stable,
+            regret_gap,
+            threshold_shift,
+            viable_actions,
+            explanation,
+        }
+    }
+}
+
+/// Evidence from minimax gating for decision-core integration.
+#[derive(Debug, Clone, Serialize)]
+pub struct MinimaxEvidence {
+    /// Whether minimax gating is enabled.
+    pub enabled: bool,
+    /// Worst-case expected loss.
+    pub worst_case_loss: f64,
+    /// Best-case expected loss.
+    pub best_case_loss: f64,
+    /// Regret gap (worst - best).
+    pub regret_gap: f64,
+    /// Whether the decision passed the minimax gate.
+    pub passed_gate: bool,
+    /// Least-favorable prior class probabilities (for audit).
+    pub lfp_probs: Option<Vec<f64>>,
+    /// Decision stability indicator.
+    pub is_stable: bool,
+}
+
+/// Minimax gate for conservative decision-making under prior uncertainty.
+///
+/// Unlike `RobustGate` which focuses on posterior robustness, `MinimaxGate`
+/// focuses on expected loss robustness: it only allows actions whose worst-case
+/// expected loss (over all priors in the credal set) is acceptable.
+pub struct MinimaxGate {
+    config: MinimaxConfig,
+    /// Cached least-favorable prior from last computation.
+    last_lfp: Option<LeastFavorablePrior>,
+    /// Cached stability analysis from last computation.
+    last_stability: Option<DecisionStabilityAnalysis>,
+}
+
+impl MinimaxGate {
+    /// Create a new minimax gate.
+    pub fn new(config: MinimaxConfig) -> Self {
+        Self {
+            config,
+            last_lfp: None,
+            last_stability: None,
+        }
+    }
+
+    /// Check if an action is safe under minimax criteria.
+    pub fn is_safe(&self, loss_row: &[f64], credal_sets: &[CredalSet]) -> MinimaxResult {
+        minimax_expected_loss_gate(loss_row, credal_sets, &self.config)
+    }
+
+    /// Compute and cache the least-favorable prior for a given action.
+    pub fn compute_lfp(
+        &mut self,
+        loss_row: &[f64],
+        credal_sets: &[CredalSet],
+        class_names: &[&str],
+    ) -> &LeastFavorablePrior {
+        let lfp = LeastFavorablePrior::compute(loss_row, credal_sets, class_names);
+        self.last_lfp = Some(lfp);
+        self.last_lfp.as_ref().unwrap()
+    }
+
+    /// Analyze decision stability across multiple actions.
+    pub fn analyze_stability(
+        &mut self,
+        action_losses: &[(&str, &[f64])],
+        credal_sets: &[CredalSet],
+    ) -> &DecisionStabilityAnalysis {
+        let stability = DecisionStabilityAnalysis::analyze(
+            action_losses,
+            credal_sets,
+            self.config.max_worst_case_loss,
+        );
+        self.last_stability = Some(stability);
+        self.last_stability.as_ref().unwrap()
+    }
+
+    /// Get the last computed least-favorable prior (if any).
+    pub fn last_lfp(&self) -> Option<&LeastFavorablePrior> {
+        self.last_lfp.as_ref()
+    }
+
+    /// Get the last computed stability analysis (if any).
+    pub fn last_stability(&self) -> Option<&DecisionStabilityAnalysis> {
+        self.last_stability.as_ref()
+    }
+
+    /// Get evidence for decision-core integration.
+    pub fn evidence(&self, loss_row: &[f64], credal_sets: &[CredalSet]) -> MinimaxEvidence {
+        let result = self.is_safe(loss_row, credal_sets);
+        let regret_gap = result.worst_case_loss - result.best_case_loss;
+
+        MinimaxEvidence {
+            enabled: self.config.enabled,
+            worst_case_loss: result.worst_case_loss,
+            best_case_loss: result.best_case_loss,
+            regret_gap,
+            passed_gate: result.is_safe,
+            lfp_probs: self.last_lfp.as_ref().map(|lfp| lfp.class_probs.clone()),
+            is_stable: self
+                .last_stability
+                .as_ref()
+                .map(|s| s.is_stable)
+                .unwrap_or(true),
+        }
+    }
+
+    /// Reset cached state.
+    pub fn reset(&mut self) {
+        self.last_lfp = None;
+        self.last_stability = None;
+    }
+
+    /// Get current configuration.
+    pub fn config(&self) -> &MinimaxConfig {
+        &self.config
+    }
+
+    /// Update configuration.
+    pub fn set_config(&mut self, config: MinimaxConfig) {
+        self.config = config;
+        self.reset();
+    }
+}
+
+impl Default for MinimaxGate {
+    fn default() -> Self {
+        Self::new(MinimaxConfig::default())
+    }
+}
+
+/// Apply minimax expected-loss gating for a single action.
+pub fn minimax_expected_loss_gate(
+    loss_row: &[f64],
+    credal_sets: &[CredalSet],
+    config: &MinimaxConfig,
+) -> MinimaxResult {
+    let worst_case = worst_case_expected_loss(loss_row, credal_sets);
+    let best_case = best_case_expected_loss(loss_row, credal_sets);
+
+    if !config.enabled {
+        return MinimaxResult {
+            is_safe: true,
+            enabled: false,
+            worst_case_loss: worst_case,
+            best_case_loss: best_case,
+            threshold: config.max_worst_case_loss,
+            reason: "Minimax gate disabled; fallback to baseline decision".to_string(),
+        };
+    }
+
+    let is_safe = worst_case <= config.max_worst_case_loss;
+    let reason = if is_safe {
+        format!(
+            "Minimax gate passed: worst-case loss {:.4} <= {:.4}",
+            worst_case, config.max_worst_case_loss
+        )
+    } else {
+        format!(
+            "Minimax gate failed: worst-case loss {:.4} > {:.4}",
+            worst_case, config.max_worst_case_loss
+        )
+    };
+
+    MinimaxResult {
+        is_safe,
+        enabled: true,
+        worst_case_loss: worst_case,
+        best_case_loss: best_case,
+        threshold: config.max_worst_case_loss,
+        reason,
     }
 }
 
@@ -794,6 +1232,38 @@ mod tests {
     }
 
     #[test]
+    fn test_minimax_gate_blocks_on_worst_case() {
+        let losses = [0.1, 1.0];
+        let credals = [
+            CredalSet::interval(0.0, 0.9),
+            CredalSet::interval(0.1, 1.0),
+        ];
+        let config = MinimaxConfig {
+            enabled: true,
+            max_worst_case_loss: 0.5,
+        };
+
+        let result = minimax_expected_loss_gate(&losses, &credals, &config);
+        assert!(!result.is_safe);
+        assert!(result.worst_case_loss > config.max_worst_case_loss);
+        assert!(result.reason.contains("failed"));
+    }
+
+    #[test]
+    fn test_minimax_gate_disabled_allows() {
+        let losses = [0.1, 1.0];
+        let credals = [
+            CredalSet::interval(0.0, 0.9),
+            CredalSet::interval(0.1, 1.0),
+        ];
+        let config = MinimaxConfig::disabled();
+
+        let result = minimax_expected_loss_gate(&losses, &credals, &config);
+        assert!(result.is_safe);
+        assert!(!result.enabled);
+    }
+
+    #[test]
     fn test_select_eta_prequential() {
         let observations = vec![(10, 7), (10, 8), (10, 6)];
         let candidates = vec![0.5, 0.7, 0.9, 1.0];
@@ -876,5 +1346,291 @@ mod tests {
         let tp2 = TemperedPosterior::standard(1.0, 1.0, 0, 0);
         let mode2 = tp2.mode();
         assert!((mode2 - 0.5).abs() < 1e-10);
+    }
+
+    // =========================================================================
+    // Minimax Gate Tests (nao.20)
+    // =========================================================================
+
+    #[test]
+    fn test_least_favorable_prior_simple() {
+        // Two classes: useful (loss=0) and abandoned (loss=1)
+        let losses = [0.0, 1.0];
+        let credals = [
+            CredalSet::interval(0.6, 0.9), // P(useful)
+            CredalSet::interval(0.1, 0.4), // P(abandoned)
+        ];
+        let class_names = ["useful", "abandoned"];
+
+        let lfp = LeastFavorablePrior::compute(&losses, &credals, &class_names);
+
+        // LFP should maximize probability on highest-loss class (abandoned)
+        // P(abandoned) should be at upper bound = 0.4
+        assert!((lfp.class_probs[1] - 0.4).abs() < 1e-10);
+        assert!((lfp.class_probs[0] - 0.6).abs() < 1e-10);
+        assert!((lfp.expected_loss - 0.4).abs() < 1e-10);
+        assert!(lfp.description.contains("abandoned"));
+    }
+
+    #[test]
+    fn test_least_favorable_prior_four_classes() {
+        // Four classes with varying losses
+        let losses = [0.0, 0.3, 0.8, 1.0]; // useful, useful_bad, abandoned, zombie
+        let credals = [
+            CredalSet::interval(0.2, 0.6),
+            CredalSet::interval(0.1, 0.3),
+            CredalSet::interval(0.1, 0.4),
+            CredalSet::interval(0.0, 0.2),
+        ];
+        let class_names = ["useful", "useful_bad", "abandoned", "zombie"];
+
+        let lfp = LeastFavorablePrior::compute(&losses, &credals, &class_names);
+
+        // LFP should be valid distribution (sums to 1)
+        let sum: f64 = lfp.class_probs.iter().sum();
+        assert!((sum - 1.0).abs() < 1e-10, "Probs should sum to 1, got {}", sum);
+
+        // Expected loss should be computable
+        let expected: f64 = lfp
+            .class_probs
+            .iter()
+            .zip(losses.iter())
+            .map(|(p, l)| p * l)
+            .sum();
+        assert!((lfp.expected_loss - expected).abs() < 1e-10);
+
+        // High-loss classes should get priority
+        assert!(lfp.class_probs[3] >= lfp.class_probs[0]); // zombie >= useful
+    }
+
+    #[test]
+    fn test_minimax_gate_struct() {
+        let config = MinimaxConfig {
+            enabled: true,
+            max_worst_case_loss: 0.3,
+        };
+        let gate = MinimaxGate::new(config);
+
+        let losses = [0.0, 1.0];
+        let credals = [
+            CredalSet::interval(0.7, 0.9),
+            CredalSet::interval(0.1, 0.3),
+        ];
+
+        let result = gate.is_safe(&losses, &credals);
+        // Worst case: 0.3 * 1.0 = 0.3, which equals threshold
+        assert!(result.is_safe);
+    }
+
+    #[test]
+    fn test_minimax_gate_compute_lfp() {
+        let mut gate = MinimaxGate::default();
+
+        let losses = [0.1, 0.5, 0.9];
+        let credals = [
+            CredalSet::interval(0.2, 0.5),
+            CredalSet::interval(0.2, 0.4),
+            CredalSet::interval(0.2, 0.4),
+        ];
+        let class_names = ["class_a", "class_b", "class_c"];
+
+        let lfp = gate.compute_lfp(&losses, &credals, &class_names);
+
+        assert!(lfp.expected_loss > 0.0);
+        assert!(!lfp.class_probs.is_empty());
+
+        // Should be cached
+        assert!(gate.last_lfp().is_some());
+    }
+
+    #[test]
+    fn test_decision_stability_stable() {
+        // Two actions where Keep is clearly better
+        let keep_losses = [0.0, 0.0, 0.1, 0.1];
+        let kill_losses = [1.0, 0.5, 0.0, 0.0];
+        let credals = [
+            CredalSet::interval(0.6, 0.8), // useful
+            CredalSet::interval(0.1, 0.2), // useful_bad
+            CredalSet::interval(0.05, 0.15), // abandoned
+            CredalSet::interval(0.0, 0.1), // zombie
+        ];
+
+        let action_losses: Vec<(&str, &[f64])> =
+            vec![("keep", &keep_losses[..]), ("kill", &kill_losses[..])];
+
+        let analysis = DecisionStabilityAnalysis::analyze(&action_losses, &credals, 0.5);
+
+        assert!(analysis.is_stable);
+        assert!(analysis.viable_actions.contains(&"keep".to_string()));
+        assert!(analysis.explanation.contains("stable"));
+    }
+
+    #[test]
+    fn test_decision_stability_unstable() {
+        // Two actions where the optimal depends on the prior
+        let action_a_losses = [0.2, 0.8];
+        let action_b_losses = [0.8, 0.2];
+        let credals = [
+            CredalSet::interval(0.3, 0.7), // class 0
+            CredalSet::interval(0.3, 0.7), // class 1
+        ];
+
+        let action_losses: Vec<(&str, &[f64])> =
+            vec![("action_a", &action_a_losses[..]), ("action_b", &action_b_losses[..])];
+
+        let analysis = DecisionStabilityAnalysis::analyze(&action_losses, &credals, 1.0);
+
+        // With symmetric credal sets and symmetric losses, both actions should be viable
+        assert!(!analysis.is_stable || analysis.viable_actions.len() > 1);
+        assert!(analysis.regret_gap > 0.0);
+    }
+
+    #[test]
+    fn test_minimax_gate_analyze_stability() {
+        let mut gate = MinimaxGate::default();
+
+        let keep_losses = [0.0, 0.1];
+        let kill_losses = [1.0, 0.0];
+        let credals = [
+            CredalSet::interval(0.7, 0.9),
+            CredalSet::interval(0.1, 0.3),
+        ];
+
+        let action_losses: Vec<(&str, &[f64])> =
+            vec![("keep", &keep_losses[..]), ("kill", &kill_losses[..])];
+
+        let stability = gate.analyze_stability(&action_losses, &credals);
+
+        assert!(!stability.viable_actions.is_empty());
+        assert!(stability.regret_gap >= 0.0);
+
+        // Should be cached
+        assert!(gate.last_stability().is_some());
+    }
+
+    #[test]
+    fn test_minimax_evidence() {
+        let mut gate = MinimaxGate::new(MinimaxConfig {
+            enabled: true,
+            max_worst_case_loss: 0.5,
+        });
+
+        let losses = [0.0, 0.8];
+        let credals = [
+            CredalSet::interval(0.6, 0.8),
+            CredalSet::interval(0.2, 0.4),
+        ];
+
+        // First compute LFP so it gets cached
+        gate.compute_lfp(&losses, &credals, &["class_a", "class_b"]);
+
+        let evidence = gate.evidence(&losses, &credals);
+
+        assert!(evidence.enabled);
+        assert!(evidence.worst_case_loss >= evidence.best_case_loss);
+        assert!((evidence.regret_gap - (evidence.worst_case_loss - evidence.best_case_loss)).abs() < 1e-10);
+        assert!(evidence.lfp_probs.is_some());
+    }
+
+    #[test]
+    fn test_minimax_gate_reset() {
+        let mut gate = MinimaxGate::default();
+
+        let losses = [0.0, 1.0];
+        let credals = [CredalSet::interval(0.5, 0.5), CredalSet::interval(0.5, 0.5)];
+
+        gate.compute_lfp(&losses, &credals, &["a", "b"]);
+        assert!(gate.last_lfp().is_some());
+
+        gate.reset();
+        assert!(gate.last_lfp().is_none());
+        assert!(gate.last_stability().is_none());
+    }
+
+    #[test]
+    fn test_minimax_flips_decision_on_lfp() {
+        // Scenario where the naive expected loss (using point estimates) would choose Kill,
+        // but the least-favorable prior analysis shows Keep is safer.
+
+        // Point estimate: P(useful)=0.3, P(abandoned)=0.7
+        // Keep losses: [0.0, 0.5] -> E[loss] = 0.0*0.3 + 0.5*0.7 = 0.35
+        // Kill losses: [1.0, 0.0] -> E[loss] = 1.0*0.3 + 0.0*0.7 = 0.30 (Kill seems better)
+
+        // But with credal sets P(useful) ∈ [0.2, 0.5], P(abandoned) ∈ [0.5, 0.8]:
+        // Kill worst case: P(useful)=0.5 -> E[loss] = 1.0*0.5 + 0.0*0.5 = 0.5
+        // Keep worst case: P(abandoned)=0.8 -> E[loss] = 0.0*0.2 + 0.5*0.8 = 0.4
+
+        let keep_losses = [0.0, 0.5];
+        let kill_losses = [1.0, 0.0];
+        let credals = [
+            CredalSet::interval(0.2, 0.5), // useful
+            CredalSet::interval(0.5, 0.8), // abandoned
+        ];
+
+        let keep_worst = worst_case_expected_loss(&keep_losses, &credals);
+        let kill_worst = worst_case_expected_loss(&kill_losses, &credals);
+
+        // Under minimax, Keep is safer
+        assert!(keep_worst < kill_worst,
+            "Keep worst-case {} should be less than Kill worst-case {}",
+            keep_worst, kill_worst);
+    }
+
+    #[test]
+    fn test_decision_stability_threshold_shift() {
+        let keep_losses = [0.1, 0.1];
+        let credals = [
+            CredalSet::interval(0.4, 0.6),
+            CredalSet::interval(0.4, 0.6),
+        ];
+
+        let action_losses: Vec<(&str, &[f64])> = vec![("keep", &keep_losses[..])];
+
+        // Threshold below worst-case loss
+        let analysis_blocked = DecisionStabilityAnalysis::analyze(&action_losses, &credals, 0.05);
+        assert!(analysis_blocked.threshold_shift.is_some());
+
+        // Threshold above worst-case loss
+        let analysis_safe = DecisionStabilityAnalysis::analyze(&action_losses, &credals, 0.5);
+        assert!(analysis_safe.threshold_shift.is_some() || analysis_safe.is_stable);
+    }
+
+    #[test]
+    fn test_least_favorable_prior_invalid_input() {
+        // Mismatched dimensions
+        let losses = [0.0, 1.0];
+        let credals = [CredalSet::interval(0.5, 0.5)]; // Only one credal
+        let class_names = ["a", "b"];
+
+        let lfp = LeastFavorablePrior::compute(&losses, &credals, &class_names);
+        assert!(lfp.expected_loss.is_infinite());
+        assert!(lfp.description.contains("Invalid"));
+    }
+
+    #[test]
+    fn test_minimax_gate_config_update() {
+        let mut gate = MinimaxGate::new(MinimaxConfig {
+            enabled: true,
+            max_worst_case_loss: 0.3,
+        });
+
+        let losses = [0.0, 0.5];
+        let credals = [
+            CredalSet::interval(0.4, 0.6),
+            CredalSet::interval(0.4, 0.6),
+        ];
+
+        // Initially safe
+        let result1 = gate.is_safe(&losses, &credals);
+        assert!(result1.is_safe); // worst = 0.3 <= 0.3
+
+        // Update config with tighter threshold
+        gate.set_config(MinimaxConfig {
+            enabled: true,
+            max_worst_case_loss: 0.2,
+        });
+
+        let result2 = gate.is_safe(&losses, &credals);
+        assert!(!result2.is_safe); // worst = 0.3 > 0.2
     }
 }

@@ -85,8 +85,10 @@ pub use ppc::{
     PpcEvidence, PpcResult, StatisticCheck, TestStatistic,
 };
 pub use robust::{
-    best_case_expected_loss, select_eta_prequential, worst_case_expected_loss, CredalSet,
-    RobustConfig, RobustError, RobustEvidence, RobustGate, RobustResult, TemperedPosterior,
+    best_case_expected_loss, minimax_expected_loss_gate, select_eta_prequential,
+    worst_case_expected_loss, CredalSet, DecisionStabilityAnalysis, LeastFavorablePrior,
+    MinimaxConfig, MinimaxEvidence, MinimaxGate, MinimaxResult, RobustConfig, RobustError,
+    RobustEvidence, RobustGate, RobustResult, TemperedPosterior,
 };
 pub use robust_stats::{
     summarize as summarize_robust_stats, RobustStatsConfig, RobustStatsError, RobustSummary,
