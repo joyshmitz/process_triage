@@ -2393,8 +2393,9 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             },
             "reversibility": match decision_outcome.optimal_action {
                 Action::Kill | Action::Restart => "irreversible",
-                Action::Pause | Action::Freeze | Action::Throttle => "reversible",
-                _ => "no_action",
+                Action::Pause | Action::Freeze | Action::Throttle | Action::Quarantine => "reversible",
+                Action::Resume | Action::Unfreeze | Action::Unquarantine => "reversal",
+                Action::Keep | Action::Renice => "no_action",
             },
             "supervisor": {
                 "detected": false, // Would need supervision detection
@@ -2402,7 +2403,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             },
             "uncertainty": {
                 "entropy": ledger.bayes_factors.len() as f64 * 0.1, // Simplified
-                "confidence_interval": [max_posterior - 0.1, (max_posterior + 0.1).min(1.0)],
+                "confidence_interval": [(max_posterior - 0.1).max(0.0), (max_posterior + 0.1).min(1.0)],
             },
             "recommended_action": recommended_action,
             "action_rationale": format!("Action {:?} selected{}",
@@ -2469,7 +2470,16 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     });
 
     // Write plan to session
-    let plan_path = handle.dir.join("decision").join("plan.json");
+    let decision_dir = handle.dir.join("decision");
+    if let Err(e) = std::fs::create_dir_all(&decision_dir) {
+        eprintln!(
+            "agent plan: failed to create directory {}: {}",
+            decision_dir.display(),
+            e
+        );
+        return ExitCode::InternalError;
+    }
+    let plan_path = decision_dir.join("plan.json");
     if let Err(e) = std::fs::write(&plan_path, serde_json::to_string_pretty(&plan_output).unwrap()) {
         eprintln!(
             "agent plan: failed to write {}: {}",
