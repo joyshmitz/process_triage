@@ -146,7 +146,7 @@ impl ActionRunner for ReniceActionRunner {
             Action::Renice => self.execute_renice(action),
             Action::Keep => Ok(()),
             Action::Pause | Action::Resume | Action::Kill | Action::Throttle | Action::Restart
-            | Action::Freeze | Action::Unfreeze => {
+            | Action::Freeze | Action::Unfreeze | Action::Quarantine | Action::Unquarantine => {
                 Err(ActionError::Failed(format!(
                     "{:?} requires signal/cgroup support, not renice",
                     action.action
@@ -160,7 +160,7 @@ impl ActionRunner for ReniceActionRunner {
             Action::Renice => self.verify_renice(action),
             Action::Keep => Ok(()),
             Action::Pause | Action::Resume | Action::Kill | Action::Throttle | Action::Restart
-            | Action::Freeze | Action::Unfreeze => {
+            | Action::Freeze | Action::Unfreeze | Action::Quarantine | Action::Unquarantine => {
                 Ok(())
             }
         }
@@ -250,7 +250,7 @@ mod tests {
         #[test]
         fn can_renice_child_process() {
             // Spawn a sleep process
-            let mut child = Command::new("sleep")
+            let child = Command::new("sleep")
                 .arg("60")
                 .spawn()
                 .expect("failed to spawn sleep");

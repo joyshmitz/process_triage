@@ -21,18 +21,23 @@ pub enum Action {
     /// Unfreeze a previously frozen process (follow-up to Freeze, not a decision action).
     Unfreeze,
     Throttle,
+    /// Quarantine process by restricting it to a limited cpuset (cgroup cpuset controller).
+    Quarantine,
+    /// Unquarantine a previously quarantined process (follow-up to Quarantine).
+    Unquarantine,
     Restart,
     Kill,
 }
 
 impl Action {
-    /// Actions available for decision-making (excludes Resume/Unfreeze, which are follow-up actions).
-    pub(crate) const ALL: [Action; 7] = [
+    /// Actions available for decision-making (excludes Resume/Unfreeze/Unquarantine, which are follow-up actions).
+    pub(crate) const ALL: [Action; 8] = [
         Action::Keep,
         Action::Renice,
         Action::Pause,
         Action::Freeze,
         Action::Throttle,
+        Action::Quarantine,
         Action::Restart,
         Action::Kill,
     ];
@@ -42,9 +47,11 @@ impl Action {
             Action::Keep => 0,
             Action::Renice => 1,
             Action::Pause => 2,
-            Action::Resume => 2,    // Same rank as Pause (both reversible)
-            Action::Freeze => 2,    // Same rank as Pause (cgroup-level pause)
-            Action::Unfreeze => 2,  // Same rank as Freeze (both reversible)
+            Action::Resume => 2,        // Same rank as Pause (both reversible)
+            Action::Freeze => 2,        // Same rank as Pause (cgroup-level pause)
+            Action::Unfreeze => 2,      // Same rank as Freeze (both reversible)
+            Action::Quarantine => 3,    // Same rank as Throttle (resource restriction)
+            Action::Unquarantine => 3,  // Same rank as Quarantine (both reversible)
             Action::Throttle => 3,
             Action::Restart => 4,
             Action::Kill => 5,
@@ -61,12 +68,14 @@ impl Action {
                 | Action::Unfreeze
                 | Action::Renice
                 | Action::Throttle
+                | Action::Quarantine
+                | Action::Unquarantine
         )
     }
 
     /// Returns true if this is a follow-up action (not a decision action).
     pub fn is_follow_up(&self) -> bool {
-        matches!(self, Action::Resume | Action::Unfreeze)
+        matches!(self, Action::Resume | Action::Unfreeze | Action::Unquarantine)
     }
 }
 
@@ -408,6 +417,10 @@ fn loss_for_action(
         Action::Throttle => row
             .throttle
             .ok_or(DecisionError::MissingLoss { action, class }),
+        // Quarantine uses Throttle's loss value (semantically similar: resource restriction)
+        Action::Quarantine => row
+            .throttle
+            .ok_or(DecisionError::MissingLoss { action, class }),
         Action::Renice => row
             .renice
             .ok_or(DecisionError::MissingLoss { action, class }),
@@ -415,8 +428,10 @@ fn loss_for_action(
             .restart
             .ok_or(DecisionError::MissingLoss { action, class }),
         Action::Kill => Ok(row.kill),
-        // Resume/Unfreeze are follow-up actions, not primary decisions, so no loss entry
-        Action::Resume | Action::Unfreeze => Err(DecisionError::MissingLoss { action, class }),
+        // Resume/Unfreeze/Unquarantine are follow-up actions, not primary decisions, so no loss entry
+        Action::Resume | Action::Unfreeze | Action::Unquarantine => {
+            Err(DecisionError::MissingLoss { action, class })
+        }
     }
 }
 

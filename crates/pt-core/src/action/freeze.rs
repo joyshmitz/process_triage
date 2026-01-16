@@ -16,7 +16,7 @@ use crate::decision::Action;
 use crate::plan::PlanAction;
 use std::fs;
 use std::path::Path;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 /// Freeze action runner configuration.
 #[derive(Debug, Clone)]
@@ -196,7 +196,7 @@ impl ActionRunner for FreezeActionRunner {
             Action::Unfreeze => self.execute_unfreeze(action),
             Action::Keep => Ok(()),
             Action::Pause | Action::Resume | Action::Kill | Action::Throttle
-            | Action::Restart | Action::Renice => {
+            | Action::Restart | Action::Renice | Action::Quarantine | Action::Unquarantine => {
                 Err(ActionError::Failed(format!(
                     "{:?} requires signal/setpriority support, not cgroup freeze",
                     action.action
@@ -211,7 +211,7 @@ impl ActionRunner for FreezeActionRunner {
             Action::Unfreeze => self.verify_unfreeze(action),
             Action::Keep => Ok(()),
             Action::Pause | Action::Resume | Action::Kill | Action::Throttle
-            | Action::Restart | Action::Renice => Ok(()),
+            | Action::Restart | Action::Renice | Action::Quarantine | Action::Unquarantine => Ok(()),
         }
     }
 }

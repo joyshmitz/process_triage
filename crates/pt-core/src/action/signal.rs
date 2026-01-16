@@ -276,6 +276,12 @@ impl ActionRunner for SignalActionRunner {
                     "freeze/unfreeze requires cgroup v2 freezer support".to_string(),
                 ))
             }
+            Action::Quarantine | Action::Unquarantine => {
+                // Quarantine requires cgroup cpuset operations
+                Err(ActionError::Failed(
+                    "quarantine requires cgroup cpuset support".to_string(),
+                ))
+            }
         }
     }
 
@@ -285,7 +291,8 @@ impl ActionRunner for SignalActionRunner {
             Action::Resume => self.verify_resume(action),
             Action::Kill => self.verify_kill(action),
             Action::Keep => Ok(()),
-            Action::Throttle | Action::Restart | Action::Renice | Action::Freeze | Action::Unfreeze => Ok(()),
+            Action::Throttle | Action::Restart | Action::Renice | Action::Freeze | Action::Unfreeze
+            | Action::Quarantine | Action::Unquarantine => Ok(()),
         }
     }
 }

@@ -533,6 +533,119 @@ pub struct CrossExcitationSummary {
     pub dominant_sink: Option<String>,
 }
 
+/// Configuration for cross-excitation summary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossExcitationConfig {
+    /// Window size for considering triggered events (seconds).
+    pub window_s: f64,
+    /// Minimum events required per stream to compute scores.
+    pub min_events: usize,
+}
+
+impl Default for CrossExcitationConfig {
+    fn default() -> Self {
+        Self {
+            window_s: 1.0,
+            min_events: 3,
+        }
+    }
+}
+
+/// Summarize cross-excitation between multiple event streams.
+pub fn summarize_cross_excitation(
+    streams: &[(String, Vec<f64>)],
+    config: &CrossExcitationConfig,
+) -> CrossExcitationSummary {
+    if streams.is_empty() {
+        return CrossExcitationSummary {
+            pairs: Vec::new(),
+            dominant_source: None,
+            dominant_sink: None,
+        };
+    }
+
+    let mut pairs = Vec::new();
+    let mut source_scores: Vec<(String, f64)> = Vec::new();
+    let mut sink_scores: Vec<(String, f64)> = Vec::new();
+
+    for (i, (name_i, events_i)) in streams.iter().enumerate() {
+        if events_i.len() < config.min_events {
+            source_scores.push((name_i.clone(), 0.0));
+            continue;
+        }
+        let mut source_total = 0.0;
+        let mut sorted_i = events_i.clone();
+        sorted_i.sort_by(|a, b| a.total_cmp(b));
+
+        for (j, (name_j, events_j)) in streams.iter().enumerate() {
+            if i == j || events_j.len() < config.min_events {
+                continue;
+            }
+            let mut sorted_j = events_j.clone();
+            sorted_j.sort_by(|a, b| a.total_cmp(b));
+
+            let score = cross_excitation_score(&sorted_i, &sorted_j, config.window_s);
+            pairs.push((name_i.clone(), name_j.clone(), score));
+            source_total += score;
+        }
+        source_scores.push((name_i.clone(), source_total));
+    }
+
+    for (name_j, events_j) in streams.iter() {
+        if events_j.len() < config.min_events {
+            sink_scores.push((name_j.clone(), 0.0));
+            continue;
+        }
+        let mut sink_total = 0.0;
+        for (name_i, _events_i) in streams.iter() {
+            if name_i == name_j {
+                continue;
+            }
+            if let Some((_, _, score)) =
+                pairs.iter().find(|(src, dst, _)| src == name_i && dst == name_j)
+            {
+                sink_total += *score;
+            }
+        }
+        sink_scores.push((name_j.clone(), sink_total));
+    }
+
+    let dominant_source = source_scores
+        .iter()
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .and_then(|(name, score)| if *score > 0.0 { Some(name.clone()) } else { None });
+
+    let dominant_sink = sink_scores
+        .iter()
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .and_then(|(name, score)| if *score > 0.0 { Some(name.clone()) } else { None });
+
+    CrossExcitationSummary {
+        pairs,
+        dominant_source,
+        dominant_sink,
+    }
+}
+
+fn cross_excitation_score(source: &[f64], target: &[f64], window_s: f64) -> f64 {
+    if source.is_empty() || target.is_empty() || window_s <= 0.0 {
+        return 0.0;
+    }
+    let mut count = 0usize;
+    let mut j = 0usize;
+    for &t in source {
+        while j < target.len() && target[j] <= t {
+            j += 1;
+        }
+        let mut k = j;
+        while k < target.len() && target[k] <= t + window_s {
+            count += 1;
+            k += 1;
+        }
+    }
+    count as f64 / source.len() as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -604,6 +717,56 @@ mod tests {
         // Note: may not be extremely high due to EM initialization
         assert!(result.event_count == 20);
         assert!(result.converged || result.iterations > 5);
+    }
+
+    fn find_pair_score(pairs: &[(String, String, f64)], src: &str, dst: &str) -> Option<f64> {
+        pairs
+            .iter()
+            .find(|(s, d, _)| s == src && d == dst)
+            .map(|(_, _, score)| *score)
+    }
+
+    #[test]
+    fn test_cross_excitation_directional_trigger() {
+        let streams = vec![
+            ("cpu".to_string(), vec![0.0, 1.0, 2.0]),
+            ("io".to_string(), vec![0.1, 1.1, 2.1]),
+            ("net".to_string(), vec![0.5, 1.5, 2.5]),
+        ];
+        let config = CrossExcitationConfig {
+            window_s: 0.2,
+            min_events: 3,
+        };
+
+        let summary = summarize_cross_excitation(&streams, &config);
+
+        let cpu_to_io = find_pair_score(&summary.pairs, "cpu", "io").unwrap_or(0.0);
+        let io_to_cpu = find_pair_score(&summary.pairs, "io", "cpu").unwrap_or(0.0);
+        let cpu_to_net = find_pair_score(&summary.pairs, "cpu", "net").unwrap_or(0.0);
+
+        assert!(approx_eq(cpu_to_io, 1.0, 1e-9));
+        assert!(approx_eq(io_to_cpu, 0.0, 1e-9));
+        assert!(approx_eq(cpu_to_net, 0.0, 1e-9));
+        assert_eq!(summary.dominant_source.as_deref(), Some("cpu"));
+        assert_eq!(summary.dominant_sink.as_deref(), Some("io"));
+    }
+
+    #[test]
+    fn test_cross_excitation_min_events_gate() {
+        let streams = vec![
+            ("cpu".to_string(), vec![0.0, 1.0, 2.0]),
+            ("io".to_string(), vec![0.1, 1.1]),
+        ];
+        let config = CrossExcitationConfig {
+            window_s: 0.2,
+            min_events: 3,
+        };
+
+        let summary = summarize_cross_excitation(&streams, &config);
+
+        assert!(summary.pairs.is_empty());
+        assert!(summary.dominant_source.is_none());
+        assert!(summary.dominant_sink.is_none());
     }
 
     #[test]

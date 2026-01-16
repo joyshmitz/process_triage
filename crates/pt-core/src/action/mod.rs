@@ -2,7 +2,11 @@
 
 #[cfg(target_os = "linux")]
 pub mod cgroup_throttle;
+#[cfg(target_os = "linux")]
+pub mod cpuset_quarantine;
 pub mod executor;
+#[cfg(target_os = "linux")]
+pub mod freeze;
 pub mod prechecks;
 pub mod recovery;
 pub mod recovery_tree;
@@ -22,6 +26,13 @@ pub use cgroup_throttle::{
     can_throttle_process, CpuThrottleActionRunner, CpuThrottleConfig, ThrottleResult,
     ThrottleReversalMetadata, DEFAULT_PERIOD_US, DEFAULT_THROTTLE_FRACTION, MIN_QUOTA_US,
 };
+#[cfg(target_os = "linux")]
+pub use cpuset_quarantine::{
+    can_quarantine_cpuset, CpusetQuarantineActionRunner, CpusetQuarantineConfig,
+    QuarantineResult, QuarantineReversalMetadata, DEFAULT_QUARANTINE_CPUS, MIN_QUARANTINE_CPUS,
+};
+#[cfg(target_os = "linux")]
+pub use freeze::{is_freeze_available, FreezeActionRunner, FreezeConfig};
 #[cfg(target_os = "linux")]
 pub use signal::LiveIdentityProvider;
 #[cfg(unix)]

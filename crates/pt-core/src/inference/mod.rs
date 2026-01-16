@@ -62,7 +62,8 @@ pub use graph_smoothing::{
     GraphSmoothingError, GraphSmoothingResult,
 };
 pub use hawkes::{
-    BurstLevel, CrossExcitationSummary, HawkesConfig, HawkesDetector, HawkesEvidence, HawkesResult,
+    summarize_cross_excitation, BurstLevel, CrossExcitationConfig, CrossExcitationSummary,
+    HawkesConfig, HawkesDetector, HawkesEvidence, HawkesResult,
 };
 pub use hazard::{
     GammaParams, HazardEvidence, HazardModel, HazardResult, Regime, RegimePriors, RegimeState,
