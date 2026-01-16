@@ -17,7 +17,7 @@ use crate::config::policy::{DataLossGates, Guardrails};
 use crate::plan::PreCheck;
 use crate::supervision::session::{SessionAnalyzer, SessionConfig, SessionProtectionType};
 #[cfg(target_os = "linux")]
-use crate::supervision::detect_supervision;
+use crate::supervision::{detect_supervision, is_human_supervised};
 use serde::Serialize;
 use std::collections::HashSet;
 use std::fmt;
@@ -746,27 +746,26 @@ impl PreCheckProvider for LivePreCheckProvider {
     }
 
     fn check_agent_supervision(&self, pid: u32) -> PreCheckResult {
-        trace!(pid, "checking AI agent supervision status");
+        trace!(pid, "checking AI/IDE/CI supervision status");
 
-        // Use the supervision detection module to check if process is supervised
         match detect_supervision(pid) {
             Ok(result) => {
-                if result.is_supervised {
+                if is_human_supervised(&result) {
                     let supervisor = result
                         .supervisor_name
                         .clone()
-                        .unwrap_or_else(|| "unknown AI agent".to_string());
+                        .unwrap_or_else(|| "unknown supervisor".to_string());
                     let category = result
                         .supervisor_type
-                        .map(|t| format!("{:?}", t))
-                        .unwrap_or_else(|| "agent".to_string());
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "unknown".to_string());
 
                     debug!(
                         pid,
                         %supervisor,
                         %category,
                         confidence = result.confidence,
-                        "process is supervised by AI agent"
+                        "process is human-supervised"
                     );
 
                     return PreCheckResult::Blocked {
@@ -781,7 +780,6 @@ impl PreCheckProvider for LivePreCheckProvider {
                 }
             }
             Err(e) => {
-                // Log but don't fail on detection errors - process may have exited
                 trace!(pid, error = %e, "agent supervision detection error, allowing action");
             }
         }

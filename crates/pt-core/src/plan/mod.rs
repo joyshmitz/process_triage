@@ -153,6 +153,7 @@ pub enum PreCheck {
     CheckSessionSafety,
     CheckDataLossGate,
     CheckSupervisor,
+    CheckAgentSupervision,
     /// Verify process is still in expected state (not zombie/D-state if expecting killable).
     VerifyProcessState,
 }

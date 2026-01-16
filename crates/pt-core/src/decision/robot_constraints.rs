@@ -74,6 +74,9 @@ pub struct RuntimeRobotConstraints {
     /// Categories to exclude (these are never allowed).
     pub exclude_categories: Vec<String>,
 
+    /// Require human confirmation for supervised processes.
+    pub require_human_for_supervised: bool,
+
     /// Source of each constraint value for explainability.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sources: Option<ConstraintSources>,
@@ -90,6 +93,7 @@ pub struct ConstraintSources {
     pub require_policy_snapshot: ConstraintSource,
     pub allow_categories: ConstraintSource,
     pub exclude_categories: ConstraintSource,
+    pub require_human_for_supervised: ConstraintSource,
 }
 
 /// Source of a constraint value.
@@ -120,6 +124,7 @@ impl RuntimeRobotConstraints {
             require_policy_snapshot: robot_mode.require_policy_snapshot.unwrap_or(false),
             allow_categories: robot_mode.allow_categories.clone(),
             exclude_categories: robot_mode.exclude_categories.clone(),
+            require_human_for_supervised: robot_mode.require_human_for_supervised,
             sources: Some(ConstraintSources::default()),
         }
     }
@@ -136,6 +141,7 @@ impl RuntimeRobotConstraints {
             require_policy_snapshot: false,
             allow_categories: Vec::new(),
             exclude_categories: Vec::new(),
+            require_human_for_supervised: false,
             sources: None,
         }
     }
@@ -282,6 +288,10 @@ impl RuntimeRobotConstraints {
             ));
         }
 
+        if self.require_human_for_supervised {
+            summary.push("require_human_for_supervised: true".to_string());
+        }
+
         summary
     }
 }
@@ -375,6 +385,8 @@ pub enum ConstraintKind {
     ExcludedCategory,
     /// Category not in allow list.
     CategoryNotAllowed,
+    /// Supervision detected and human confirmation required.
+    RequireHumanForSupervised,
 }
 
 /// Metrics about a constraint check.
@@ -438,6 +450,26 @@ impl ConstraintChecker {
                 ),
             });
             return ConstraintCheckResult::blocked(violations, self.current_metrics());
+        }
+
+        // Block supervised processes unless human confirmation is allowed
+        if self.constraints.require_human_for_supervised && candidate.is_supervised {
+            violations.push(ConstraintViolation {
+                constraint: ConstraintKind::RequireHumanForSupervised,
+                message: "Process is supervised; requires explicit human confirmation".to_string(),
+                threshold: "require_human_for_supervised: true".to_string(),
+                actual: "is_supervised: true".to_string(),
+                source: self
+                    .constraints
+                    .sources
+                    .as_ref()
+                    .map(|s| s.require_human_for_supervised)
+                    .unwrap_or_default(),
+                remediation: Some(
+                    "Run interactively or disable require_human_for_supervised in policy.json"
+                        .to_string(),
+                ),
+            });
         }
 
         // Check minimum posterior
@@ -691,6 +723,8 @@ pub struct RobotCandidate {
 
     /// Whether policy snapshot is attached (for require_policy_snapshot).
     pub has_policy_snapshot: bool,
+    /// Whether process is supervised by an agent/IDE/CI.
+    pub is_supervised: bool,
 }
 
 impl Default for RobotCandidate {
@@ -702,6 +736,7 @@ impl Default for RobotCandidate {
             category: None,
             is_kill_action: false,
             has_policy_snapshot: false,
+            is_supervised: false,
         }
     }
 }
@@ -745,6 +780,12 @@ impl RobotCandidate {
     /// Set policy snapshot status.
     pub fn with_policy_snapshot(mut self, has_snapshot: bool) -> Self {
         self.has_policy_snapshot = has_snapshot;
+        self
+    }
+
+    /// Set supervision status.
+    pub fn with_supervised(mut self, supervised: bool) -> Self {
+        self.is_supervised = supervised;
         self
     }
 }
@@ -846,6 +887,25 @@ mod tests {
             .violations
             .iter()
             .any(|v| v.constraint == ConstraintKind::MinPosterior));
+    }
+
+    #[test]
+    fn test_checker_blocks_supervised_candidate() {
+        let constraints = RuntimeRobotConstraints::from_policy(&test_robot_mode());
+        let checker = ConstraintChecker::new(constraints);
+
+        let candidate = RobotCandidate::new()
+            .with_posterior(0.99)
+            .with_memory_mb(100.0)
+            .with_kill_action(true)
+            .with_supervised(true);
+
+        let result = checker.check_candidate(&candidate);
+        assert!(!result.allowed);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.constraint == ConstraintKind::RequireHumanForSupervised));
     }
 
     #[test]

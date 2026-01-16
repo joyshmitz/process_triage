@@ -179,6 +179,9 @@ pub struct RobotMode {
 
     #[serde(default)]
     pub exclude_categories: Vec<String>,
+
+    #[serde(default = "default_true")]
+    pub require_human_for_supervised: bool,
 }
 
 /// Confidence level enum.
