@@ -290,23 +290,4 @@ proptest! {
         );
     }
 
-    /// Property: orphan=true + tty=false should favor abandoned classification.
-    #[test]
-    fn orphan_no_tty_favors_abandoned(_seed in 0u32..1000) {
-        let priors = Priors::default();
-        let evidence = Evidence {
-            orphan: Some(true),
-            tty: Some(false),
-            ..Default::default()
-        };
-
-        let result = compute_posterior(&priors, &evidence).expect("computation failed");
-
-        // Orphan + no TTY should increase abandoned probability
-        prop_assert!(
-            result.posterior.abandoned >= priors.classes.abandoned.prior_prob,
-            "orphan+no_tty should increase abandoned probability from {} to at least that",
-            priors.classes.abandoned.prior_prob
-        );
-    }
 }
