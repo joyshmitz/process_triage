@@ -472,13 +472,13 @@ mod tests {
     fn verify_detects_respawn() {
         let plan = AgentPlan {
             session_id: "pt-20260115-000000-abcd".to_string(),
-            generated_at: Some("2026-01-15T00:00:00Z".to_string()),
+            generated_at: Some("1970-01-01T00:00:10Z".to_string()),
             candidates: vec![PlanCandidate {
                 pid: 123,
                 uid: 1000,
                 cmd_short: "node".to_string(),
                 cmd_full: "node dev".to_string(),
-                start_id: Some("123:100".to_string()),
+                start_id: Some("123:5".to_string()),
                 recommended_action: "kill".to_string(),
                 blast_radius: Some(BlastRadius {
                     memory_mb: 100.0,
@@ -487,7 +487,8 @@ mod tests {
             }],
         };
 
-        let current = vec![make_proc(456, 1000, "node dev", 200, ProcessState::Running)];
+        // Current process has DIFFERENT PID (456) but SAME CMD and LATER start time (20 > 10)
+        let current = vec![make_proc(456, 1000, "node dev", 20, ProcessState::Running)];
         let report = verify_plan(&plan, &current, Utc::now(), Utc::now());
 
         assert_eq!(report.action_outcomes.len(), 1);

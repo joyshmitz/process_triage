@@ -294,6 +294,9 @@ pub struct EvidenceLedger {
     pub evidence_glyphs: HashMap<String, String>,
     /// Human-readable why summary.
     pub why_summary: String,
+    /// Source of priors used (global, signature, user override, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prior_source: Option<super::prior_override::PriorSourceInfo>,
 }
 
 impl EvidenceLedger {
@@ -354,7 +357,26 @@ impl EvidenceLedger {
             top_evidence,
             evidence_glyphs,
             why_summary,
+            prior_source: None,
         }
+    }
+
+    /// Build an evidence ledger from a posterior result with prior source tracking.
+    pub fn from_posterior_result_with_source(
+        result: &PosteriorResult,
+        pid: Option<u32>,
+        reference_class: Option<Classification>,
+        prior_source: super::prior_override::PriorSourceInfo,
+    ) -> Self {
+        let mut ledger = Self::from_posterior_result(result, pid, reference_class);
+        ledger.prior_source = Some(prior_source);
+        ledger
+    }
+
+    /// Set the prior source information.
+    pub fn with_prior_source(mut self, source: super::prior_override::PriorSourceInfo) -> Self {
+        self.prior_source = Some(source);
+        self
     }
 
     /// Get the top N Bayes factor entries by magnitude.

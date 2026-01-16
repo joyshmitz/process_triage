@@ -210,7 +210,12 @@ impl HawkesDetector {
     ///
     /// # Returns
     /// Fitted Hawkes parameters and summary statistics.
-    pub fn fit(&self, events: &[f64], window_end: f64) -> HawkesResult {
+    pub fn fit(&self, events_slice: &[f64], window_end: f64) -> HawkesResult {
+        // Ensure events are sorted for causality
+        let mut events = events_slice.to_vec();
+        events.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let events = events; // Shadow with sorted Vec
+
         let n = events.len();
 
         // Compute time span
@@ -245,11 +250,11 @@ impl HawkesDetector {
 
             // E-step: compute responsibilities
             // For each event, compute probability it was triggered by background vs excitation
-            let (responsibilities, intensities) = self.e_step(events, mu, alpha, beta);
+            let (responsibilities, intensities) = self.e_step(&events, mu, alpha, beta);
 
             // M-step: update parameters
             let (new_mu, new_alpha, new_beta) =
-                self.m_step(events, &responsibilities, time_span, alpha, beta);
+                self.m_step(&events, &responsibilities, time_span, alpha, beta);
 
             // Apply constraints
             mu = new_mu.max(self.config.mu_min).min(self.config.mu_max);
@@ -263,7 +268,7 @@ impl HawkesDetector {
             }
 
             // Compute log-likelihood
-            let ll = self.log_likelihood(events, window_end, mu, alpha, beta, &intensities);
+            let ll = self.log_likelihood(&events, window_end, mu, alpha, beta, &intensities);
 
             // Check convergence
             if (ll - prev_ll).abs() < self.config.tol {
@@ -274,11 +279,11 @@ impl HawkesDetector {
         }
 
         // Compute final intensity at window end
-        let current_intensity = self.intensity_at(events, window_end, mu, alpha, beta);
+        let current_intensity = self.intensity_at(&events, window_end, mu, alpha, beta);
 
         // Compute final log-likelihood
-        let (_, intensities) = self.e_step(events, mu, alpha, beta);
-        let log_likelihood = self.log_likelihood(events, window_end, mu, alpha, beta, &intensities);
+        let (_, intensities) = self.e_step(&events, mu, alpha, beta);
+        let log_likelihood = self.log_likelihood(&events, window_end, mu, alpha, beta, &intensities);
 
         let branching_ratio = if beta > 0.0 { alpha / beta } else { 0.0 };
 

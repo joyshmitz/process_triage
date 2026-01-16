@@ -520,7 +520,7 @@ impl MarkedPointProcess {
     /// Add an event with timestamp and mark.
     pub fn add_event(&mut self, timestamp: f64, mark: f64) {
         // Update window start
-        if self.window_start.is_none() {
+        if self.window_start.is_none() || timestamp < self.window_start.unwrap_or(f64::INFINITY) {
             self.window_start = Some(timestamp);
         }
 
@@ -631,7 +631,9 @@ impl MarkedPointProcess {
         let mut bin_counts: Vec<usize> = vec![0; n_bins];
 
         for event in &self.events {
-            let bin_idx = ((event.timestamp - window_start) / bin_size).floor() as usize;
+            // Ensure non-negative index
+            let offset = (event.timestamp - window_start).max(0.0);
+            let bin_idx = (offset / bin_size).floor() as usize;
             if bin_idx < n_bins {
                 bin_counts[bin_idx] += 1;
             }
