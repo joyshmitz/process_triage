@@ -6,6 +6,7 @@
 //! - Path layout and partitioning helpers
 //! - Shadow mode observation storage with tiered retention
 
+pub mod retention;
 pub mod schema;
 pub mod shadow;
 pub mod writer;

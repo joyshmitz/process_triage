@@ -24,3 +24,5 @@ pt-common = { path = "../pt-common" }
 
 [dev-dependencies]
 tempfile = "3"
+filetime = "0.2"
+serde_json = "1"  # Re-export for test assertions
