@@ -591,11 +591,11 @@ impl ReportGenerator {
             duration = overview.duration_formatted(),
             mode = html_escape(&overview.mode),
             state = html_escape(&overview.state),
-            os = overview.os_family.as_deref().unwrap_or("Unknown"),
-            arch = overview.arch.as_deref().unwrap_or("Unknown"),
+            os = html_escape(overview.os_family.as_deref().unwrap_or("Unknown")),
+            arch = html_escape(overview.arch.as_deref().unwrap_or("Unknown")),
             cores = overview.cores.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string()),
             memory = overview.memory_formatted(),
-            pt_version = overview.pt_version.as_deref().unwrap_or("Unknown"),
+            pt_version = html_escape(overview.pt_version.as_deref().unwrap_or("Unknown")),
             profile = html_escape(&overview.export_profile),
         )
     }

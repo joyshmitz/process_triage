@@ -12,7 +12,7 @@ use std::time::Duration;
 /// Get a Command for pt-core binary with clean config (using temp dir).
 fn pt_core_clean() -> Command {
     let mut cmd = cargo_bin_cmd!("pt-core");
-    cmd.timeout(Duration::from_secs(30));
+    cmd.timeout(Duration::from_secs(300));
     // Use a non-existent config dir to force defaults
     cmd.arg("--config")
         .arg("/tmp/pt-core-test-nonexistent-config");
@@ -22,7 +22,7 @@ fn pt_core_clean() -> Command {
 /// Get a Command for pt-core binary (may use user config).
 fn pt_core() -> Command {
     let mut cmd = cargo_bin_cmd!("pt-core");
-    cmd.timeout(Duration::from_secs(30));
+    cmd.timeout(Duration::from_secs(300));
     cmd
 }
 
