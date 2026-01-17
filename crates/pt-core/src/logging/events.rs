@@ -54,6 +54,8 @@ pub enum Stage {
     Bundle,
     /// Background daemon monitoring.
     Daemon,
+    /// Self-update and rollback operations.
+    Update,
 }
 
 impl std::fmt::Display for Stage {
@@ -69,6 +71,7 @@ impl std::fmt::Display for Stage {
             Stage::Report => "report",
             Stage::Bundle => "bundle",
             Stage::Daemon => "daemon",
+            Stage::Update => "update",
         };
         write!(f, "{}", s)
     }
@@ -120,6 +123,17 @@ pub mod event_names {
 
     // Error events
     pub const INTERNAL_ERROR: &str = "internal_error";
+
+    // Update/rollback events
+    pub const UPDATE_BACKUP_START: &str = "update.backup_start";
+    pub const UPDATE_BACKUP_COMPLETE: &str = "update.backup_complete";
+    pub const UPDATE_DOWNLOAD_COMPLETE: &str = "update.download_complete";
+    pub const UPDATE_VERIFY_START: &str = "update.verify_start";
+    pub const UPDATE_VERIFY_PASS: &str = "update.verify_pass";
+    pub const UPDATE_VERIFY_FAIL: &str = "update.verify_fail";
+    pub const UPDATE_ROLLBACK_START: &str = "update.rollback_start";
+    pub const UPDATE_ROLLBACK_COMPLETE: &str = "update.rollback_complete";
+    pub const UPDATE_CLEANUP: &str = "update.cleanup";
 }
 
 /// A structured log event for JSONL output.

@@ -30,9 +30,9 @@ pub mod cpu_capacity;
 #[cfg(target_os = "linux")]
 mod deep_scan;
 #[cfg(target_os = "linux")]
-mod network;
+pub mod network;
 #[cfg(target_os = "linux")]
-mod proc_parsers;
+pub mod proc_parsers;
 pub mod protected;
 mod quick_scan;
 #[cfg(target_os = "linux")]
