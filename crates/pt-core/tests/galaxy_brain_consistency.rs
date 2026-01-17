@@ -1291,3 +1291,134 @@ fn test_galaxy_brain_multiple_scenarios_consistency() {
 
     log_test!("INFO", "All multi-scenario consistency tests passed");
 }
+
+// ============================================================================
+// Redaction Safety Tests (process_triage-aii.4)
+// ============================================================================
+
+/// Regex patterns that should never appear in ledger output (sensitive data).
+fn sensitive_patterns() -> Vec<(&'static str, regex::Regex)> {
+    vec![
+        // AWS credentials
+        ("AWS Access Key", regex::Regex::new(r"AKIA[0-9A-Z]{16}").unwrap()),
+        // GitHub tokens
+        ("GitHub Token", regex::Regex::new(r"gh[pousr]_[A-Za-z0-9_]{36,}").unwrap()),
+        // GitLab tokens
+        ("GitLab Token", regex::Regex::new(r"glpat-[A-Za-z0-9\-_]{20,}").unwrap()),
+        // Slack tokens
+        ("Slack Token", regex::Regex::new(r"xox[baprs]-[A-Za-z0-9\-]+").unwrap()),
+        // JWTs
+        ("JWT", regex::Regex::new(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap()),
+        // Private keys
+        ("Private Key", regex::Regex::new(r"-----BEGIN[A-Z ]*PRIVATE KEY-----").unwrap()),
+        // AI API keys (OpenAI, Anthropic)
+        ("AI API Key", regex::Regex::new(r"sk-(?:ant-)?[A-Za-z0-9_-]{20,}").unwrap()),
+        // Password arguments
+        ("Password Arg", regex::Regex::new(r"--password[=\s]+\S+").unwrap()),
+        // Token arguments
+        ("Token Arg", regex::Regex::new(r"--token[=\s]+\S+").unwrap()),
+        // API key arguments
+        ("API Key Arg", regex::Regex::new(r"--api-key[=\s]+\S+").unwrap()),
+    ]
+}
+
+#[test]
+fn test_galaxy_brain_ledger_no_secrets_leak() {
+    log_test!(
+        "INFO",
+        "Testing that evidence ledger does not contain raw sensitive data"
+    );
+
+    let priors = load_priors_fixture();
+    let evidence = create_test_evidence_abandoned();
+    let result = compute_posterior(&priors, &evidence).expect("compute_posterior failed");
+    let ledger = EvidenceLedger::from_posterior_result(&result, Some(12345), None);
+
+    // Serialize ledger to JSON
+    let json = serde_json::to_string_pretty(&ledger).expect("ledger serialization failed");
+
+    // Check that no sensitive patterns are present
+    for (name, pattern) in sensitive_patterns() {
+        assert!(
+            !pattern.is_match(&json),
+            "Ledger JSON contains sensitive data pattern '{}': {:?}",
+            name,
+            pattern.find(&json).map(|m| m.as_str())
+        );
+    }
+
+    log_test!("INFO", "Ledger JSON verified clean of sensitive patterns");
+}
+
+#[test]
+fn test_galaxy_brain_data_no_secrets_leak() {
+    log_test!(
+        "INFO",
+        "Testing that GalaxyBrainData does not contain raw sensitive data"
+    );
+
+    let priors = load_priors_fixture();
+    let evidence = create_test_evidence_abandoned();
+    let result = compute_posterior(&priors, &evidence).expect("compute_posterior failed");
+    let data = build_galaxy_brain_data_for_posterior(&result);
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&data).expect("galaxy brain serialization failed");
+
+    // Check that no sensitive patterns are present
+    for (name, pattern) in sensitive_patterns() {
+        assert!(
+            !pattern.is_match(&json),
+            "GalaxyBrainData JSON contains sensitive data pattern '{}': {:?}",
+            name,
+            pattern.find(&json).map(|m| m.as_str())
+        );
+    }
+
+    log_test!("INFO", "GalaxyBrainData JSON verified clean of sensitive patterns");
+}
+
+#[test]
+fn test_galaxy_brain_why_summary_no_secrets() {
+    log_test!(
+        "INFO",
+        "Testing that why_summary field doesn't expose secrets"
+    );
+
+    let priors = load_priors_fixture();
+
+    // Test both scenarios
+    for (name, evidence) in [
+        ("abandoned", create_test_evidence_abandoned()),
+        ("useful", create_test_evidence_useful()),
+    ] {
+        let result = compute_posterior(&priors, &evidence).expect("compute_posterior failed");
+        let ledger = EvidenceLedger::from_posterior_result(&result, Some(12345), None);
+
+        // The why_summary should not contain any sensitive patterns
+        for (pattern_name, pattern) in sensitive_patterns() {
+            assert!(
+                !pattern.is_match(&ledger.why_summary),
+                "why_summary for {} contains sensitive pattern '{}': {}",
+                name,
+                pattern_name,
+                &ledger.why_summary
+            );
+        }
+
+        // Also check top_evidence strings
+        for evidence_str in &ledger.top_evidence {
+            for (pattern_name, pattern) in sensitive_patterns() {
+                assert!(
+                    !pattern.is_match(evidence_str),
+                    "top_evidence for {} contains sensitive pattern '{}': {}",
+                    name,
+                    pattern_name,
+                    evidence_str
+                );
+            }
+        }
+    }
+
+    log_test!("INFO", "why_summary and top_evidence verified clean");
+}
