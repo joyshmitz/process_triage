@@ -21,6 +21,7 @@ pub mod events;
 pub mod exit_codes;
 pub mod inbox;
 pub mod inference;
+pub mod install;
 pub mod logging;
 pub mod output;
 pub mod plan;

@@ -306,6 +306,26 @@ assert_equals() {
     return 0
 }
 
+# Assert inequality
+assert_not_equals() {
+    local expected="$1"
+    local actual="$2"
+    local context="${3:-}"
+
+    test_debug "assert_not_equals: comparing values"
+
+    if [[ "$expected" == "$actual" ]]; then
+        test_error "Values should not be equal"
+        test_error "  Expected NOT: '$expected'"
+        test_error "  Actual:       '$actual'"
+        [[ -n "$context" ]] && test_error "  Context:      $context"
+        return 1
+    fi
+
+    test_debug "Values differ as expected ✓"
+    return 0
+}
+
 # Assert command succeeds
 assert_success() {
     local cmd="$1"

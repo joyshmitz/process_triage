@@ -32,6 +32,10 @@ sha2 = "0.10"
 hex = "0.4"
 rand = "0.9"
 
+# ECDSA signature verification for release binaries
+p256 = { version = "0.13", features = ["ecdsa"] }
+base64 = "0.22"
+
 # Structured logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
