@@ -21,6 +21,7 @@ pub mod exit_codes;
 pub mod inbox;
 pub mod inference;
 pub mod logging;
+pub mod output;
 pub mod plan;
 pub mod session;
 pub mod signature_cli;

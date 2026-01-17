@@ -18,6 +18,7 @@ use pt_core::events::{
     FanoutEmitter, JsonlWriter, Phase, ProgressEmitter, ProgressEvent, SessionEmitter,
 };
 use pt_core::exit_codes::ExitCode;
+use pt_core::output::{CompactConfig, FieldSelector, TokenEfficientOutput};
 use pt_core::session::{
     ListSessionsOptions, SessionContext, SessionManifest, SessionMode, SessionState, SessionStore,
 };
@@ -89,6 +90,93 @@ struct GlobalOpts {
     /// Run without wrapper (uses detected/default capabilities)
     #[arg(long, global = true)]
     standalone: bool,
+
+    // Token-efficient output options
+
+    /// Select specific output fields (comma-separated or preset: minimal, standard, full)
+    #[arg(long, global = true, value_name = "FIELDS")]
+    fields: Option<String>,
+
+    /// Enable compact output (short keys, minified JSON)
+    #[arg(long, global = true)]
+    compact: bool,
+
+    /// Maximum token budget for output (enables truncation with continuation)
+    #[arg(long, global = true, value_name = "TOKENS")]
+    max_tokens: Option<usize>,
+
+    /// Estimate token count without full response
+    #[arg(long, global = true)]
+    estimate_tokens: bool,
+}
+
+impl GlobalOpts {
+    /// Build a token-efficient output processor from global options.
+    fn build_output_processor(&self) -> TokenEfficientOutput {
+        let mut processor = TokenEfficientOutput::new();
+
+        // Parse field selector if specified
+        if let Some(ref fields_spec) = self.fields {
+            if let Ok(selector) = FieldSelector::parse(fields_spec) {
+                processor = processor.with_fields(selector);
+            }
+        }
+
+        // Enable compact output if requested
+        if self.compact {
+            processor = processor.with_compact(CompactConfig::all());
+        }
+
+        // Set max tokens if specified
+        if let Some(max) = self.max_tokens {
+            processor = processor.with_max_tokens(max);
+        }
+
+        processor
+    }
+
+    /// Process JSON value through token-efficient output pipeline.
+    /// Returns the processed string and optional metadata.
+    fn process_output(&self, value: serde_json::Value) -> String {
+        // If no token-efficient options specified, use standard pretty print
+        if self.fields.is_none() && !self.compact && self.max_tokens.is_none() && !self.estimate_tokens {
+            return serde_json::to_string_pretty(&value).unwrap_or_default();
+        }
+
+        let processor = self.build_output_processor();
+        let result = processor.process(value);
+
+        // If estimate_tokens is set, return token estimate only
+        if self.estimate_tokens {
+            return serde_json::to_string_pretty(&serde_json::json!({
+                "estimated_tokens": result.token_count,
+                "truncated": result.truncated,
+                "continuation_token": result.continuation_token,
+                "remaining_count": result.remaining_count,
+            })).unwrap_or_default();
+        }
+
+        // If truncated, add metadata wrapper
+        if result.truncated {
+            let wrapper = serde_json::json!({
+                "data": result.json,
+                "_meta": {
+                    "truncated": true,
+                    "continuation_token": result.continuation_token,
+                    "remaining_count": result.remaining_count,
+                    "token_count": result.token_count,
+                }
+            });
+
+            if self.compact {
+                return serde_json::to_string(&wrapper).unwrap_or_default();
+            } else {
+                return serde_json::to_string_pretty(&wrapper).unwrap_or_default();
+            }
+        }
+
+        result.output_string
+    }
 }
 
 #[derive(Subcommand)]
@@ -986,7 +1074,8 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
                         "generated_at": chrono::Utc::now().to_rfc3339(),
                         "scan": result
                     });
-                    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                    // Apply token-efficient processing if options specified
+                    println!("{}", global.process_output(output));
                 }
                 OutputFormat::Summary => {
                     println!(
@@ -3115,7 +3204,8 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     // Output based on format
     match global.format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&plan_output).unwrap());
+            // Apply token-efficient processing if options specified
+            println!("{}", global.process_output(plan_output.clone()));
         }
         OutputFormat::Summary => {
             println!(
@@ -3842,7 +3932,7 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         "constraints_summary": constraints_summary
     });
     match global.format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result).unwrap()),
+        OutputFormat::Json => println!("{}", global.process_output(result)),
         OutputFormat::Summary => println!("[{}] apply: {} ok, {} fail, {} skip, {} blocked", sid, succeeded, failed, skipped, blocked_by_constraints),
         _ => println!("# apply\nSession: {}\nSucceeded: {}\nFailed: {}", sid, succeeded, failed),
     }
@@ -3855,7 +3945,7 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
 fn output_apply_nothing(global: &GlobalOpts, sid: &SessionId) {
     let result = serde_json::json!({"session_id": sid.0, "mode": "robot_apply", "note": "nothing_to_do", "summary": {"attempted": 0}});
     match global.format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&result).unwrap()),
+        OutputFormat::Json => println!("{}", global.process_output(result)),
         _ => println!("[{}] apply: nothing to do", sid),
     }
 }
