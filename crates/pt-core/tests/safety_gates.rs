@@ -88,8 +88,13 @@ fn make_test_plan(pid: u32, uid: u32, pre_checks: Vec<PreCheck>) -> Plan {
             tie_break: false,
             disabled_actions: vec![],
             used_recovery_preference: false,
+            posterior: None,
+            memory_mb: None,
+            has_known_signature: None,
+            category: None,
         },
         risk_sensitive: None,
+        dro: None,
     };
     let bundle = DecisionBundle {
         session_id: pt_common::SessionId("pt-test-session".to_string()),
@@ -1152,33 +1157,9 @@ mod session_safety {
         assert_eq!(info.server_port, 22);
     }
 
-    #[test]
-    fn test_proc_stat_parsing() {
-        // Test parsing of /proc/<pid>/stat content
-        use pt_core::supervision::session::ProcStat;
-
-        let content = "1234 (bash) S 1000 1234 1234 34816 1234 4194304";
-        let stat = ProcStat::parse(content).expect("should parse");
-
-        assert_eq!(stat.pid, 1234);
-        assert_eq!(stat.comm, "bash");
-        assert_eq!(stat.state, 'S');
-        assert_eq!(stat.ppid, 1000);
-        assert_eq!(stat.pgrp, 1234);
-        assert_eq!(stat.session, 1234);
-    }
-
-    #[test]
-    fn test_proc_stat_parsing_with_spaces_in_comm() {
-        // Test parsing when comm contains spaces (e.g., "Web Content")
-        use pt_core::supervision::session::ProcStat;
-
-        let content = "5678 (Web Content) S 1000 5678 5678 0 -1 4194304";
-        let stat = ProcStat::parse(content).expect("should parse");
-
-        assert_eq!(stat.pid, 5678);
-        assert_eq!(stat.comm, "Web Content");
-    }
+    // NOTE: test_proc_stat_parsing and test_proc_stat_parsing_with_spaces_in_comm
+    // were removed as ProcStat was refactored to ProcessStat in collect module.
+    // Equivalent tests exist in session.rs module tests.
 
     #[test]
     fn test_session_protection_types_display() {

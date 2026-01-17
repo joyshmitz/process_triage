@@ -15,6 +15,10 @@ fn empty_rationale() -> ActionRationale {
         expected_recovery_stddev: None,
         posterior_odds_abandoned_vs_useful: None,
         sprt_boundary: None,
+        posterior: None,
+        memory_mb: None,
+        has_known_signature: None,
+        category: None,
     }
 }
 

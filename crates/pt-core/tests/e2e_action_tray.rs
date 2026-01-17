@@ -220,8 +220,6 @@ fn make_pause_action(pid: u32, pgid: Option<u32>, action_id: &str) -> PlanAction
         confidence: ActionConfidence::Normal,
         original_zombie_target: None,
         d_state_diagnostics: None,
-        comm: None,
-        cmd: None,
     }
 }
 
@@ -249,8 +247,6 @@ fn make_resume_action(pid: u32, pgid: Option<u32>, action_id: &str) -> PlanActio
         confidence: ActionConfidence::Normal,
         original_zombie_target: None,
         d_state_diagnostics: None,
-        comm: None,
-        cmd: None,
     }
 }
 
@@ -282,8 +278,6 @@ fn make_kill_action(pid: u32, action_id: &str, pre_checks: Vec<PreCheck>) -> Pla
         confidence: ActionConfidence::Normal,
         original_zombie_target: None,
         d_state_diagnostics: None,
-        comm: None,
-        cmd: None,
     }
 }
 
