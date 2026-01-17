@@ -145,8 +145,9 @@ mod agent_workflow {
 
         // Step 2: Create plan (would use snapshot session_id in real impl)
         // Exit code 0 = no candidates, 1 = candidates found (PlanReady), both are success
+        // Use --sample-size to limit inference for faster tests
         let plan_output = pt_core()
-            .args(["--format", "json", "agent", "plan"])
+            .args(["--format", "json", "agent", "plan", "--sample-size", "50"])
             .assert()
             .code(predicate::in_iter([0, 1]))
             .get_output()
@@ -162,8 +163,9 @@ mod agent_workflow {
     fn dry_run_workflow_does_not_modify_state() {
         // Run full pipeline with --dry-run
         // Exit code 0 = no candidates, 1 = candidates found (PlanReady), both are success
+        // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--dry-run", "--format", "json", "agent", "plan"])
+            .args(["--dry-run", "--format", "json", "agent", "plan", "--sample-size", "50"])
             .assert()
             .code(predicate::in_iter([0, 1]));
 
@@ -178,8 +180,9 @@ mod agent_workflow {
     fn shadow_mode_workflow() {
         // Shadow mode should run full pipeline but never execute
         // Exit code 0 = no candidates, 1 = candidates found (PlanReady), both are success
+        // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--shadow", "--format", "json", "agent", "plan"])
+            .args(["--shadow", "--format", "json", "agent", "plan", "--sample-size", "50"])
             .assert()
             .code(predicate::in_iter([0, 1]));
     }
@@ -188,8 +191,9 @@ mod agent_workflow {
     fn robot_mode_with_dry_run() {
         // Robot mode + dry-run should generate plan but not execute
         // Exit code 0 = no candidates, 1 = candidates found (PlanReady), both are success
+        // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--robot", "--dry-run", "--format", "json", "agent", "plan"])
+            .args(["--robot", "--dry-run", "--format", "json", "agent", "plan", "--sample-size", "50"])
             .assert()
             .code(predicate::in_iter([0, 1]));
     }
@@ -468,10 +472,11 @@ mod full_pipeline {
     fn all_json_outputs_have_consistent_schema() {
         // Commands that don't depend on config files
         // Note: "agent plan" returns exit code 1 (PlanReady) when candidates exist, which is success
+        // Use --sample-size for agent plan to limit inference for faster tests
         let commands = vec![
             vec!["--format", "json", "scan"],
             vec!["--format", "json", "agent", "snapshot"],
-            vec!["--format", "json", "agent", "plan"],
+            vec!["--format", "json", "agent", "plan", "--sample-size", "50"],
             vec!["--format", "json", "agent", "capabilities"],
         ];
 

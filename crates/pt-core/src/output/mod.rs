@@ -294,10 +294,16 @@ impl CompactConfig {
 }
 
 /// Token estimation for output size prediction.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct TokenEstimator {
     /// Average characters per token (approximation)
     chars_per_token: f64,
+}
+
+impl Default for TokenEstimator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TokenEstimator {

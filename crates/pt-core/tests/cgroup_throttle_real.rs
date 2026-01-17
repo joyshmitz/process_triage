@@ -19,7 +19,6 @@ use pt_core::decision::Action as PlanActionType;
 use pt_core::plan::{ActionConfidence, ActionRationale, ActionRouting, ActionTimeouts, PlanAction};
 use pt_core::test_utils::ProcessHarness;
 use std::fs;
-use std::path::Path;
 use std::time::Duration;
 
 fn empty_rationale() -> ActionRationale {
@@ -244,9 +243,13 @@ fn test_throttle_spawned_process() {
             pid = pid,
             error = format!("{:?}", e).as_str()
         );
-        // Permission errors are expected in non-privileged environments
-        if matches!(e, pt_core::action::ActionError::PermissionDenied) {
-            pt_core::test_log!(INFO, "Skipping verification: permission denied");
+        // Permission errors and cgroup access failures are expected in non-privileged environments
+        let error_msg = format!("{:?}", e);
+        if matches!(e, pt_core::action::ActionError::PermissionDenied)
+            || error_msg.contains("no writable cgroup")
+            || error_msg.contains("permission")
+        {
+            pt_core::test_log!(INFO, "Skipping verification: cgroup write access unavailable");
             return;
         }
     }
