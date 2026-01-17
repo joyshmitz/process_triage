@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "loss_matrix": {
+    "useful": {"keep": 0.0, "kill": 500.0},
+    "useful_bad": {"keep": 0.0, "kill": 100.0},
+    "abandoned": {"keep": 5.0, "kill": 0.1},
+    "zombie": {"keep": 1.0, "kill": 0.1}
+  },
+  "guardrails": {
+    "protected_patterns": [],
+    "never_kill_ppid": [1],
+    "max_kills_per_run": 10,
+    "min_process_age_seconds": 3600
+  },
+  "robot_mode": {
+    "enabled": false,
+    "min_posterior": 0.95,
+    "max_candidates_per_session": 10,
+    "max_blast_radius_mb": 4096
+  },
+  "fdr_control": {
+    "enabled": true,
+    "method": "benjamini_hochberg",
+    "target_fdr": 0.05,
+    "e_value_threshold": 20.0
+  },
+  "data_loss_gates": {
+    "enabled": true,
+    "sqlite_wal_blocks_kill": true,
+    "git_lock_blocks_kill": true,
+    "open_write_handle_confidence_required": 0.99
+  }
+}

@@ -31,6 +31,10 @@ pub mod signature_cli;
 pub mod supervision;
 pub mod verify;
 
+// TUI module (optional, behind "ui" feature)
+#[cfg(feature = "ui")]
+pub mod tui;
+
 // Re-export test utilities for integration tests
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock_process;

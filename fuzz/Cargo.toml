@@ -1,0 +1,119 @@
+[package]
+name = "pt-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1", features = ["derive"] }
+libfuzzer-sys = "0.4"
+
+# Local crates to fuzz
+pt-core = { path = "../crates/pt-core" }
+pt-config = { path = "../crates/pt-config" }
+pt-common = { path = "../crates/pt-common" }
+pt-bundle = { path = "../crates/pt-bundle" }
+
+serde_json = "1"
+
+[profile.release]
+debug = 1
+
+# Fuzz targets for proc parsers
+[[bin]]
+name = "fuzz_proc_stat"
+path = "fuzz_targets/fuzz_proc_stat.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proc_io"
+path = "fuzz_targets/fuzz_proc_io.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proc_statm"
+path = "fuzz_targets/fuzz_proc_statm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proc_schedstat"
+path = "fuzz_targets/fuzz_proc_schedstat.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proc_sched"
+path = "fuzz_targets/fuzz_proc_sched.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proc_cgroup"
+path = "fuzz_targets/fuzz_proc_cgroup.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_proc_environ"
+path = "fuzz_targets/fuzz_proc_environ.rs"
+test = false
+doc = false
+bench = false
+
+# Fuzz targets for network parsers
+[[bin]]
+name = "fuzz_network_tcp"
+path = "fuzz_targets/fuzz_network_tcp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_network_udp"
+path = "fuzz_targets/fuzz_network_udp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_network_unix"
+path = "fuzz_targets/fuzz_network_unix.rs"
+test = false
+doc = false
+bench = false
+
+# Fuzz targets for config loading
+[[bin]]
+name = "fuzz_config_priors"
+path = "fuzz_targets/fuzz_config_priors.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_config_policy"
+path = "fuzz_targets/fuzz_config_policy.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_bundle_reader"
+path = "fuzz_targets/fuzz_bundle_reader.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
