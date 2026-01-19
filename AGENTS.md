@@ -203,32 +203,34 @@ A mail-like layer that lets coding agents coordinate asynchronously via MCP tool
 
 ---
 
-## Beads (bd) — Dependency-Aware Issue Tracking
+## Beads (br) — Dependency-Aware Issue Tracking
 
-Beads provides a lightweight, dependency-aware issue database and CLI (`bd`) for selecting "ready work," setting priorities, and tracking status.
+Beads provides a lightweight, dependency-aware issue database and CLI (`br`) for selecting "ready work," setting priorities, and tracking status.
+
+**Note:** `br` (beads_rust) is non-invasive and never executes git commands directly. You must manually run git operations after `br sync --flush-only`.
 
 ### Typical Agent Flow
 
 1. **Pick ready work (Beads):**
    ```bash
-   bd ready --json  # Choose highest priority, no blockers
+   br ready --json  # Choose highest priority, no blockers
    ```
 
 2. **Reserve edit surface (Mail):**
    ```
-   file_reservation_paths(project_key, agent_name, ["pt"], ttl_seconds=3600, exclusive=true, reason="bd-123")
+   file_reservation_paths(project_key, agent_name, ["pt"], ttl_seconds=3600, exclusive=true, reason="br-123")
    ```
 
 3. **Announce start (Mail):**
    ```
-   send_message(..., thread_id="bd-123", subject="[bd-123] Start: <title>", ack_required=true)
+   send_message(..., thread_id="br-123", subject="[br-123] Start: <title>", ack_required=true)
    ```
 
 4. **Work and update:** Reply in-thread with progress
 
 5. **Complete and release:**
    ```bash
-   bd close bd-123 --reason "Completed"
+   br close br-123 --reason "Completed"
    ```
    ```
    release_file_reservations(project_key, agent_name, paths=["pt"])
@@ -238,10 +240,10 @@ Beads provides a lightweight, dependency-aware issue database and CLI (`bd`) for
 
 | Concept | Value |
 |---------|-------|
-| Mail `thread_id` | `bd-###` |
-| Mail subject | `[bd-###] ...` |
-| File reservation `reason` | `bd-###` |
-| Commit messages | Include `bd-###` for traceability |
+| Mail `thread_id` | `br-###` |
+| Mail subject | `[br-###] ...` |
+| File reservation `reason` | `br-###` |
+| Commit messages | Include `br-###` for traceability |
 
 ---
 
@@ -450,36 +452,38 @@ Treat cass as a way to avoid re-solving problems other agents already handled.
 
 ## Beads Workflow Integration
 
-This project uses Beads for issue tracking. Issues are stored in `.beads/` and tracked in git.
+This project uses [beads_rust](https://github.com/Dicklesworthstone/beads_rust) for issue tracking. Issues are stored in `.beads/` and tracked in git.
+
+**Note:** `br` (beads_rust) is non-invasive and never executes git commands directly. You must manually run git operations after `br sync --flush-only`.
 
 ### Essential Commands
 
 ```bash
 # CLI commands for agents
-bd ready              # Show issues ready to work (no blockers)
-bd list --status=open # All open issues
-bd show <id>          # Full issue details with dependencies
-bd create --title="..." --type=task --priority=2
-bd update <id> --status=in_progress
-bd close <id> --reason="Completed"
-bd close <id1> <id2>  # Close multiple issues at once
-bd sync --flush-only  # Export to JSONL
+br ready              # Show issues ready to work (no blockers)
+br list --status=open # All open issues
+br show <id>          # Full issue details with dependencies
+br create --title="..." --type=task --priority=2
+br update <id> --status=in_progress
+br close <id> --reason="Completed"
+br close <id1> <id2>  # Close multiple issues at once
+br sync --flush-only  # Export to JSONL (does NOT run git commands)
 ```
 
 ### Workflow Pattern
 
-1. **Start**: Run `bd ready` to find actionable work
-2. **Claim**: Use `bd update <id> --status=in_progress`
+1. **Start**: Run `br ready` to find actionable work
+2. **Claim**: Use `br update <id> --status=in_progress`
 3. **Work**: Implement the task
-4. **Complete**: Use `bd close <id>`
-5. **Sync**: Always run `bd sync --flush-only` at session end
+4. **Complete**: Use `br close <id>`
+5. **Sync**: Run `br sync --flush-only` then manually: `git add .beads/ && git commit -m "Update beads" && git push`
 
 ### Key Concepts
 
-- **Dependencies**: Issues can block other issues. `bd ready` shows only unblocked work.
+- **Dependencies**: Issues can block other issues. `br ready` shows only unblocked work.
 - **Priority**: P0=critical, P1=high, P2=medium, P3=low, P4=backlog (use numbers, not words)
 - **Types**: task, bug, feature, epic, question, docs
-- **Blocking**: `bd dep add <issue> <depends-on>` to add dependencies
+- **Blocking**: `br dep add <issue> <depends-on>` to add dependencies
 
 <!-- end-bv-agent-instructions -->
 
@@ -495,8 +499,8 @@ bd sync --flush-only  # Export to JSONL
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd sync
-   git push
+   br sync --flush-only  # Export to JSONL (does NOT run git commands)
+   git add .beads/ && git commit -m "Update beads" && git push
    git status  # MUST show "up to date with origin"
    ```
 5. **Clean up** - Clear stashes, prune remote branches
