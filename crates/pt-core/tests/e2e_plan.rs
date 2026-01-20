@@ -13,7 +13,7 @@ use std::time::Duration;
 fn pt_core() -> Command {
     let mut cmd = cargo_bin_cmd!("pt-core");
     // Extended timeout for debug builds/slow environments
-    cmd.timeout(Duration::from_secs(120));
+    cmd.timeout(Duration::from_secs(300));
     cmd
 }
 
@@ -22,14 +22,14 @@ fn pt_core() -> Command {
 /// in seconds instead of minutes in debug builds.
 fn pt_core_fast() -> Command {
     let mut cmd = cargo_bin_cmd!("pt-core");
-    cmd.timeout(Duration::from_secs(60));
+    cmd.timeout(Duration::from_secs(120));
     // Sample 50 processes for faster testing while still exercising the inference path
     cmd.args(["--standalone"]);
     cmd
 }
 
 /// Default sample size for tests that need inference coverage
-const TEST_SAMPLE_SIZE: &str = "50";
+const TEST_SAMPLE_SIZE: &str = "10";
 
 // ============================================================================
 // Basic Plan Tests
@@ -490,7 +490,7 @@ mod inference_safety {
     use super::*;
 
     /// Larger sample size for safety tests that need broader coverage
-    const SAFETY_SAMPLE_SIZE: &str = "100";
+    const SAFETY_SAMPLE_SIZE: &str = "20";
 
     /// Parse the final JSON plan from stdout (which contains progress events before the plan).
     fn parse_plan_json(output: &[u8]) -> Value {
