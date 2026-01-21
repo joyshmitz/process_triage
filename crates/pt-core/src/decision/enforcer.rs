@@ -1183,7 +1183,13 @@ mod tests {
 
     #[test]
     fn test_rate_limit_reset() {
-        let policy = test_policy();
+        let mut policy = test_policy();
+        // Ensure we only test run limit reset
+        policy.guardrails.max_kills_per_run = 5;
+        policy.guardrails.max_kills_per_minute = None;
+        policy.guardrails.max_kills_per_hour = None;
+        policy.guardrails.max_kills_per_day = None;
+
         let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
         let candidate = test_candidate();
 
