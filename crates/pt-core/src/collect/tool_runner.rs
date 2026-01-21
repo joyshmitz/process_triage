@@ -298,7 +298,7 @@ impl ToolRunner {
         let max_output = spec.max_output.unwrap_or(self.config.max_output_bytes);
 
         // Reserve budget to prevent parallel overcommitment
-        let mut allocated_ms: u64 = 0;
+        let mut allocated_ms;
         let mut current = self.used_ms.load(Ordering::SeqCst);
 
         loop {

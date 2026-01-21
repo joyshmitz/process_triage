@@ -242,7 +242,12 @@ impl CriticalFileCategory {
     pub fn is_hard_block(&self) -> bool {
         matches!(
             self,
-            Self::SqliteWal | Self::GitLock | Self::GitRebase | Self::SystemPackageLock
+            Self::SqliteWal
+                | Self::GitLock
+                | Self::GitRebase
+                | Self::SystemPackageLock
+                | Self::NodePackageLock
+                | Self::CargoLock
         )
     }
 }
@@ -1620,12 +1625,12 @@ nice                                         :                    0
         assert!(CriticalFileCategory::GitLock.is_hard_block());
         assert!(CriticalFileCategory::GitRebase.is_hard_block());
         assert!(CriticalFileCategory::SystemPackageLock.is_hard_block());
+        assert!(CriticalFileCategory::NodePackageLock.is_hard_block());
+        assert!(CriticalFileCategory::CargoLock.is_hard_block());
 
         // Database write is Soft because it's a heuristic (might be read-only access despite FD flags)
         assert!(!CriticalFileCategory::DatabaseWrite.is_hard_block());
 
-        assert!(!CriticalFileCategory::NodePackageLock.is_hard_block());
-        assert!(!CriticalFileCategory::CargoLock.is_hard_block());
         assert!(!CriticalFileCategory::AppLock.is_hard_block());
         assert!(!CriticalFileCategory::OpenWrite.is_hard_block());
     }

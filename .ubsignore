@@ -1,0 +1,22 @@
+# Build artifacts
+target/
+target*/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local configs
+.beads/
+
+# Test artifacts
+test/tmp/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependencies
+.cargo/
