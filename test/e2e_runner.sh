@@ -37,9 +37,31 @@ fi
 
 start_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 start_epoch=$(date +%s)
+git_sha=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
+os_name=$(uname -s 2>/dev/null || echo "unknown")
+arch_name=$(uname -m 2>/dev/null || echo "unknown")
+args_joined=$(printf '%s ' "${BATS_ARGS[@]}")
+args_joined=${args_joined% }
+args_esc=$(json_escape "$args_joined")
+git_sha_esc=$(json_escape "$git_sha")
+os_esc=$(json_escape "$os_name")
+arch_esc=$(json_escape "$arch_name")
+artifact_root_esc=$(json_escape "$ARTIFACT_ROOT")
+log_dir_esc=$(json_escape "$LOG_DIR")
+printf '{"ts":"%s","event":"bats_start","git_sha":"%s","os":"%s","arch":"%s","args":"%s","artifact_root":"%s","log_dir":"%s"}\n' \
+    "$start_ts" \
+    "$git_sha_esc" \
+    "$os_esc" \
+    "$arch_esc" \
+    "$args_esc" \
+    "$artifact_root_esc" \
+    "$log_dir_esc" \
+    >> "$LOG_DIR/e2e_runner.jsonl"
 
 set +e
-bats --tap "${BATS_ARGS[@]}" > "$LOG_DIR/bats.tap" 2> "$LOG_DIR/bats.stderr"
+tap_path="$LOG_DIR/bats.tap"
+stderr_path="$LOG_DIR/bats.stderr"
+bats --tap "${BATS_ARGS[@]}" > "$tap_path" 2> "$stderr_path"
 status=$?
 set -e
 
@@ -47,17 +69,28 @@ end_epoch=$(date +%s)
 end_ts=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
 duration_s=$((end_epoch - start_epoch))
-tap_esc=$(json_escape "$LOG_DIR/bats.tap")
-stderr_esc=$(json_escape "$LOG_DIR/bats.stderr")
+tap_esc=$(json_escape "$tap_path")
+stderr_esc=$(json_escape "$stderr_path")
+tap_bytes=$(wc -c < "$tap_path" 2>/dev/null | tr -d ' ' || echo "0")
+stderr_bytes=$(wc -c < "$stderr_path" 2>/dev/null | tr -d ' ' || echo "0")
 
-printf '{"ts":"%s","event":"bats_complete","status":%s,"duration_s":%s,"start_ts":"%s","tap":"%s","stderr":"%s"}\n' \
+printf '{"ts":"%s","event":"bats_complete","status":%s,"duration_s":%s,"start_ts":"%s","tap":"%s","stderr":"%s","tap_bytes":%s,"stderr_bytes":%s}\n' \
     "$end_ts" \
     "$status" \
     "$duration_s" \
     "$start_ts" \
     "$tap_esc" \
     "$stderr_esc" \
+    "$tap_bytes" \
+    "$stderr_bytes" \
     >> "$LOG_DIR/e2e_runner.jsonl"
 
+printf '{"ts":"%s","event":"bats_metadata","git_sha":"%s","os":"%s","arch":"%s","args":"%s"}\n' \
+    "$end_ts" \
+    "$git_sha_esc" \
+    "$os_esc" \
+    "$arch_esc" \
+    "$args_esc" \
+    >> "$LOG_DIR/e2e_runner.jsonl"
 echo "E2E run completed at $end_ts (status=$status, duration=${duration_s}s)"
 exit "$status"
