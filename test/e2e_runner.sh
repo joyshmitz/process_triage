@@ -40,19 +40,22 @@ start_epoch=$(date +%s)
 git_sha=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || echo "")
 os_name=$(uname -s 2>/dev/null || echo "unknown")
 arch_name=$(uname -m 2>/dev/null || echo "unknown")
+bats_version=$(bats --version 2>/dev/null || echo "")
 args_joined=$(printf '%s ' "${BATS_ARGS[@]}")
 args_joined=${args_joined% }
 args_esc=$(json_escape "$args_joined")
 git_sha_esc=$(json_escape "$git_sha")
 os_esc=$(json_escape "$os_name")
 arch_esc=$(json_escape "$arch_name")
+bats_esc=$(json_escape "$bats_version")
 artifact_root_esc=$(json_escape "$ARTIFACT_ROOT")
 log_dir_esc=$(json_escape "$LOG_DIR")
-printf '{"ts":"%s","event":"bats_start","git_sha":"%s","os":"%s","arch":"%s","args":"%s","artifact_root":"%s","log_dir":"%s"}\n' \
+printf '{"ts":"%s","event":"bats_start","git_sha":"%s","os":"%s","arch":"%s","bats_version":"%s","args":"%s","artifact_root":"%s","log_dir":"%s"}\n' \
     "$start_ts" \
     "$git_sha_esc" \
     "$os_esc" \
     "$arch_esc" \
+    "$bats_esc" \
     "$args_esc" \
     "$artifact_root_esc" \
     "$log_dir_esc" \
@@ -73,8 +76,16 @@ tap_esc=$(json_escape "$tap_path")
 stderr_esc=$(json_escape "$stderr_path")
 tap_bytes=$(wc -c < "$tap_path" 2>/dev/null | tr -d ' ' || echo "0")
 stderr_bytes=$(wc -c < "$stderr_path" 2>/dev/null | tr -d ' ' || echo "0")
+tap_total=0
+tap_failed=0
+tap_skipped=0
+if [[ -f "$tap_path" ]]; then
+    tap_total=$(grep -Ec '^(ok|not ok) ' "$tap_path" || echo "0")
+    tap_failed=$(grep -Ec '^not ok ' "$tap_path" || echo "0")
+    tap_skipped=$(grep -Ec '^ok .*# SKIP' "$tap_path" || echo "0")
+fi
 
-printf '{"ts":"%s","event":"bats_complete","status":%s,"duration_s":%s,"start_ts":"%s","tap":"%s","stderr":"%s","tap_bytes":%s,"stderr_bytes":%s}\n' \
+printf '{"ts":"%s","event":"bats_complete","status":%s,"duration_s":%s,"start_ts":"%s","tap":"%s","stderr":"%s","tap_bytes":%s,"stderr_bytes":%s,"tap_total":%s,"tap_failed":%s,"tap_skipped":%s}\n' \
     "$end_ts" \
     "$status" \
     "$duration_s" \
@@ -83,6 +94,9 @@ printf '{"ts":"%s","event":"bats_complete","status":%s,"duration_s":%s,"start_ts
     "$stderr_esc" \
     "$tap_bytes" \
     "$stderr_bytes" \
+    "$tap_total" \
+    "$tap_failed" \
+    "$tap_skipped" \
     >> "$LOG_DIR/e2e_runner.jsonl"
 
 printf '{"ts":"%s","event":"bats_metadata","git_sha":"%s","os":"%s","arch":"%s","args":"%s"}\n' \
