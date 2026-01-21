@@ -9,6 +9,78 @@
 
 TEST_LOG_LEVEL=${TEST_LOG_LEVEL:-info}  # debug, info, warn, error
 
+json_escape() {
+    local s="$1"
+    s=${s//\\/\\\\}
+    s=${s//\"/\\\"}
+    s=${s//$'\n'/\\n}
+    s=${s//$'\r'/\\r}
+    s=${s//$'\t'/\\t}
+    printf '%s' "$s"
+}
+
+test_log_json() {
+    local level="$1"
+    local msg="$2"
+
+    if [[ -z "${TEST_LOG_FILE:-}" ]]; then
+        return 0
+    fi
+
+    local ts
+    ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+    local level_esc
+    local msg_esc
+    local test_name_esc
+    local test_file_esc
+    level_esc=$(json_escape "$level")
+    msg_esc=$(json_escape "$msg")
+    test_name_esc=$(json_escape "${BATS_TEST_NAME:-}")
+    test_file_esc=$(json_escape "${BATS_TEST_FILENAME:-}")
+
+    printf '{"ts":"%s","event":"log","level":"%s","test":"%s","file":"%s","message":"%s"}\n' \
+        "$ts" \
+        "$level_esc" \
+        "$test_name_esc" \
+        "$test_file_esc" \
+        "$msg_esc" \
+        >> "$TEST_LOG_FILE"
+}
+
+test_event_json() {
+    local event="$1"
+    local status="${2:-}"
+    local label="${3:-}"
+
+    if [[ -z "${TEST_LOG_FILE:-}" ]]; then
+        return 0
+    fi
+
+    local ts
+    ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+
+    local event_esc
+    local status_esc
+    local label_esc
+    local test_name_esc
+    local test_file_esc
+    event_esc=$(json_escape "$event")
+    status_esc=$(json_escape "$status")
+    label_esc=$(json_escape "$label")
+    test_name_esc=$(json_escape "${BATS_TEST_NAME:-}")
+    test_file_esc=$(json_escape "${BATS_TEST_FILENAME:-}")
+
+    printf '{"ts":"%s","event":"%s","test":"%s","file":"%s","status":"%s","label":"%s"}\n' \
+        "$ts" \
+        "$event_esc" \
+        "$test_name_esc" \
+        "$test_file_esc" \
+        "$status_esc" \
+        "$label_esc" \
+        >> "$TEST_LOG_FILE"
+}
+
 test_log() {
     local level="$1"
     shift
@@ -17,11 +89,16 @@ test_log() {
     timestamp="$(date '+%H:%M:%S.%3N')"
 
     case "$level" in
-        debug) [[ "$TEST_LOG_LEVEL" == "debug" ]] && echo "# [$timestamp] DEBUG: $msg" || : ;;
+        debug)
+            if [[ "$TEST_LOG_LEVEL" == "debug" ]]; then
+                echo "# [$timestamp] DEBUG: $msg"
+            fi
+            ;;
         info)  echo "# [$timestamp] INFO:  $msg" ;;
         warn)  echo "# [$timestamp] WARN:  $msg" >&2 ;;
         error) echo "# [$timestamp] ERROR: $msg" >&2 ;;
     esac
+    test_log_json "$level" "$msg"
     return 0
 }
 
@@ -37,6 +114,7 @@ test_start() {
     local description="$2"
     test_info "=== START: $test_name ==="
     test_info "Testing: $description"
+    test_event_json "test_start" "" "${test_name} - ${description}"
 }
 
 # Log test completion with result
@@ -49,6 +127,7 @@ test_end() {
     else
         test_error "=== FAIL: $test_name ==="
     fi
+    test_event_json "test_end" "$status" "$test_name"
 }
 
 #==============================================================================
@@ -56,8 +135,6 @@ test_end() {
 #==============================================================================
 
 setup_test_env() {
-    test_debug "Setting up test environment..."
-
     # Create isolated directories
     # Use a unique per-test directory to avoid needing cleanup (no deletions).
     local test_suffix="${BATS_TEST_NAME:-unknown}"
@@ -65,9 +142,14 @@ setup_test_env() {
     export TEST_DIR="${BATS_TEST_TMPDIR}/test_env_${test_suffix}_$$"
     export CONFIG_DIR="${TEST_DIR}/config"
     export MOCK_BIN="${TEST_DIR}/mock_bin"
-    export TEST_LOG_FILE="${TEST_DIR}/test.log"
+    if [[ -z "${TEST_LOG_FILE:-}" ]]; then
+        export TEST_LOG_FILE="${TEST_DIR}/test.jsonl"
+    fi
 
     mkdir -p "$CONFIG_DIR" "$MOCK_BIN"
+
+    test_debug "Setting up test environment..."
+    test_event_json "test_env_setup" "" "$TEST_DIR"
 
     # Initialize empty decisions file
     echo '{}' > "${CONFIG_DIR}/decisions.json"
@@ -86,6 +168,7 @@ setup_test_env() {
 
 teardown_test_env() {
     test_debug "Tearing down test environment..."
+    test_event_json "test_env_teardown" "" "$TEST_DIR"
 
     # Log any test artifacts before cleanup
     if [[ -f "$TEST_LOG_FILE" ]]; then

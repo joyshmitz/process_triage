@@ -4,7 +4,6 @@
 load "./test_helper/common.bash"
 
 setup() {
-    test_start "real e2e" "pt CLI real-system E2E with artifacts"
     setup_test_env
 
     local test_file_dir
@@ -31,6 +30,7 @@ setup() {
 
     export TEST_LOG_FILE="$ARTIFACT_LOG_DIR/pt_e2e_real.jsonl"
 
+    test_start "real e2e" "pt CLI real-system E2E with artifacts"
     test_info "Artifacts: $ARTIFACT_DIR"
 }
 
