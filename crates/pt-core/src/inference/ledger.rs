@@ -200,6 +200,11 @@ pub fn build_process_explanation(
     // For now, we'll construct minimal evidence based on the record
     use crate::inference::{compute_posterior, CpuEvidence, Evidence};
 
+    let state_flag = priors.state_flags.as_ref().and_then(|sf| {
+        let state_str = proc.state.to_string();
+        sf.flag_names.iter().position(|name| name == &state_str)
+    });
+
     let evidence = Evidence {
         cpu: Some(CpuEvidence::Fraction {
             occupancy: proc.cpu_percent / 100.0,
@@ -210,7 +215,7 @@ pub fn build_process_explanation(
         // Other fields would come from deep scan if available
         net: None,
         io_active: None,
-        state_flag: None,       // Needs state mapping
+        state_flag,
         command_category: None, // Needs category mapping
     };
 
