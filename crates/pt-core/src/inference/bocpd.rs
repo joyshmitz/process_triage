@@ -52,6 +52,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use thiserror::Error;
+use tracing::warn;
 
 /// Errors from BOCPD.
 #[derive(Debug, Error)]
@@ -469,6 +470,7 @@ impl BocpdDetector {
     pub fn update(&mut self, observation: f64) -> BocpdUpdateResult {
         // Guard against invalid observations
         if !observation.is_finite() {
+            warn!("BOCPD received non-finite observation: {}, skipping update", observation);
             // Return current state without update if observation is invalid
             let posterior: Vec<f64> = self.log_run_length_dist.iter().map(|x| x.exp()).collect();
             let change_point_probability = posterior.first().copied().unwrap_or(0.0);
@@ -531,11 +533,11 @@ impl BocpdDetector {
         let fresh_stats = self.new_stats();
         let log_prior_pred = fresh_stats.log_predictive(observation);
 
-        let mut log_cp_terms = Vec::with_capacity(n_runs);
-        for i in 0..n_runs {
-            log_cp_terms.push(self.log_run_length_dist[i] + log_prior_pred + log_h);
-        }
-        let log_cp = log_sum_exp(&log_cp_terms);
+        // OPTIMIZATION: Since log_run_length_dist is normalized (log-sum-exp approx 0),
+        // log_sum_exp(log_run_length_dist[i] + log_prior_pred + log_h)
+        // = log_sum_exp(log_run_length_dist) + log_prior_pred + log_h
+        // = 0 + log_prior_pred + log_h
+        let log_cp = log_prior_pred + log_h;
 
         // New run length distribution: [r_t = 0, r_t = 1, r_t = 2, ...]
         let mut new_log_dist = Vec::with_capacity(n_runs + 1);
