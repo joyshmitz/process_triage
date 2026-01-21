@@ -810,7 +810,7 @@ impl CompoundPoissonAnalyzer {
     /// Observe a batch of events.
     pub fn observe_batch(&mut self, events: &[BurstEvent]) {
         // Sort by timestamp for correct inter-arrival computation
-        let mut sorted: Vec<_> = events.iter().copied().collect();
+        let mut sorted: Vec<_> = events.to_vec();
         sorted.sort_by(|a, b| {
             a.timestamp
                 .partial_cmp(&b.timestamp)
@@ -858,7 +858,7 @@ impl CompoundPoissonAnalyzer {
         }
 
         // Divide observation period into sub-windows
-        let num_windows = (self.events.len() / 5).max(4).min(20);
+        let num_windows = (self.events.len() / 5).clamp(4, 20);
         let window_size = duration / num_windows as f64;
 
         if window_size <= 0.0 {

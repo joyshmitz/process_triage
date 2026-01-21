@@ -96,8 +96,7 @@ impl<R: Read + std::io::Seek> BundleReader<R> {
             .map_err(|_| BundleError::MissingFile("manifest.json".to_string()))?;
 
         if manifest_file.size() > MAX_FILE_SIZE {
-            return Err(BundleError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(BundleError::Io(std::io::Error::other(
                 "manifest.json too large",
             )));
         }
@@ -154,8 +153,7 @@ impl<R: Read + std::io::Seek> BundleReader<R> {
             .map_err(|_| BundleError::FileNotFound(path.to_string()))?;
 
         if file.size() > MAX_FILE_SIZE {
-            return Err(BundleError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(BundleError::Io(std::io::Error::other(
                 format!("file {} too large ({} bytes)", path, file.size()),
             )));
         }

@@ -254,7 +254,7 @@ impl RegimePriors {
         self.priors
             .get(regime)
             .copied()
-            .unwrap_or_else(|| GammaParams::default())
+            .unwrap_or_default()
     }
 
     /// Set a custom prior for a regime.

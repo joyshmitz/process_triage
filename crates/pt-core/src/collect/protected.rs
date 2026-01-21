@@ -348,16 +348,8 @@ impl ProtectedFilter {
         Self::new(
             &patterns,
             &guardrails.protected_users,
-            &guardrails
-                .never_kill_pid
-                .iter()
-                .map(|&x| x as u32)
-                .collect::<Vec<_>>(),
-            &guardrails
-                .never_kill_ppid
-                .iter()
-                .map(|&x| x as u32)
-                .collect::<Vec<_>>(),
+            &guardrails.never_kill_pid,
+            &guardrails.never_kill_ppid,
         )
     }
 

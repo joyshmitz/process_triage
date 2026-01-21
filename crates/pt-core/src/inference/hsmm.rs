@@ -776,7 +776,7 @@ impl HsmmAnalyzer {
         let state_sequence: Vec<HsmmState> = self
             .posterior_history
             .iter()
-            .map(|probs| Self::argmax_state(probs))
+            .map(Self::argmax_state)
             .collect();
 
         // Compute state entropy
