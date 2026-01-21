@@ -22,7 +22,8 @@ use pt_core::events::{
 use pt_core::exit_codes::ExitCode;
 use pt_core::output::{CompactConfig, FieldSelector, TokenEfficientOutput};
 use pt_core::session::{
-    ListSessionsOptions, SessionContext, SessionManifest, SessionMode, SessionState, SessionStore,
+    ListSessionsOptions, SessionContext, SessionHandle, SessionManifest, SessionMode, SessionState,
+    SessionStore,
 };
 #[cfg(target_os = "linux")]
 use pt_core::supervision::{
@@ -30,6 +31,7 @@ use pt_core::supervision::{
     AppSupervisorType, ContainerActionType, ContainerSupervisionAnalyzer,
 };
 use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -664,11 +666,11 @@ struct AgentVerifyArgs {
 #[derive(Args, Debug)]
 struct AgentDiffArgs {
     /// Base session ID
-    #[arg(long)]
+    #[arg(long, alias = "session", alias = "since")]
     base: String,
 
     /// Compare session ID (default: current)
-    #[arg(long)]
+    #[arg(long, alias = "vs")]
     compare: Option<String>,
 }
 
@@ -4611,6 +4613,7 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             return ExitCode::InternalError;
         }
     };
+
     let base = match SessionId::parse(&args.base) {
         Some(sid) => sid,
         None => {
@@ -4618,27 +4621,317 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             return ExitCode::ArgsError;
         }
     };
-    if let Err(e) = store.open(&base) {
-        eprintln!("agent diff: {}", e);
-        return ExitCode::ArgsError;
-    }
-    if let Some(compare) = args.compare.as_ref() {
-        if let Some(sid) = SessionId::parse(compare) {
-            if let Err(e) = store.open(&sid) {
-                eprintln!("agent diff: {}", e);
-                return ExitCode::ArgsError;
-            }
-        } else {
-            eprintln!("agent diff: invalid --compare {}", compare);
+    let base_handle = match store.open(&base) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("agent diff: {}", e);
             return ExitCode::ArgsError;
         }
+    };
+
+    let compare_id = match args.compare.as_deref() {
+        Some("current") | Some("latest") | None => {
+            let options = ListSessionsOptions {
+                limit: Some(50),
+                state: None,
+                older_than: None,
+            };
+            let sessions = match store.list_sessions(&options) {
+                Ok(list) => list,
+                Err(e) => {
+                    eprintln!("agent diff: failed to list sessions: {}", e);
+                    return ExitCode::InternalError;
+                }
+            };
+            let mut found = None;
+            for summary in sessions {
+                if summary.session_id != base.0 {
+                    if let Some(sid) = SessionId::parse(&summary.session_id) {
+                        found = Some(sid);
+                        break;
+                    }
+                }
+            }
+            match found {
+                Some(sid) => sid,
+                None => {
+                    eprintln!("agent diff: no compare session found (need at least two sessions)");
+                    return ExitCode::ArgsError;
+                }
+            }
+        }
+        Some(raw) => match SessionId::parse(raw) {
+            Some(sid) => sid,
+            None => {
+                eprintln!("agent diff: invalid --compare {}", raw);
+                return ExitCode::ArgsError;
+            }
+        },
+    };
+
+    let compare_handle = match store.open(&compare_id) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("agent diff: {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    let load_plan = |handle: &SessionHandle| -> Result<serde_json::Value, String> {
+        let plan_path = handle.dir.join("decision").join("plan.json");
+        let content = std::fs::read_to_string(&plan_path)
+            .map_err(|e| format!("missing plan.json at {}: {}", plan_path.display(), e))?;
+        serde_json::from_str(&content).map_err(|e| format!("invalid plan.json: {}", e))
+    };
+
+    let base_plan = match load_plan(&base_handle) {
+        Ok(plan) => plan,
+        Err(e) => {
+            eprintln!("agent diff: base {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+    let compare_plan = match load_plan(&compare_handle) {
+        Ok(plan) => plan,
+        Err(e) => {
+            eprintln!("agent diff: compare {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    #[derive(Clone)]
+    struct DiffCandidate {
+        pid: u32,
+        uid: u32,
+        cmd_short: String,
+        cmd_full: String,
+        classification: String,
+        recommended_action: String,
+        score: f64,
     }
-    output_stub_with_session(
-        global,
-        &base,
-        "agent diff",
-        "Agent diff mode not yet implemented",
-    );
+
+    fn normalize_cmd(cmd: &str) -> String {
+        cmd.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
+    let extract_candidates = |plan: &serde_json::Value| -> Vec<DiffCandidate> {
+        let mut out = Vec::new();
+        let candidates = plan
+            .get("candidates")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        for cand in candidates {
+            let pid = cand.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let uid = cand.get("uid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+            let cmd_short = cand
+                .get("cmd_short")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cmd_full = cand
+                .get("cmd_full")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let classification = cand
+                .get("classification")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let recommended_action = cand
+                .get("recommended_action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("keep")
+                .to_string();
+            let score = cand
+                .get("posterior")
+                .and_then(|p| p.as_object())
+                .map(|p| {
+                    p.values()
+                        .filter_map(|v| v.as_f64())
+                        .fold(0.0_f64, |acc, v| acc.max(v))
+                })
+                .unwrap_or(0.0)
+                * 100.0;
+            out.push(DiffCandidate {
+                pid,
+                uid,
+                cmd_short,
+                cmd_full,
+                classification,
+                recommended_action,
+                score,
+            });
+        }
+        out
+    };
+
+    let base_candidates = extract_candidates(&base_plan);
+    let compare_candidates = extract_candidates(&compare_plan);
+
+    let candidate_key = |c: &DiffCandidate| -> (u32, String) {
+        let cmd = if !c.cmd_full.is_empty() {
+            c.cmd_full.as_str()
+        } else {
+            c.cmd_short.as_str()
+        };
+        (c.uid, normalize_cmd(cmd))
+    };
+
+    let severity = |action: &str| -> i32 {
+        if action == "kill" {
+            2
+        } else if action == "keep" {
+            0
+        } else {
+            1
+        }
+    };
+
+    let bucket = |action: &str| -> &'static str {
+        if action == "kill" {
+            "kill"
+        } else if action == "keep" {
+            "spare"
+        } else {
+            "review"
+        }
+    };
+
+    let mut base_map: HashMap<(u32, String), DiffCandidate> = HashMap::new();
+    for cand in &base_candidates {
+        base_map.insert(candidate_key(cand), cand.clone());
+    }
+
+    let mut compare_map: HashMap<(u32, String), DiffCandidate> = HashMap::new();
+    for cand in &compare_candidates {
+        compare_map.insert(candidate_key(cand), cand.clone());
+    }
+
+    let mut new_list = Vec::new();
+    let mut worsened = Vec::new();
+    let mut improved = Vec::new();
+    let mut resolved = Vec::new();
+    let mut persistent = Vec::new();
+
+    for (key, current) in &compare_map {
+        if let Some(prior) = base_map.get(key) {
+            let prior_sev = severity(&prior.recommended_action);
+            let current_sev = severity(&current.recommended_action);
+            let score_change = current.score - prior.score;
+
+            if current_sev > prior_sev {
+                worsened.push(serde_json::json!({
+                    "pid": current.pid,
+                    "prior": bucket(&prior.recommended_action),
+                    "current": bucket(&current.recommended_action),
+                    "score_change": score_change,
+                    "cmd_short": current.cmd_short,
+                }));
+            } else if current_sev < prior_sev {
+                improved.push(serde_json::json!({
+                    "pid": current.pid,
+                    "prior": bucket(&prior.recommended_action),
+                    "current": bucket(&current.recommended_action),
+                    "score_change": score_change,
+                    "cmd_short": current.cmd_short,
+                }));
+            } else if current_sev > 0 {
+                persistent.push(serde_json::json!({
+                    "pid": current.pid,
+                    "consecutive_sessions": 2,
+                    "classification": current.classification,
+                    "note": "Suspicious in consecutive sessions",
+                }));
+            }
+        } else {
+            new_list.push(serde_json::json!({
+                "pid": current.pid,
+                "classification": current.classification,
+                "score": current.score,
+                "cmd_short": current.cmd_short,
+            }));
+        }
+    }
+
+    for (key, prior) in &base_map {
+        if !compare_map.contains_key(key) {
+            resolved.push(serde_json::json!({
+                "pid": prior.pid,
+                "reason": "exited_or_below_threshold",
+                "was_classification": prior.classification,
+            }));
+        }
+    }
+
+    let base_ts = base_plan
+        .get("generated_at")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let compare_ts = compare_plan
+        .get("generated_at")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let output = serde_json::json!({
+        "comparison": {
+            "prior_session": base.0,
+            "current_session": compare_id.0,
+            "prior_timestamp": base_ts,
+            "current_timestamp": compare_ts,
+        },
+        "delta": {
+            "new": new_list,
+            "worsened": worsened,
+            "improved": improved,
+            "resolved": resolved,
+            "persistent": persistent,
+        },
+        "summary": {
+            "prior_candidates": base_candidates.len(),
+            "current_candidates": compare_candidates.len(),
+            "new_count": new_list.len(),
+            "worsened_count": worsened.len(),
+            "improved_count": improved.len(),
+            "resolved_count": resolved.len(),
+            "persistent_count": persistent.len(),
+        },
+    });
+
+    match global.format {
+        OutputFormat::Json => {
+            println!("{}", global.process_output(output.clone()));
+        }
+        OutputFormat::Summary => {
+            println!(
+                "[{} → {}] agent diff: +{} new, {} worsened, {} improved, {} resolved, {} persistent",
+                base.0,
+                compare_id.0,
+                new_list.len(),
+                worsened.len(),
+                improved.len(),
+                resolved.len(),
+                persistent.len()
+            );
+        }
+        OutputFormat::Exitcode => {}
+        _ => {
+            println!("# pt-core agent diff\n");
+            println!("Base: {}", base.0);
+            println!("Compare: {}\n", compare_id.0);
+            println!("## Summary\n");
+            println!(
+                "- New: {} | Worsened: {} | Improved: {} | Resolved: {} | Persistent: {}",
+                new_list.len(),
+                worsened.len(),
+                improved.len(),
+                resolved.len(),
+                persistent.len()
+            );
+        }
+    }
+
     ExitCode::Clean
 }
 
