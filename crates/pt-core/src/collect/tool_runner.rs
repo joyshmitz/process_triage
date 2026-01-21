@@ -650,6 +650,9 @@ impl ToolRunner {
         // Use non-blocking reads to drain what's immediately available.
         // This prevents hanging when a grandchild process still holds the pipe open.
         loop {
+            if *truncated {
+                break;
+            }
             match try_read_nonblocking(stream, &mut chunk) {
                 Ok(0) => break, // No more data available
                 Ok(n) => {
@@ -681,6 +684,9 @@ impl ToolRunner {
     ) -> std::io::Result<()> {
         let mut chunk = vec![0u8; 8192];
         loop {
+            if *truncated {
+                break;
+            }
             let n = stream.read(&mut chunk)?;
             if n == 0 {
                 break;

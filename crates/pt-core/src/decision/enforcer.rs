@@ -1002,6 +1002,11 @@ impl PolicyEnforcer {
         self.rate_limiter.current_run_count().unwrap_or(0)
     }
 
+    /// Record a kill event (consumes rate limit budget).
+    pub fn record_kill(&self) -> Result<crate::decision::rate_limit::RateLimitCounts, crate::decision::rate_limit::RateLimitError> {
+        self.rate_limiter.record_kill()
+    }
+
     /// Check if the enforcer requires confirmation for actions.
     pub fn requires_confirmation(&self) -> bool {
         self.require_confirmation

@@ -546,6 +546,43 @@ impl BocpdDetector {
 
         // Normalize
         let log_evidence = log_sum_exp(&new_log_dist);
+        
+        if log_evidence == f64::NEG_INFINITY {
+            warn!("BOCPD observation {} is impossible under current model (log_evidence = -inf). Skipping update.", observation);
+            // Return previous result but increment step? Or just return?
+            // If we skip update, we return the *current* state (before this step).
+            // But we need to return a BocpdUpdateResult for this step.
+            // Let's return the current state as if the observation didn't happen, 
+            // but increment step to keep time moving?
+            // Actually, if it's impossible, maybe it's better to reset to prior (r=0)?
+            // But if even prior (log_cp) is -inf, then r=0 is also impossible.
+            // This means the emission model is completely wrong for this data point.
+            // Best to ignore this outlier point and keep distribution as is.
+            
+            let posterior: Vec<f64> = self.log_run_length_dist.iter().map(|x| x.exp()).collect();
+            let change_point_probability = posterior.first().copied().unwrap_or(0.0);
+            let map_run_length = posterior
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            let expected_run_length: f64 = posterior
+                .iter()
+                .enumerate()
+                .map(|(r, &p)| r as f64 * p)
+                .sum();
+
+            return BocpdUpdateResult {
+                step: self.step,
+                change_point_probability,
+                map_run_length,
+                expected_run_length,
+                log_evidence: self.cum_log_evidence,
+                run_length_posterior: posterior,
+            };
+        }
+
         for x in &mut new_log_dist {
             *x -= log_evidence;
         }
