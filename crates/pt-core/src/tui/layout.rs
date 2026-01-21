@@ -1,0 +1,545 @@
+//! Responsive constraint-based TUI layouts.
+//!
+//! This module provides responsive layouts that adapt to terminal size using
+//! ratatui's constraint system. Layouts automatically switch between breakpoints
+//! (small, medium, large) based on terminal dimensions.
+//!
+//! # Breakpoints
+//!
+//! - **Large** (>= 120 cols): Full layout with all panels visible
+//! - **Medium** (80-119 cols): Condensed layout with stacked panels
+//! - **Small** (< 80 cols): Minimal single-panel layout
+//!
+//! # Usage
+//!
+//! ```ignore
+//! let layout = ResponsiveLayout::new(frame.area());
+//! let areas = layout.main_areas();
+//! // Use areas.search, areas.content, areas.status for rendering
+//! ```
+
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use tracing::{debug, trace};
+
+/// Terminal size breakpoints for responsive layouts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Breakpoint {
+    /// Small terminal (< 80 columns)
+    /// Single panel navigation, minimal UI
+    Small,
+    /// Medium terminal (80-119 columns)
+    /// Condensed layout, stacked panels
+    Medium,
+    /// Large terminal (>= 120 columns)
+    /// Full layout with sidebar and all panels
+    Large,
+}
+
+impl Breakpoint {
+    /// Determine breakpoint from terminal dimensions.
+    pub fn from_size(width: u16, _height: u16) -> Self {
+        match width {
+            w if w >= 120 => Breakpoint::Large,
+            w if w >= 80 => Breakpoint::Medium,
+            _ => Breakpoint::Small,
+        }
+    }
+
+    /// Minimum columns for this breakpoint.
+    pub fn min_cols(&self) -> u16 {
+        match self {
+            Breakpoint::Small => 0,
+            Breakpoint::Medium => 80,
+            Breakpoint::Large => 120,
+        }
+    }
+
+    /// Human-readable name for logging.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Breakpoint::Small => "small",
+            Breakpoint::Medium => "medium",
+            Breakpoint::Large => "large",
+        }
+    }
+}
+
+/// Layout areas for the main view.
+#[derive(Debug, Clone, Copy)]
+pub struct MainAreas {
+    /// Search input area at top.
+    pub search: Rect,
+    /// Main content area (process table).
+    pub content: Rect,
+    /// Optional sidebar area (large breakpoint only).
+    pub sidebar: Option<Rect>,
+    /// Status bar at bottom.
+    pub status: Rect,
+}
+
+/// Layout areas for the evidence detail view.
+#[derive(Debug, Clone, Copy)]
+pub struct DetailAreas {
+    /// Process info header.
+    pub header: Rect,
+    /// Evidence ledger area.
+    pub evidence: Rect,
+    /// Actions panel.
+    pub actions: Rect,
+}
+
+/// Layout areas for galaxy brain (full math) view.
+#[derive(Debug, Clone, Copy)]
+pub struct GalaxyBrainAreas {
+    /// Math display area.
+    pub math: Rect,
+    /// Explanation text area.
+    pub explanation: Rect,
+}
+
+/// Responsive layout calculator.
+///
+/// Computes layout areas based on terminal size and current breakpoint.
+/// Automatically handles breakpoint transitions and provides smooth
+/// degradation for small terminals.
+#[derive(Debug, Clone, Copy)]
+pub struct ResponsiveLayout {
+    /// Terminal area.
+    area: Rect,
+    /// Current breakpoint.
+    breakpoint: Breakpoint,
+}
+
+impl ResponsiveLayout {
+    /// Create a new responsive layout for the given terminal area.
+    pub fn new(area: Rect) -> Self {
+        let breakpoint = Breakpoint::from_size(area.width, area.height);
+
+        trace!(
+            width = area.width,
+            height = area.height,
+            breakpoint = breakpoint.name(),
+            "layout.calculate"
+        );
+
+        Self { area, breakpoint }
+    }
+
+    /// Get the current breakpoint.
+    pub fn breakpoint(&self) -> Breakpoint {
+        self.breakpoint
+    }
+
+    /// Get the terminal area.
+    pub fn area(&self) -> Rect {
+        self.area
+    }
+
+    /// Check if terminal is too small for usable display.
+    pub fn is_too_small(&self) -> bool {
+        self.area.width < 40 || self.area.height < 10
+    }
+
+    /// Compute main view layout areas.
+    pub fn main_areas(&self) -> MainAreas {
+        match self.breakpoint {
+            Breakpoint::Large => self.main_areas_large(),
+            Breakpoint::Medium => self.main_areas_medium(),
+            Breakpoint::Small => self.main_areas_small(),
+        }
+    }
+
+    /// Large breakpoint: full layout with sidebar.
+    fn main_areas_large(&self) -> MainAreas {
+        // Horizontal split: sidebar | main content
+        let h_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(20), // Sidebar: 20% of width
+                Constraint::Min(80),        // Main content: remaining
+            ])
+            .split(self.area);
+
+        let sidebar = h_chunks[0];
+        let main_area = h_chunks[1];
+
+        // Vertical split of main content: search | content | status
+        let v_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),  // Search input
+                Constraint::Min(10),    // Process table
+                Constraint::Length(1),  // Status bar
+            ])
+            .split(main_area);
+
+        MainAreas {
+            search: v_chunks[0],
+            content: v_chunks[1],
+            sidebar: Some(sidebar),
+            status: v_chunks[2],
+        }
+    }
+
+    /// Medium breakpoint: no sidebar, standard layout.
+    fn main_areas_medium(&self) -> MainAreas {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),  // Search input
+                Constraint::Min(10),    // Process table
+                Constraint::Length(1),  // Status bar
+            ])
+            .split(self.area);
+
+        MainAreas {
+            search: chunks[0],
+            content: chunks[1],
+            sidebar: None,
+            status: chunks[2],
+        }
+    }
+
+    /// Small breakpoint: compact layout.
+    fn main_areas_small(&self) -> MainAreas {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1),  // Compact search
+                Constraint::Min(5),     // Process list
+                Constraint::Length(1),  // Status
+            ])
+            .split(self.area);
+
+        MainAreas {
+            search: chunks[0],
+            content: chunks[1],
+            sidebar: None,
+            status: chunks[2],
+        }
+    }
+
+    /// Compute evidence detail view areas.
+    pub fn detail_areas(&self) -> DetailAreas {
+        match self.breakpoint {
+            Breakpoint::Large | Breakpoint::Medium => self.detail_areas_standard(),
+            Breakpoint::Small => self.detail_areas_compact(),
+        }
+    }
+
+    /// Standard detail layout (large/medium).
+    fn detail_areas_standard(&self) -> DetailAreas {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(30),  // Process info header
+                Constraint::Percentage(50),  // Evidence ledger
+                Constraint::Percentage(20),  // Actions panel
+            ])
+            .split(self.area);
+
+        DetailAreas {
+            header: chunks[0],
+            evidence: chunks[1],
+            actions: chunks[2],
+        }
+    }
+
+    /// Compact detail layout (small).
+    fn detail_areas_compact(&self) -> DetailAreas {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(4),   // Compact header
+                Constraint::Min(5),      // Evidence (scrollable)
+                Constraint::Length(3),   // Actions
+            ])
+            .split(self.area);
+
+        DetailAreas {
+            header: chunks[0],
+            evidence: chunks[1],
+            actions: chunks[2],
+        }
+    }
+
+    /// Compute galaxy brain view areas.
+    pub fn galaxy_brain_areas(&self) -> GalaxyBrainAreas {
+        match self.breakpoint {
+            Breakpoint::Large => self.galaxy_brain_large(),
+            Breakpoint::Medium | Breakpoint::Small => self.galaxy_brain_stacked(),
+        }
+    }
+
+    /// Large breakpoint: side-by-side math and explanation.
+    fn galaxy_brain_large(&self) -> GalaxyBrainAreas {
+        let chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(60),  // Math display
+                Constraint::Percentage(40),  // Explanation
+            ])
+            .split(self.area);
+
+        GalaxyBrainAreas {
+            math: chunks[0],
+            explanation: chunks[1],
+        }
+    }
+
+    /// Medium/small: stacked layout.
+    fn galaxy_brain_stacked(&self) -> GalaxyBrainAreas {
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Percentage(60),  // Math display
+                Constraint::Percentage(40),  // Explanation
+            ])
+            .split(self.area);
+
+        GalaxyBrainAreas {
+            math: chunks[0],
+            explanation: chunks[1],
+        }
+    }
+
+    /// Compute centered popup/dialog area.
+    ///
+    /// Returns a centered rectangle suitable for dialogs, constrained
+    /// to reasonable proportions based on terminal size.
+    pub fn popup_area(&self, width_pct: u16, height_pct: u16) -> Rect {
+        let width = (self.area.width as u32 * width_pct as u32 / 100) as u16;
+        let height = (self.area.height as u32 * height_pct as u32 / 100) as u16;
+
+        // Apply min/max constraints
+        let width = width.max(30).min(self.area.width.saturating_sub(4));
+        let height = height.max(10).min(self.area.height.saturating_sub(4));
+
+        let x = (self.area.width.saturating_sub(width)) / 2;
+        let y = (self.area.height.saturating_sub(height)) / 2;
+
+        Rect::new(
+            self.area.x + x,
+            self.area.y + y,
+            width,
+            height,
+        )
+    }
+}
+
+/// Tracks layout state changes for logging and animations.
+#[derive(Debug, Clone)]
+pub struct LayoutState {
+    /// Previous breakpoint (for transition detection).
+    prev_breakpoint: Option<Breakpoint>,
+    /// Current breakpoint.
+    current_breakpoint: Breakpoint,
+    /// Previous terminal size.
+    prev_size: (u16, u16),
+    /// Current terminal size.
+    current_size: (u16, u16),
+}
+
+impl LayoutState {
+    /// Create new layout state.
+    pub fn new(width: u16, height: u16) -> Self {
+        let breakpoint = Breakpoint::from_size(width, height);
+        Self {
+            prev_breakpoint: None,
+            current_breakpoint: breakpoint,
+            prev_size: (width, height),
+            current_size: (width, height),
+        }
+    }
+
+    /// Update state for new terminal size.
+    ///
+    /// Returns true if breakpoint changed.
+    pub fn update(&mut self, width: u16, height: u16) -> bool {
+        let new_breakpoint = Breakpoint::from_size(width, height);
+        let changed = new_breakpoint != self.current_breakpoint;
+
+        if changed {
+            debug!(
+                from = self.current_breakpoint.name(),
+                to = new_breakpoint.name(),
+                "layout.breakpoint_change"
+            );
+        }
+
+        if self.current_size != (width, height) {
+            debug!(
+                old_width = self.current_size.0,
+                old_height = self.current_size.1,
+                new_width = width,
+                new_height = height,
+                new_breakpoint = new_breakpoint.name(),
+                "layout.resize"
+            );
+        }
+
+        self.prev_breakpoint = Some(self.current_breakpoint);
+        self.current_breakpoint = new_breakpoint;
+        self.prev_size = self.current_size;
+        self.current_size = (width, height);
+
+        changed
+    }
+
+    /// Get the current breakpoint.
+    pub fn breakpoint(&self) -> Breakpoint {
+        self.current_breakpoint
+    }
+
+    /// Check if we just transitioned breakpoints.
+    pub fn did_breakpoint_change(&self) -> bool {
+        self.prev_breakpoint
+            .map(|prev| prev != self.current_breakpoint)
+            .unwrap_or(false)
+    }
+
+    /// Get current terminal size.
+    pub fn size(&self) -> (u16, u16) {
+        self.current_size
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_breakpoint_detection() {
+        assert_eq!(Breakpoint::from_size(60, 24), Breakpoint::Small);
+        assert_eq!(Breakpoint::from_size(80, 24), Breakpoint::Medium);
+        assert_eq!(Breakpoint::from_size(100, 40), Breakpoint::Medium);
+        assert_eq!(Breakpoint::from_size(120, 40), Breakpoint::Large);
+        assert_eq!(Breakpoint::from_size(200, 60), Breakpoint::Large);
+    }
+
+    #[test]
+    fn test_breakpoint_boundaries() {
+        // Test exact boundaries
+        assert_eq!(Breakpoint::from_size(79, 24), Breakpoint::Small);
+        assert_eq!(Breakpoint::from_size(80, 24), Breakpoint::Medium);
+        assert_eq!(Breakpoint::from_size(119, 24), Breakpoint::Medium);
+        assert_eq!(Breakpoint::from_size(120, 24), Breakpoint::Large);
+    }
+
+    #[test]
+    fn test_layout_main_areas_large() {
+        let area = Rect::new(0, 0, 200, 60);
+        let layout = ResponsiveLayout::new(area);
+
+        assert_eq!(layout.breakpoint(), Breakpoint::Large);
+
+        let areas = layout.main_areas();
+        assert!(areas.sidebar.is_some());
+
+        // Sidebar should be 20% of width
+        let sidebar = areas.sidebar.unwrap();
+        assert_eq!(sidebar.width, 40); // 20% of 200
+
+        // Status bar should be 1 row at bottom
+        assert_eq!(areas.status.height, 1);
+        assert_eq!(areas.status.y + areas.status.height, area.height);
+    }
+
+    #[test]
+    fn test_layout_main_areas_medium() {
+        let area = Rect::new(0, 0, 100, 40);
+        let layout = ResponsiveLayout::new(area);
+
+        assert_eq!(layout.breakpoint(), Breakpoint::Medium);
+
+        let areas = layout.main_areas();
+        assert!(areas.sidebar.is_none());
+
+        // Search should be 3 rows
+        assert_eq!(areas.search.height, 3);
+
+        // Status bar should be 1 row
+        assert_eq!(areas.status.height, 1);
+    }
+
+    #[test]
+    fn test_layout_main_areas_small() {
+        let area = Rect::new(0, 0, 60, 20);
+        let layout = ResponsiveLayout::new(area);
+
+        assert_eq!(layout.breakpoint(), Breakpoint::Small);
+
+        let areas = layout.main_areas();
+        assert!(areas.sidebar.is_none());
+
+        // Compact search should be 1 row
+        assert_eq!(areas.search.height, 1);
+    }
+
+    #[test]
+    fn test_layout_too_small() {
+        let tiny = Rect::new(0, 0, 30, 8);
+        let layout = ResponsiveLayout::new(tiny);
+        assert!(layout.is_too_small());
+
+        let ok = Rect::new(0, 0, 60, 20);
+        let layout = ResponsiveLayout::new(ok);
+        assert!(!layout.is_too_small());
+    }
+
+    #[test]
+    fn test_popup_area_centered() {
+        let area = Rect::new(0, 0, 100, 40);
+        let layout = ResponsiveLayout::new(area);
+
+        let popup = layout.popup_area(50, 50);
+
+        // Should be roughly centered
+        assert!(popup.x > 0);
+        assert!(popup.y > 0);
+        assert!(popup.x + popup.width <= area.width);
+        assert!(popup.y + popup.height <= area.height);
+    }
+
+    #[test]
+    fn test_layout_state_tracking() {
+        let mut state = LayoutState::new(100, 40);
+        assert_eq!(state.breakpoint(), Breakpoint::Medium);
+
+        // Same breakpoint
+        let changed = state.update(110, 40);
+        assert!(!changed);
+        assert!(!state.did_breakpoint_change());
+
+        // Different breakpoint
+        let changed = state.update(60, 20);
+        assert!(changed);
+        assert!(state.did_breakpoint_change());
+        assert_eq!(state.breakpoint(), Breakpoint::Small);
+    }
+
+    #[test]
+    fn test_detail_areas() {
+        let large = ResponsiveLayout::new(Rect::new(0, 0, 200, 60));
+        let detail = large.detail_areas();
+        assert!(detail.header.height > 0);
+        assert!(detail.evidence.height > detail.header.height);
+
+        let small = ResponsiveLayout::new(Rect::new(0, 0, 60, 20));
+        let detail = small.detail_areas();
+        assert_eq!(detail.header.height, 4); // Compact header
+    }
+
+    #[test]
+    fn test_galaxy_brain_areas() {
+        let large = ResponsiveLayout::new(Rect::new(0, 0, 200, 60));
+        let gb = large.galaxy_brain_areas();
+        // Large: side-by-side (horizontal)
+        assert!(gb.math.width > gb.explanation.width);
+
+        let medium = ResponsiveLayout::new(Rect::new(0, 0, 100, 40));
+        let gb = medium.galaxy_brain_areas();
+        // Medium: stacked (vertical)
+        assert!(gb.math.height > gb.explanation.height);
+    }
+}

@@ -13,12 +13,13 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 
 use super::events::{handle_event, AppAction, KeyBindings};
+use super::layout::{Breakpoint, LayoutState, ResponsiveLayout};
 use super::theme::Theme;
 use super::widgets::{
     ConfirmChoice, ConfirmDialog, ConfirmDialogState, ProcessTable, ProcessTableState,
@@ -73,6 +74,8 @@ pub struct App {
     status_message: Option<String>,
     /// Whether a redraw is needed.
     needs_redraw: bool,
+    /// Responsive layout state for tracking breakpoint changes.
+    layout_state: LayoutState,
 }
 
 impl Default for App {
@@ -97,7 +100,24 @@ impl App {
             confirm_dialog: ConfirmDialogState::new(),
             status_message: None,
             needs_redraw: true,
+            // Initialize with reasonable defaults; will be updated on first render
+            layout_state: LayoutState::new(80, 24),
         }
+    }
+
+    /// Get the current layout breakpoint.
+    pub fn breakpoint(&self) -> Breakpoint {
+        self.layout_state.breakpoint()
+    }
+
+    /// Update layout state for new terminal size.
+    /// Returns true if breakpoint changed.
+    pub fn update_layout(&mut self, width: u16, height: u16) -> bool {
+        let changed = self.layout_state.update(width, height);
+        if changed {
+            self.needs_redraw = true;
+        }
+        changed
     }
 
     /// Set the theme.
@@ -154,6 +174,13 @@ impl App {
 
     /// Handle a terminal event.
     pub fn handle_event(&mut self, event: Event) -> TuiResult<()> {
+        // Handle resize events first (SIGWINCH)
+        if let Event::Resize(width, height) = event {
+            self.update_layout(width, height);
+            self.needs_redraw = true;
+            return Ok(());
+        }
+
         // If confirmation dialog is visible, route events there first
         if self.confirm_dialog.visible {
             if let Event::Key(key) = event {
@@ -358,28 +385,72 @@ impl App {
     pub fn render(&mut self, frame: &mut Frame) {
         let size = frame.area();
 
-        // Main layout: search at top, process list in middle, status at bottom
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3), // Search
-                Constraint::Min(10),   // Process table
-                Constraint::Length(1), // Status bar
-            ])
-            .split(size);
+        // Update layout state for current terminal size
+        self.update_layout(size.width, size.height);
 
-        self.render_search(frame, chunks[0]);
-        self.render_process_table(frame, chunks[1]);
-        self.render_status_bar(frame, chunks[2]);
+        // Create responsive layout calculator
+        let layout = ResponsiveLayout::new(size);
 
-        // Render overlays
+        // Check if terminal is too small
+        if layout.is_too_small() {
+            self.render_too_small_message(frame, size);
+            return;
+        }
+
+        // Get layout areas based on current breakpoint
+        let areas = layout.main_areas();
+
+        // Render main content areas
+        self.render_search(frame, areas.search);
+        self.render_process_table(frame, areas.content);
+        self.render_status_bar(frame, areas.status);
+
+        // Render sidebar if available (large breakpoint)
+        if let Some(sidebar) = areas.sidebar {
+            self.render_sidebar(frame, sidebar);
+        }
+
+        // Render overlays using responsive popup areas
         if self.confirm_dialog.visible {
-            self.render_confirm_dialog(frame, size);
+            let popup_area = layout.popup_area(60, 50);
+            self.render_confirm_dialog(frame, popup_area);
         }
 
         if self.state == AppState::Help {
-            self.render_help_overlay(frame, size);
+            let help_area = layout.popup_area(50, 60);
+            self.render_help_overlay(frame, help_area);
         }
+    }
+
+    /// Render message when terminal is too small.
+    fn render_too_small_message(&self, frame: &mut Frame, area: Rect) {
+        let message = Paragraph::new("Terminal too small.\nResize for full view.")
+            .style(self.theme.style_muted())
+            .alignment(ratatui::layout::Alignment::Center);
+
+        frame.render_widget(message, area);
+    }
+
+    /// Render sidebar panel (large breakpoint only).
+    fn render_sidebar(&self, frame: &mut Frame, area: Rect) {
+        // Sidebar shows process summary, quick filters, or navigation
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Summary ")
+            .border_style(self.theme.style_border());
+
+        let content = format!(
+            "Breakpoint: {}\nProcesses: {}\nSelected: {}",
+            self.layout_state.breakpoint().name(),
+            self.process_table.total_count(),
+            self.process_table.selected_count()
+        );
+
+        let sidebar = Paragraph::new(content)
+            .block(block)
+            .style(self.theme.style_muted());
+
+        frame.render_widget(sidebar, area);
     }
 
     /// Render the search input.
@@ -427,12 +498,28 @@ impl App {
             .details(&details)
             .labels("Execute", "Cancel");
 
+        // Clear background and render dialog at the pre-computed area
+        frame.render_widget(ratatui::widgets::Clear, area);
         frame.render_stateful_widget(dialog, area, &mut self.confirm_dialog);
     }
 
     /// Render the help overlay.
     fn render_help_overlay(&self, frame: &mut Frame, area: Rect) {
-        let help_text = r#"
+        // Adapt help text based on breakpoint
+        let help_text = match self.layout_state.breakpoint() {
+            Breakpoint::Small => {
+                // Compact help for small terminals
+                r#"
+Navigation: j/k/g/G
+Search: /
+Select: Space/a
+Execute: Enter/x
+Help: ?  Quit: q
+"#
+            }
+            _ => {
+                // Full help for medium/large terminals
+                r#"
   Process Triage TUI Help
 
   Navigation:
@@ -452,14 +539,9 @@ impl App {
   General:
     ?           Toggle help
     q/Esc       Quit
-"#;
-
-        let width = 50.min(area.width.saturating_sub(4));
-        let height = 18.min(area.height.saturating_sub(4));
-        let x = (area.width.saturating_sub(width)) / 2;
-        let y = (area.height.saturating_sub(height)) / 2;
-
-        let help_area = Rect::new(x, y, width, height);
+"#
+            }
+        };
 
         let block = Block::default()
             .borders(Borders::ALL)
@@ -470,9 +552,9 @@ impl App {
             .block(block)
             .style(self.theme.style_normal());
 
-        // Clear background
-        frame.render_widget(ratatui::widgets::Clear, help_area);
-        frame.render_widget(help, help_area);
+        // Clear background and render at the pre-computed responsive area
+        frame.render_widget(ratatui::widgets::Clear, area);
+        frame.render_widget(help, area);
     }
 
     /// Check if the application should quit.

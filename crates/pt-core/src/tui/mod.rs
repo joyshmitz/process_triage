@@ -21,11 +21,13 @@
 
 mod app;
 mod events;
+pub mod layout;
 mod theme;
 pub mod widgets;
 
 pub use app::{run_tui, App, AppState};
 pub use events::{handle_event, AppAction, KeyBindings};
+pub use layout::{Breakpoint, LayoutState, ResponsiveLayout, MainAreas, DetailAreas, GalaxyBrainAreas};
 pub use theme::{Theme, ThemeMode};
 
 use thiserror::Error;

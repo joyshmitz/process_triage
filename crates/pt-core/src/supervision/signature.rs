@@ -258,7 +258,7 @@ impl ProcessExpectations {
 }
 
 /// A unified supervisor signature combining all detection patterns.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SupervisorSignature {
     /// Human-readable name (e.g., "claude", "vscode").
     pub name: String,
@@ -317,7 +317,7 @@ fn is_false(b: &bool) -> bool {
 }
 
 /// Detection patterns for a supervisor signature.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct SignaturePatterns {
     /// Regex patterns for process name (comm) matching.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -563,7 +563,7 @@ impl SupervisorSignature {
 }
 
 /// Schema wrapper for versioned signature files.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SignatureSchema {
     /// Schema version number.
     pub schema_version: u32,
@@ -578,7 +578,7 @@ pub struct SignatureSchema {
 }
 
 /// Optional metadata for signature files.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct SignatureMetadata {
     /// Human-readable description.
     #[serde(skip_serializing_if = "Option::is_none")]
