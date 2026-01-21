@@ -908,6 +908,8 @@ fn test_enforcer_rate_limiting() {
     for i in 0..3 {
         let result = enforcer.check_action(&candidate, Action::Kill, false);
         assert!(result.allowed, "Kill {} should be allowed", i + 1);
+        // Manually record kill since check_action doesn't side-effect anymore
+        enforcer.record_kill().expect("record kill");
     }
 
     // 4th kill should be rate limited
