@@ -123,8 +123,9 @@ fn example_1_bun_test_stalled_signals_shift_posterior() {
     // - No TTY (detached)
     // - No I/O progress
     // - Much longer runtime (4 hours instead of 18 minutes)
+    // - LOW CPU (stalled processes don't consume CPU; high CPU would indicate useful_bad)
     let evidence = Evidence {
-        cpu: Some(CpuEvidence::Fraction { occupancy: 0.91 }),
+        cpu: Some(CpuEvidence::Fraction { occupancy: 0.02 }),
         runtime_seconds: Some(4.0 * 3600.0), // 4 hours
         orphan: Some(true),                  // Now orphaned
         tty: Some(false),                    // No TTY
