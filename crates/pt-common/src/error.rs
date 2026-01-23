@@ -276,14 +276,14 @@ impl Error {
             Error::NumericalInstability(_) => true,
 
             // Action: depends on cause
-            Error::ActionFailed(_) => true, // Retry possible
-            Error::PolicyBlocked(_) => false, // Policy is intentional
+            Error::ActionFailed(_) => true,      // Retry possible
+            Error::PolicyBlocked(_) => false,    // Policy is intentional
             Error::ActionTimeout { .. } => true, // Retry with longer timeout
 
             // Session: mostly recoverable
             Error::SessionNotFound { .. } => false, // Session is gone
-            Error::SessionExpired { .. } => true, // Can create new session
-            Error::SessionCorrupted(_) => true, // Can recreate
+            Error::SessionExpired { .. } => true,   // Can create new session
+            Error::SessionCorrupted(_) => true,     // Can recreate
 
             // I/O: often transient
             Error::Io(_) => true,
@@ -643,7 +643,10 @@ pub fn format_error_human(err: &Error, use_color: bool) -> String {
 }
 
 /// Format a batch result for human-readable stderr output.
-pub fn format_batch_human<T: std::fmt::Display>(result: &BatchResult<T>, use_color: bool) -> String {
+pub fn format_batch_human<T: std::fmt::Display>(
+    result: &BatchResult<T>,
+    use_color: bool,
+) -> String {
     let (green, red, reset) = if use_color {
         ("\x1b[32m", "\x1b[31m", "\x1b[0m")
     } else {
@@ -656,7 +659,9 @@ pub fn format_batch_human<T: std::fmt::Display>(result: &BatchResult<T>, use_col
     if result.summary.all_succeeded {
         output.push_str(&format!(
             "{green}✓{reset} All {} items completed successfully\n",
-            result.summary.total, green = green, reset = reset
+            result.summary.total,
+            green = green,
+            reset = reset
         ));
     } else if result.summary.any_succeeded {
         output.push_str(&format!(
@@ -666,7 +671,9 @@ pub fn format_batch_human<T: std::fmt::Display>(result: &BatchResult<T>, use_col
     } else {
         output.push_str(&format!(
             "{red}✗{reset} All {} items failed\n",
-            result.summary.total, red = red, reset = reset
+            result.summary.total,
+            red = red,
+            reset = reset
         ));
     }
 
@@ -700,9 +707,18 @@ mod tests {
 
     #[test]
     fn test_error_category() {
-        assert_eq!(Error::Config("test".into()).category(), ErrorCategory::Config);
-        assert_eq!(Error::ProcessNotFound { pid: 123 }.category(), ErrorCategory::Collection);
-        assert_eq!(Error::ActionFailed("test".into()).category(), ErrorCategory::Action);
+        assert_eq!(
+            Error::Config("test".into()).category(),
+            ErrorCategory::Config
+        );
+        assert_eq!(
+            Error::ProcessNotFound { pid: 123 }.category(),
+            ErrorCategory::Collection
+        );
+        assert_eq!(
+            Error::ActionFailed("test".into()).category(),
+            ErrorCategory::Action
+        );
     }
 
     #[test]

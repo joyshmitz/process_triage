@@ -228,11 +228,7 @@ pub fn compute_wasserstein_dro(
     ];
 
     // Compute nominal expected loss
-    let nominal_loss: f64 = losses
-        .iter()
-        .zip(probs.iter())
-        .map(|(l, p)| l * p)
-        .sum();
+    let nominal_loss: f64 = losses.iter().zip(probs.iter()).map(|(l, p)| l * p).sum();
 
     // Compute Lipschitz constant: max loss difference (with uniform ground metric)
     let l_min = losses.iter().cloned().fold(f64::INFINITY, f64::min);
@@ -382,11 +378,7 @@ fn tie_break_rank(action: Action) -> u8 {
 ///
 /// # Returns
 /// Adjusted epsilon value
-pub fn compute_adaptive_epsilon(
-    base_epsilon: f64,
-    trigger: &DroTrigger,
-    max_epsilon: f64,
-) -> f64 {
+pub fn compute_adaptive_epsilon(base_epsilon: f64, trigger: &DroTrigger, max_epsilon: f64) -> f64 {
     let mut epsilon = base_epsilon;
 
     // Scale up epsilon based on trigger severity
@@ -590,7 +582,8 @@ mod tests {
         };
         let loss_matrix = test_loss_matrix();
 
-        let dro_kill = compute_wasserstein_dro(Action::Kill, &posterior, &loss_matrix, 0.1).unwrap();
+        let dro_kill =
+            compute_wasserstein_dro(Action::Kill, &posterior, &loss_matrix, 0.1).unwrap();
 
         // For Kill: losses are [100, 20, 1, 1] → Lipschitz = 100 - 1 = 99
         assert!(
@@ -599,7 +592,8 @@ mod tests {
             dro_kill.lipschitz
         );
 
-        let dro_keep = compute_wasserstein_dro(Action::Keep, &posterior, &loss_matrix, 0.1).unwrap();
+        let dro_keep =
+            compute_wasserstein_dro(Action::Keep, &posterior, &loss_matrix, 0.1).unwrap();
 
         // For Keep: losses are [0, 10, 30, 50] → Lipschitz = 50 - 0 = 50
         assert!(
@@ -627,12 +621,12 @@ mod tests {
         let feasible = vec![Action::Keep, Action::Pause, Action::Kill];
 
         // With small ε, Kill should still be optimal (or close)
-        let _dro_small = decide_with_dro(&posterior, &policy, &feasible, 0.01, Action::Kill, "test")
-            .unwrap();
+        let _dro_small =
+            decide_with_dro(&posterior, &policy, &feasible, 0.01, Action::Kill, "test").unwrap();
 
         // With large ε, DRO should de-escalate away from Kill
-        let dro_large = decide_with_dro(&posterior, &policy, &feasible, 0.5, Action::Kill, "test")
-            .unwrap();
+        let dro_large =
+            decide_with_dro(&posterior, &policy, &feasible, 0.5, Action::Kill, "test").unwrap();
 
         // Kill has high Lipschitz (99) so it should be penalized heavily with large ε
         assert!(
@@ -736,16 +730,12 @@ mod tests {
         let trigger = DroTrigger::none();
         let feasible = vec![Action::Keep, Action::Pause, Action::Kill];
 
-        let outcome = apply_dro_gate(
-            Action::Keep,
-            &posterior,
-            &policy,
-            &trigger,
-            0.1,
-            &feasible,
-        );
+        let outcome = apply_dro_gate(Action::Keep, &posterior, &policy, &trigger, 0.1, &feasible);
 
-        assert!(!outcome.applied, "DRO should not be applied without trigger");
+        assert!(
+            !outcome.applied,
+            "DRO should not be applied without trigger"
+        );
         assert!(!outcome.action_changed);
         assert_eq!(outcome.robust_action, Action::Keep);
     }
@@ -829,7 +819,8 @@ mod tests {
         let loss_matrix = test_loss_matrix();
         let epsilon = 0.1;
 
-        let dro_kill = compute_wasserstein_dro(Action::Kill, &posterior, &loss_matrix, epsilon).unwrap();
+        let dro_kill =
+            compute_wasserstein_dro(Action::Kill, &posterior, &loss_matrix, epsilon).unwrap();
 
         // Nominal loss for Kill on useful = 100
         assert!(

@@ -582,10 +582,7 @@ impl MockScanBuilder {
 
     /// Add an agent process.
     pub fn with_agent(mut self, pid: u32, agent_type: &str) -> Self {
-        let process = MockProcessBuilder::new()
-            .pid(pid)
-            .agent(agent_type)
-            .build();
+        let process = MockProcessBuilder::new().pid(pid).agent(agent_type).build();
         self.processes.push(process);
         self
     }
@@ -671,7 +668,11 @@ pub fn mock_zombie(pid: u32) -> ProcessRecord {
 
 /// Create an orphan process.
 pub fn mock_orphan(pid: u32, comm: &str) -> ProcessRecord {
-    MockProcessBuilder::new().pid(pid).comm(comm).orphan().build()
+    MockProcessBuilder::new()
+        .pid(pid)
+        .comm(comm)
+        .orphan()
+        .build()
 }
 
 /// Create a long-running test runner.

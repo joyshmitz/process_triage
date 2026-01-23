@@ -345,7 +345,7 @@ impl SufficientStats {
                 let z = (x - mu) / scale;
                 let log_gamma_half_nu_plus_half = ln_gamma((nu + 1.0) / 2.0);
                 let log_gamma_half_nu = ln_gamma(nu / 2.0);
-                
+
                 if !log_gamma_half_nu_plus_half.is_finite() || !log_gamma_half_nu.is_finite() {
                     return f64::NEG_INFINITY;
                 }
@@ -379,9 +379,7 @@ impl SufficientStats {
                     return f64::NEG_INFINITY;
                 }
 
-                let log_pmf = term1 - term2 - term3
-                    + r * p.ln()
-                    + x * (1.0 - p).ln();
+                let log_pmf = term1 - term2 - term3 + r * p.ln() + x * (1.0 - p).ln();
 
                 log_pmf
             }
@@ -470,7 +468,10 @@ impl BocpdDetector {
     pub fn update(&mut self, observation: f64) -> BocpdUpdateResult {
         // Guard against invalid observations
         if !observation.is_finite() {
-            warn!("BOCPD received non-finite observation: {}, skipping update", observation);
+            warn!(
+                "BOCPD received non-finite observation: {}, skipping update",
+                observation
+            );
             // Return current state without update if observation is invalid
             let posterior: Vec<f64> = self.log_run_length_dist.iter().map(|x| x.exp()).collect();
             let change_point_probability = posterior.first().copied().unwrap_or(0.0);
@@ -546,19 +547,19 @@ impl BocpdDetector {
 
         // Normalize
         let log_evidence = log_sum_exp(&new_log_dist);
-        
+
         if log_evidence == f64::NEG_INFINITY {
             warn!("BOCPD observation {} is impossible under current model (log_evidence = -inf). Skipping update.", observation);
             // Return previous result but increment step? Or just return?
             // If we skip update, we return the *current* state (before this step).
             // But we need to return a BocpdUpdateResult for this step.
-            // Let's return the current state as if the observation didn't happen, 
+            // Let's return the current state as if the observation didn't happen,
             // but increment step to keep time moving?
             // Actually, if it's impossible, maybe it's better to reset to prior (r=0)?
             // But if even prior (log_cp) is -inf, then r=0 is also impossible.
             // This means the emission model is completely wrong for this data point.
             // Best to ignore this outlier point and keep distribution as is.
-            
+
             let posterior: Vec<f64> = self.log_run_length_dist.iter().map(|x| x.exp()).collect();
             let change_point_probability = posterior.first().copied().unwrap_or(0.0);
             let map_run_length = posterior

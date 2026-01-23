@@ -15,7 +15,7 @@ use pt_core::supervision::pattern_persistence::{
     PatternSource, PatternStats, PersistedPattern, PersistedSchema,
 };
 use pt_core::supervision::signature::{
-    BetaParams, MatchDetails, MatchLevel, ProcessMatchContext, ProcessExpectations,
+    BetaParams, MatchDetails, MatchLevel, ProcessExpectations, ProcessMatchContext,
     SignatureDatabase, SignatureError, SignaturePatterns, SignaturePriors, SignatureSchema,
     SupervisorSignature, SCHEMA_VERSION,
 };
@@ -113,20 +113,23 @@ mod pattern_compilation_tests {
     fn test_special_regex_characters() {
         let sig = SupervisorSignature::new("special-chars", SupervisorCategory::Other)
             .with_process_patterns(vec![
-                r"^node\$",                   // Dollar sign (end of string)
-                r"test\.exe",                 // Escaped dot
-                r"process\[0\]",              // Escaped brackets
-                r"cmd\(1\)",                  // Escaped parens
-                r"run\+\+",                   // Escaped plus
-                r"file\?",                    // Escaped question mark
-                r"star\*",                    // Escaped asterisk
-                r"pipe\|pipe",                // Escaped pipe
-                r"caret\^",                   // Escaped caret
-                r"path/to/file",              // Forward slash (unescaped OK)
-                r"path\\to\\file",            // Escaped backslash
+                r"^node\$",        // Dollar sign (end of string)
+                r"test\.exe",      // Escaped dot
+                r"process\[0\]",   // Escaped brackets
+                r"cmd\(1\)",       // Escaped parens
+                r"run\+\+",        // Escaped plus
+                r"file\?",         // Escaped question mark
+                r"star\*",         // Escaped asterisk
+                r"pipe\|pipe",     // Escaped pipe
+                r"caret\^",        // Escaped caret
+                r"path/to/file",   // Forward slash (unescaped OK)
+                r"path\\to\\file", // Escaped backslash
             ]);
 
-        assert!(sig.validate().is_ok(), "Special characters should be valid when escaped");
+        assert!(
+            sig.validate().is_ok(),
+            "Special characters should be valid when escaped"
+        );
     }
 
     #[test]
@@ -267,7 +270,10 @@ mod pattern_matching_tests {
         // Only process name matches - should NOT match due to min_matches
         let ctx1 = ProcessMatchContext::with_comm("node");
         let matches1 = db.match_process(&ctx1);
-        assert!(matches1.is_empty(), "Should not match with only 1 pattern type");
+        assert!(
+            matches1.is_empty(),
+            "Should not match with only 1 pattern type"
+        );
 
         // Both match - should succeed
         let ctx2 = ProcessMatchContext::with_comm("node").cmdline("node --flag");
@@ -568,9 +574,7 @@ mod builtin_test_runner_tests {
         let matches = db.match_process(&ctx);
         assert!(!matches.is_empty(), "Should detect cypress");
         // Could be "Cypress" or "cypress"
-        assert!(
-            matches[0].signature.name == "cypress" || matches[0].signature.name == "Cypress"
-        );
+        assert!(matches[0].signature.name == "cypress" || matches[0].signature.name == "Cypress");
     }
 
     #[test]
@@ -585,11 +589,7 @@ mod builtin_test_runner_tests {
 
             if !matches.is_empty() {
                 let priors = &matches[0].signature.priors;
-                assert!(
-                    !priors.is_empty(),
-                    "{} should have priors defined",
-                    runner
-                );
+                assert!(!priors.is_empty(), "{} should have priors defined", runner);
 
                 if let Some(abandoned) = &priors.abandoned {
                     assert!(
@@ -642,7 +642,8 @@ mod builtin_dev_server_tests {
     fn test_next_dev_detection() {
         let db = get_default_db();
 
-        let ctx = ProcessMatchContext::with_comm("node").cmdline("node ./node_modules/.bin/next dev");
+        let ctx =
+            ProcessMatchContext::with_comm("node").cmdline("node ./node_modules/.bin/next dev");
         let matches = db.match_process(&ctx);
 
         let next_match = matches.iter().find(|m| m.signature.name == "next-dev");
@@ -663,8 +664,8 @@ mod builtin_dev_server_tests {
     fn test_webpack_dev_server_detection() {
         let db = get_default_db();
 
-        let ctx =
-            ProcessMatchContext::with_comm("node").cmdline("node ./node_modules/.bin/webpack serve");
+        let ctx = ProcessMatchContext::with_comm("node")
+            .cmdline("node ./node_modules/.bin/webpack serve");
         let matches = db.match_process(&ctx);
 
         let webpack_match = matches
@@ -688,8 +689,7 @@ mod builtin_dev_server_tests {
     fn test_django_detection() {
         let db = get_default_db();
 
-        let ctx =
-            ProcessMatchContext::with_comm("python").cmdline("python manage.py runserver");
+        let ctx = ProcessMatchContext::with_comm("python").cmdline("python manage.py runserver");
         let matches = db.match_process(&ctx);
 
         let django_match = matches.iter().find(|m| m.signature.name == "django");
@@ -719,10 +719,7 @@ mod builtin_dev_server_tests {
 
             // Dev servers should have "likely_useful" priors
             if let Some(useful) = &priors.useful {
-                assert!(
-                    useful.mean() > 0.5,
-                    "vite should have high useful prior"
-                );
+                assert!(useful.mean() > 0.5, "vite should have high useful prior");
             }
         }
     }
@@ -1468,7 +1465,7 @@ mod performance_tests {
             .map(|i| {
                 (
                     format!("process-{}", i % 100),
-                    format!("process-{} --arg{}", i % 100, i)
+                    format!("process-{} --arg{}", i % 100, i),
                 )
             })
             .collect();
@@ -1476,10 +1473,7 @@ mod performance_tests {
         // Create 1000 different process contexts
         let processes: Vec<ProcessMatchContext> = data
             .iter()
-            .map(|(comm, cmdline)| {
-                ProcessMatchContext::with_comm(comm)
-                    .cmdline(cmdline)
-            })
+            .map(|(comm, cmdline)| ProcessMatchContext::with_comm(comm).cmdline(cmdline))
             .collect();
 
         // Measure matching time
@@ -1514,10 +1508,11 @@ mod performance_tests {
 
         // Add 100 custom signatures (simulating a large custom library)
         for i in 0..100 {
-            let sig = SupervisorSignature::new(&format!("custom-sig-{}", i), SupervisorCategory::Other)
-                .with_process_patterns(vec![&format!(r"^custom-process-{}$", i)])
-                .with_arg_patterns(vec![&format!(r"--config-{}", i)])
-                .with_confidence(0.80 + (i as f64 * 0.001));
+            let sig =
+                SupervisorSignature::new(&format!("custom-sig-{}", i), SupervisorCategory::Other)
+                    .with_process_patterns(vec![&format!(r"^custom-process-{}$", i)])
+                    .with_arg_patterns(vec![&format!(r"--config-{}", i)])
+                    .with_confidence(0.80 + (i as f64 * 0.001));
 
             db.add(sig).unwrap();
         }
@@ -1610,10 +1605,7 @@ mod performance_tests {
             elapsed.as_millis()
         );
 
-        eprintln!(
-            "Performance: loaded 500 custom patterns in {:?}",
-            elapsed
-        );
+        eprintln!("Performance: loaded 500 custom patterns in {:?}", elapsed);
     }
 
     #[test]
@@ -1626,10 +1618,7 @@ mod performance_tests {
             ("HOME".to_string(), "/home/user".to_string()),
             ("JEST_WORKER_ID".to_string(), "1".to_string()),
         ]);
-        let sockets = vec![
-            "/tmp/socket-1".to_string(),
-            "/tmp/socket-2".to_string(),
-        ];
+        let sockets = vec!["/tmp/socket-1".to_string(), "/tmp/socket-2".to_string()];
 
         let start = Instant::now();
         for _ in 0..1000 {
@@ -1643,10 +1632,7 @@ mod performance_tests {
         }
         let elapsed = start.elapsed();
 
-        eprintln!(
-            "Performance: 1000 full-context matches in {:?}",
-            elapsed
-        );
+        eprintln!("Performance: 1000 full-context matches in {:?}", elapsed);
 
         // Should still be fast even with full context
         assert!(

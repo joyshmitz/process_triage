@@ -135,9 +135,7 @@ impl Theme {
 
     /// Get style for KILL classification.
     pub fn style_kill(&self) -> Style {
-        Style::default()
-            .fg(self.kill)
-            .add_modifier(Modifier::BOLD)
+        Style::default().fg(self.kill).add_modifier(Modifier::BOLD)
     }
 
     /// Get style for REVIEW classification.

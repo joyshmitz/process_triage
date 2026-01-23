@@ -128,7 +128,11 @@ impl<'a> ProcessTable<'a> {
                 theme.style_border()
             }
         } else {
-            Style::default().fg(if focused { Color::Cyan } else { Color::DarkGray })
+            Style::default().fg(if focused {
+                Color::Cyan
+            } else {
+                Color::DarkGray
+            })
         };
 
         Block::default()
@@ -230,12 +234,30 @@ impl<'a> StatefulWidget for ProcessTable<'a> {
         }
 
         let headers = [
-            (format!("PID{}", sort_indicator(SortColumn::Pid)), self.col_widths[0]),
-            (format!("Score{}", sort_indicator(SortColumn::Score)), self.col_widths[1]),
-            (format!("Class{}", sort_indicator(SortColumn::Classification)), self.col_widths[2]),
-            (format!("Runtime{}", sort_indicator(SortColumn::Runtime)), self.col_widths[3]),
-            (format!("Memory{}", sort_indicator(SortColumn::Memory)), self.col_widths[4]),
-            (format!("Command{}", sort_indicator(SortColumn::Command)), command_width),
+            (
+                format!("PID{}", sort_indicator(SortColumn::Pid)),
+                self.col_widths[0],
+            ),
+            (
+                format!("Score{}", sort_indicator(SortColumn::Score)),
+                self.col_widths[1],
+            ),
+            (
+                format!("Class{}", sort_indicator(SortColumn::Classification)),
+                self.col_widths[2],
+            ),
+            (
+                format!("Runtime{}", sort_indicator(SortColumn::Runtime)),
+                self.col_widths[3],
+            ),
+            (
+                format!("Memory{}", sort_indicator(SortColumn::Memory)),
+                self.col_widths[4],
+            ),
+            (
+                format!("Command{}", sort_indicator(SortColumn::Command)),
+                command_width,
+            ),
         ];
 
         for (header, width) in &headers {
@@ -243,7 +265,9 @@ impl<'a> StatefulWidget for ProcessTable<'a> {
                 if x + i as u16 >= inner.right() {
                     break;
                 }
-                buf[(x + i as u16, inner.y)].set_char(ch).set_style(header_style);
+                buf[(x + i as u16, inner.y)]
+                    .set_char(ch)
+                    .set_style(header_style);
             }
             x += width + 1;
         }
@@ -252,7 +276,9 @@ impl<'a> StatefulWidget for ProcessTable<'a> {
         let sep_y = inner.y + 1;
         if sep_y < inner.bottom() {
             for dx in 0..inner.width {
-                buf[(inner.x + dx, sep_y)].set_char('─').set_style(header_style);
+                buf[(inner.x + dx, sep_y)]
+                    .set_char('─')
+                    .set_style(header_style);
             }
         }
 

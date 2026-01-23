@@ -68,8 +68,10 @@ impl tracing::field::Visit for JsonFieldVisitor {
             // Debug output is treated as FreeText by default unless we know better
             let class = guess_field_class(field.name());
             let redacted = get_redactor().redact(&s, class);
-            self.fields
-                .insert(field.name().to_string(), serde_json::Value::String(redacted.output));
+            self.fields.insert(
+                field.name().to_string(),
+                serde_json::Value::String(redacted.output),
+            );
         }
     }
 

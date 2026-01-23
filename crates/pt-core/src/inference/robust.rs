@@ -933,11 +933,7 @@ pub fn worst_case_expected_loss(
     }
 
     // 4. Compute expected loss
-    loss_row
-        .iter()
-        .zip(probs.iter())
-        .map(|(l, p)| l * p)
-        .sum()
+    loss_row.iter().zip(probs.iter()).map(|(l, p)| l * p).sum()
 }
 
 /// Compute best-case expected loss over a credal set.
@@ -970,11 +966,7 @@ pub fn best_case_expected_loss(loss_row: &[f64], credal_sets: &[CredalSet]) -> f
     }
 
     // 4. Compute expected loss
-    loss_row
-        .iter()
-        .zip(probs.iter())
-        .map(|(l, p)| l * p)
-        .sum()
+    loss_row.iter().zip(probs.iter()).map(|(l, p)| l * p).sum()
 }
 
 /// Select optimal η using prequential validation.

@@ -11,10 +11,12 @@
 
 use chrono::{DateTime, Utc};
 use pt_core::events::{
-    event_names, EventBus, FanoutEmitter, JsonlWriter, Phase, ProgressEmitter,
-    ProgressEvent, SessionEmitter,
+    event_names, EventBus, FanoutEmitter, JsonlWriter, Phase, ProgressEmitter, ProgressEvent,
+    SessionEmitter,
 };
-use pt_core::logging::events::{event_names as log_event_names, Level, LogContext, LogEvent, Stage};
+use pt_core::logging::events::{
+    event_names as log_event_names, Level, LogContext, LogEvent, Stage,
+};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -45,8 +47,7 @@ fn validate_progress_event_schema(json: &str) -> Result<(), String> {
 
     // Validate timestamp is ISO-8601
     if let Some(ts) = obj.get("timestamp").and_then(|v| v.as_str()) {
-        DateTime::parse_from_rfc3339(ts)
-            .map_err(|e| format!("Invalid timestamp format: {}", e))?;
+        DateTime::parse_from_rfc3339(ts).map_err(|e| format!("Invalid timestamp format: {}", e))?;
     }
 
     // Validate phase is a known value
@@ -82,7 +83,9 @@ fn validate_log_event_schema(json: &str) -> Result<(), String> {
         .ok_or_else(|| "Expected JSON object".to_string())?;
 
     // Required fields for LogEvent
-    let required_fields = ["ts", "level", "event", "run_id", "stage", "host_id", "message"];
+    let required_fields = [
+        "ts", "level", "event", "run_id", "stage", "host_id", "message",
+    ];
 
     for field in required_fields {
         if !obj.contains_key(field) {
@@ -92,8 +95,7 @@ fn validate_log_event_schema(json: &str) -> Result<(), String> {
 
     // Validate timestamp is ISO-8601
     if let Some(ts) = obj.get("ts").and_then(|v| v.as_str()) {
-        DateTime::parse_from_rfc3339(ts)
-            .map_err(|e| format!("Invalid timestamp format: {}", e))?;
+        DateTime::parse_from_rfc3339(ts).map_err(|e| format!("Invalid timestamp format: {}", e))?;
     }
 
     // Validate level is a known value
@@ -107,7 +109,8 @@ fn validate_log_event_schema(json: &str) -> Result<(), String> {
     // Validate stage is a known value
     if let Some(stage) = obj.get("stage").and_then(|v| v.as_str()) {
         let valid_stages = [
-            "init", "scan", "infer", "decide", "ui", "apply", "verify", "report", "bundle", "daemon",
+            "init", "scan", "infer", "decide", "ui", "apply", "verify", "report", "bundle",
+            "daemon",
         ];
         if !valid_stages.contains(&stage) {
             return Err(format!("Unknown stage: {}", stage));
@@ -124,7 +127,8 @@ fn validate_progress_jsonl_file(path: &Path) -> Result<Vec<ProgressEvent>, Strin
     let mut events = Vec::new();
 
     for (line_num, line_result) in reader.lines().enumerate() {
-        let line = line_result.map_err(|e| format!("Read error at line {}: {}", line_num + 1, e))?;
+        let line =
+            line_result.map_err(|e| format!("Read error at line {}: {}", line_num + 1, e))?;
 
         if line.trim().is_empty() {
             continue;
@@ -237,7 +241,9 @@ fn test_progress_event_roundtrip_fidelity() {
     assert_eq!(roundtrip.elapsed_ms, original.elapsed_ms);
 
     // Timestamp should be within 1 second
-    let time_diff = (roundtrip.timestamp - original.timestamp).num_seconds().abs();
+    let time_diff = (roundtrip.timestamp - original.timestamp)
+        .num_seconds()
+        .abs();
     assert!(time_diff <= 1, "Timestamp drift: {} seconds", time_diff);
 
     eprintln!("[INFO] Roundtrip fidelity verified");
@@ -375,13 +381,21 @@ fn test_log_event_optional_fields() {
 
 #[test]
 fn test_log_context_event_generation() {
-    let ctx = LogContext::new("run-context-test", "host-context-test")
-        .with_session_id("sess-ctx-123");
+    let ctx =
+        LogContext::new("run-context-test", "host-context-test").with_session_id("sess-ctx-123");
 
     let info_event = ctx.info(log_event_names::SCAN_STARTED, Stage::Scan, "Beginning scan");
-    let debug_event = ctx.debug(log_event_names::SCAN_SAMPLED, Stage::Scan, "Sampled process");
+    let debug_event = ctx.debug(
+        log_event_names::SCAN_SAMPLED,
+        Stage::Scan,
+        "Sampled process",
+    );
     let warn_event = ctx.warn(log_event_names::CONFIG_ERROR, Stage::Init, "Config warning");
-    let error_event = ctx.error(log_event_names::INTERNAL_ERROR, Stage::Apply, "Action failed");
+    let error_event = ctx.error(
+        log_event_names::INTERNAL_ERROR,
+        Stage::Apply,
+        "Action failed",
+    );
 
     for (event, expected_level) in [
         (&info_event, "info"),
@@ -468,8 +482,14 @@ fn test_jsonl_writer_no_trailing_comma() {
     let file = fs::File::create(&output_path).expect("create file");
     let writer = JsonlWriter::new(file);
 
-    writer.emit(ProgressEvent::new(event_names::SESSION_STARTED, Phase::Session));
-    writer.emit(ProgressEvent::new(event_names::SESSION_ENDED, Phase::Session));
+    writer.emit(ProgressEvent::new(
+        event_names::SESSION_STARTED,
+        Phase::Session,
+    ));
+    writer.emit(ProgressEvent::new(
+        event_names::SESSION_ENDED,
+        Phase::Session,
+    ));
 
     drop(writer);
 
@@ -489,11 +509,7 @@ fn test_jsonl_writer_no_trailing_comma() {
     for (i, line) in content.lines().enumerate() {
         let parsed: serde_json::Value = serde_json::from_str(line)
             .unwrap_or_else(|e| panic!("Line {} is not valid JSON: {}", i + 1, e));
-        assert!(
-            parsed.is_object(),
-            "Line {} should be a JSON object",
-            i + 1
-        );
+        assert!(parsed.is_object(), "Line {} should be a JSON object", i + 1);
         // Should not end with comma
         assert!(
             !line.trim().ends_with(','),
@@ -594,7 +610,10 @@ fn test_session_emitter_attaches_session_id() {
     let session_emitter = SessionEmitter::new("sess-auto-attach", capture.clone());
 
     // Emit event without session_id - should get attached
-    session_emitter.emit(ProgressEvent::new(event_names::QUICK_SCAN_STARTED, Phase::QuickScan));
+    session_emitter.emit(ProgressEvent::new(
+        event_names::QUICK_SCAN_STARTED,
+        Phase::QuickScan,
+    ));
 
     // Emit event with session_id - should be preserved
     session_emitter.emit(
@@ -606,16 +625,10 @@ fn test_session_emitter_attaches_session_id() {
     assert_eq!(captured.len(), 2);
 
     // First event should have auto-attached session_id
-    assert_eq!(
-        captured[0].session_id.as_deref(),
-        Some("sess-auto-attach")
-    );
+    assert_eq!(captured[0].session_id.as_deref(), Some("sess-auto-attach"));
 
     // Second event should preserve explicit session_id
-    assert_eq!(
-        captured[1].session_id.as_deref(),
-        Some("sess-explicit")
-    );
+    assert_eq!(captured[1].session_id.as_deref(), Some("sess-explicit"));
 
     eprintln!("[INFO] SessionEmitter correctly attaches session IDs");
 }
@@ -641,8 +654,14 @@ fn test_fanout_emitter_multiple_outputs() {
     let fanout = FanoutEmitter::new(vec![writer1.clone(), writer2.clone()]);
 
     // Emit events through fanout
-    fanout.emit(ProgressEvent::new(event_names::SESSION_STARTED, Phase::Session));
-    fanout.emit(ProgressEvent::new(event_names::SESSION_ENDED, Phase::Session));
+    fanout.emit(ProgressEvent::new(
+        event_names::SESSION_STARTED,
+        Phase::Session,
+    ));
+    fanout.emit(ProgressEvent::new(
+        event_names::SESSION_ENDED,
+        Phase::Session,
+    ));
 
     // Force files to close
     drop(fanout);
@@ -797,12 +816,21 @@ fn test_log_event_names_constants() {
     assert_eq!(log_event_names::INFER_PROC_DONE, "infer.proc_done");
     assert_eq!(log_event_names::INFER_FINISHED, "infer.finished");
     assert_eq!(log_event_names::DECIDE_STARTED, "decide.started");
-    assert_eq!(log_event_names::DECIDE_BLOCKED_BY_POLICY, "decide.blocked_by_policy");
-    assert_eq!(log_event_names::DECIDE_RECOMMENDED_ACTION, "decide.recommended_action");
+    assert_eq!(
+        log_event_names::DECIDE_BLOCKED_BY_POLICY,
+        "decide.blocked_by_policy"
+    );
+    assert_eq!(
+        log_event_names::DECIDE_RECOMMENDED_ACTION,
+        "decide.recommended_action"
+    );
     assert_eq!(log_event_names::DECIDE_FINISHED, "decide.finished");
     assert_eq!(log_event_names::APPLY_STARTED, "apply.started");
     assert_eq!(log_event_names::APPLY_INTENT_LOGGED, "apply.intent_logged");
-    assert_eq!(log_event_names::APPLY_ACTION_ATTEMPTED, "apply.action_attempted");
+    assert_eq!(
+        log_event_names::APPLY_ACTION_ATTEMPTED,
+        "apply.action_attempted"
+    );
     assert_eq!(log_event_names::APPLY_ACTION_RESULT, "apply.action_result");
     assert_eq!(log_event_names::APPLY_FINISHED, "apply.finished");
     assert_eq!(log_event_names::CONFIG_LOADED, "config.loaded");

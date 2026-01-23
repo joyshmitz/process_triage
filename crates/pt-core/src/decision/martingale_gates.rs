@@ -119,8 +119,8 @@ fn evaluate_gate(
     alpha: f64,
 ) -> MartingaleGateResult {
     let result = &candidate.result;
-    let eligible = result.n >= config.min_observations
-        && (!config.require_anomaly || result.anomaly_detected);
+    let eligible =
+        result.n >= config.min_observations && (!config.require_anomaly || result.anomaly_detected);
     let threshold = 1.0 / alpha;
     let gate_passed = eligible && result.e_value >= threshold;
 
@@ -239,7 +239,10 @@ mod tests {
 
         let (alpha, source) = resolve_alpha(&policy, Some(&state)).unwrap();
         assert_eq!(source, AlphaSource::AlphaInvesting);
-        assert!((alpha - 0.02).abs() < 1e-12, "alpha should be spend fraction");
+        assert!(
+            (alpha - 0.02).abs() < 1e-12,
+            "alpha should be spend fraction"
+        );
     }
 
     #[test]

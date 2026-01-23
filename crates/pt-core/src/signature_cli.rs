@@ -190,7 +190,9 @@ pub fn save_disabled_patterns(disabled: &DisabledPatterns) -> Result<(), std::io
         std::fs::create_dir_all(parent)?;
     }
     // Convert PersistenceError to io::Error for compatibility
-    disabled.save_to_file(&path).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
+    disabled
+        .save_to_file(&path)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))
 }
 
 /// Parse a category string into SupervisorCategory
@@ -993,12 +995,14 @@ fn run_signature_stats(format: &OutputFormat, min_matches: u32, sort_by: &str) -
     };
 
     // Collect and filter stats
-    let mut stat_entries: Vec<(&String, &crate::supervision::pattern_persistence::PatternStats)> =
-        stats
-            .patterns
-            .iter()
-            .filter(|(_, s)| s.match_count >= min_matches)
-            .collect();
+    let mut stat_entries: Vec<(
+        &String,
+        &crate::supervision::pattern_persistence::PatternStats,
+    )> = stats
+        .patterns
+        .iter()
+        .filter(|(_, s)| s.match_count >= min_matches)
+        .collect();
 
     // Sort based on sort_by parameter
     match sort_by {
@@ -1012,7 +1016,9 @@ fn run_signature_stats(format: &OutputFormat, min_matches: u32, sort_by: &str) -
             stat_entries.sort_by(|a, b| {
                 let rate_a = a.1.acceptance_rate().unwrap_or(0.0);
                 let rate_b = b.1.acceptance_rate().unwrap_or(0.0);
-                rate_b.partial_cmp(&rate_a).unwrap_or(std::cmp::Ordering::Equal)
+                rate_b
+                    .partial_cmp(&rate_a)
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
         }
         _ => {

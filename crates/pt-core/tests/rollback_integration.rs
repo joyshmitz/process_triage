@@ -239,11 +239,7 @@ mod rollback_tests {
         // Try to restore - should fail checksum verification
         let result = manager.restore_backup(&backup).unwrap();
         assert!(!result.success);
-        assert!(result
-            .error
-            .as_ref()
-            .unwrap()
-            .contains("checksum mismatch"));
+        assert!(result.error.as_ref().unwrap().contains("checksum mismatch"));
     }
 
     #[test]
@@ -327,11 +323,7 @@ mod verification_tests {
         // Expect version 2.0.0 but binary reports 1.0.0
         let result = verify_binary(&binary_path, Some("2.0.0")).unwrap();
         assert!(!result.passed);
-        assert!(result
-            .error
-            .as_ref()
-            .unwrap()
-            .contains("Version mismatch"));
+        assert!(result.error.as_ref().unwrap().contains("Version mismatch"));
     }
 }
 

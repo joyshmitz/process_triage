@@ -17,12 +17,7 @@ use pt_core::decision::{decide_action, ActionFeasibility};
 use pt_core::inference::{compute_posterior, CpuEvidence, Evidence};
 
 /// Helper to check that a class probability is above a threshold.
-fn assert_class_above(
-    name: &str,
-    scenario: &str,
-    value: f64,
-    threshold: f64,
-) {
+fn assert_class_above(name: &str, scenario: &str, value: f64, threshold: f64) {
     assert!(
         value >= threshold,
         "{}: expected {} >= {} but got {}",
@@ -34,12 +29,7 @@ fn assert_class_above(
 }
 
 /// Helper to check that a class probability is below a threshold.
-fn assert_class_below(
-    name: &str,
-    scenario: &str,
-    value: f64,
-    threshold: f64,
-) {
+fn assert_class_below(name: &str, scenario: &str, value: f64, threshold: f64) {
     assert!(
         value <= threshold,
         "{}: expected {} <= {} but got {}",
@@ -73,8 +63,8 @@ fn scenario_1_bun_test_high_cpu_18min_is_not_abandoned() {
         command_category: None, // Would be "test" if categories were configured
     };
 
-    let result = compute_posterior(&priors, &evidence)
-        .expect("posterior computation should succeed");
+    let result =
+        compute_posterior(&priors, &evidence).expect("posterior computation should succeed");
 
     let posterior = result.posterior;
 
@@ -110,16 +100,16 @@ fn scenario_1b_bun_test_stalled_shifts_toward_abandoned() {
     let evidence = Evidence {
         cpu: Some(CpuEvidence::Fraction { occupancy: 0.91 }),
         runtime_seconds: Some(18.0 * 60.0), // 18 minutes
-        orphan: Some(true),    // Orphaned
-        tty: Some(false),      // No TTY
-        io_active: Some(false), // No IO activity
+        orphan: Some(true),                 // Orphaned
+        tty: Some(false),                   // No TTY
+        io_active: Some(false),             // No IO activity
         net: Some(false),
         state_flag: None,
         command_category: None,
     };
 
-    let result = compute_posterior(&priors, &evidence)
-        .expect("posterior computation should succeed");
+    let result =
+        compute_posterior(&priors, &evidence).expect("posterior computation should succeed");
 
     let posterior = result.posterior;
 
@@ -169,8 +159,8 @@ fn scenario_2_gemini_agent_moderate_runtime_not_abandoned() {
         command_category: None, // Would be "agent" if configured
     };
 
-    let result = compute_posterior(&priors, &evidence)
-        .expect("posterior computation should succeed");
+    let result =
+        compute_posterior(&priors, &evidence).expect("posterior computation should succeed");
 
     let posterior = result.posterior;
 
@@ -201,7 +191,7 @@ fn scenario_2b_gemini_agent_long_orphaned_shifts_toward_abandoned() {
     // Agent at 4h46m, orphaned, no TTY, stalled
     let evidence = Evidence {
         cpu: Some(CpuEvidence::Fraction { occupancy: 0.05 }), // Low CPU
-        runtime_seconds: Some(4.0 * 3600.0 + 46.0 * 60.0), // 4h46m
+        runtime_seconds: Some(4.0 * 3600.0 + 46.0 * 60.0),    // 4h46m
         orphan: Some(true),
         tty: Some(false),
         io_active: Some(false),
@@ -210,8 +200,8 @@ fn scenario_2b_gemini_agent_long_orphaned_shifts_toward_abandoned() {
         command_category: None,
     };
 
-    let result = compute_posterior(&priors, &evidence)
-        .expect("posterior computation should succeed");
+    let result =
+        compute_posterior(&priors, &evidence).expect("posterior computation should succeed");
 
     let posterior = result.posterior;
 
@@ -237,16 +227,16 @@ fn scenario_3_gunicorn_server_is_useful() {
     let evidence = Evidence {
         cpu: Some(CpuEvidence::Fraction { occupancy: 0.47 }),
         runtime_seconds: Some(3600.0), // 1 hour
-        orphan: Some(false), // Managed by systemd typically
-        tty: Some(false),    // Servers often don't have TTY
+        orphan: Some(false),           // Managed by systemd typically
+        tty: Some(false),              // Servers often don't have TTY
         io_active: Some(true),
-        net: Some(true),     // Serving web requests
+        net: Some(true), // Serving web requests
         state_flag: None,
         command_category: None, // Would be "server" if configured
     };
 
-    let result = compute_posterior(&priors, &evidence)
-        .expect("posterior computation should succeed");
+    let result =
+        compute_posterior(&priors, &evidence).expect("posterior computation should succeed");
 
     let posterior = result.posterior;
 
@@ -262,8 +252,8 @@ fn scenario_3_gunicorn_server_is_useful() {
     let policy = Policy::default();
     let feasibility = ActionFeasibility::allow_all();
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision should succeed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision should succeed");
 
     // The optimal action should NOT be Kill for a likely-useful server
     assert!(
@@ -285,7 +275,7 @@ fn scenario_4_claude_agent_high_cpu_is_useful() {
     // Claude process: high CPU (112% = 1.12 on multi-core), has TTY
     let evidence = Evidence {
         cpu: Some(CpuEvidence::Fraction { occupancy: 1.0 }), // 100%+ normalized to 1.0
-        runtime_seconds: Some(30.0 * 60.0), // 30 minutes
+        runtime_seconds: Some(30.0 * 60.0),                  // 30 minutes
         orphan: Some(false),
         tty: Some(true),
         io_active: Some(true),
@@ -294,26 +284,16 @@ fn scenario_4_claude_agent_high_cpu_is_useful() {
         command_category: None, // Would be "agent" if configured
     };
 
-    let result = compute_posterior(&priors, &evidence)
-        .expect("posterior computation should succeed");
+    let result =
+        compute_posterior(&priors, &evidence).expect("posterior computation should succeed");
 
     let posterior = result.posterior;
 
     // Interactive agent with TTY + IO + network = useful
-    assert_class_above(
-        "useful",
-        "Scenario 4 (claude)",
-        posterior.useful,
-        0.25,
-    );
+    assert_class_above("useful", "Scenario 4 (claude)", posterior.useful, 0.25);
 
     // Should not flag as abandoned
-    assert_class_below(
-        "abandoned",
-        "Scenario 4 (claude)",
-        posterior.abandoned,
-        0.3,
-    );
+    assert_class_below("abandoned", "Scenario 4 (claude)", posterior.abandoned, 0.3);
 }
 
 /// Scenario 4b: Claude process at moderate CPU, orphaned, no TTY
@@ -335,8 +315,8 @@ fn scenario_4b_claude_orphaned_no_tty_shifts_toward_abandoned() {
         command_category: None,
     };
 
-    let result = compute_posterior(&priors, &evidence)
-        .expect("posterior computation should succeed");
+    let result =
+        compute_posterior(&priors, &evidence).expect("posterior computation should succeed");
 
     let posterior = result.posterior;
 
@@ -389,8 +369,8 @@ fn orphan_alone_is_weak_signal() {
         ..orphan_evidence.clone()
     };
 
-    let orphan_result = compute_posterior(&priors, &orphan_evidence)
-        .expect("orphan computation should succeed");
+    let orphan_result =
+        compute_posterior(&priors, &orphan_evidence).expect("orphan computation should succeed");
     let non_orphan_result = compute_posterior(&priors, &non_orphan_evidence)
         .expect("non-orphan computation should succeed");
 
@@ -430,18 +410,13 @@ fn high_cpu_alone_is_not_abandoned() {
         command_category: None,
     };
 
-    let result = compute_posterior(&priors, &evidence)
-        .expect("posterior computation should succeed");
+    let result =
+        compute_posterior(&priors, &evidence).expect("posterior computation should succeed");
 
     let posterior = result.posterior;
 
     // High CPU should not push toward abandoned
-    assert_class_below(
-        "abandoned",
-        "high CPU alone",
-        posterior.abandoned,
-        0.2,
-    );
+    assert_class_below("abandoned", "high CPU alone", posterior.abandoned, 0.2);
 
     // Might be useful_bad if very high, but should still be useful-like
     let useful_like = posterior.useful + posterior.useful_bad;

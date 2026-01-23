@@ -31,8 +31,8 @@ pub use categories::{
 };
 pub use config::{Config, ConfigPaths, ConfigResolver, ConfigSnapshot, Policy, Priors};
 pub use error::{
-    BatchError, BatchResult, BatchSummary, Error, ErrorCategory, Result, StructuredError,
-    SuggestedAction, format_batch_human, format_error_human,
+    format_batch_human, format_error_human, BatchError, BatchResult, BatchSummary, Error,
+    ErrorCategory, Result, StructuredError, SuggestedAction,
 };
 pub use galaxy_brain::{
     CardId, CliHints, CliOutputFormat, CliVerbosity, ComputedValue, Equation, GalaxyBrainData,

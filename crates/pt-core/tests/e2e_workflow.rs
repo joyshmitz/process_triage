@@ -165,7 +165,15 @@ mod agent_workflow {
         // Exit code 0 = no candidates, 1 = candidates found (PlanReady), both are success
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--dry-run", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--dry-run",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(predicate::in_iter([0, 1]));
 
@@ -182,7 +190,15 @@ mod agent_workflow {
         // Exit code 0 = no candidates, 1 = candidates found (PlanReady), both are success
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--shadow", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--shadow",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(predicate::in_iter([0, 1]));
     }
@@ -193,7 +209,16 @@ mod agent_workflow {
         // Exit code 0 = no candidates, 1 = candidates found (PlanReady), both are success
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--robot", "--dry-run", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--robot",
+                "--dry-run",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(predicate::in_iter([0, 1]));
     }

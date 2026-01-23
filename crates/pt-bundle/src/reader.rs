@@ -153,9 +153,11 @@ impl<R: Read + std::io::Seek> BundleReader<R> {
             .map_err(|_| BundleError::FileNotFound(path.to_string()))?;
 
         if file.size() > MAX_FILE_SIZE {
-            return Err(BundleError::Io(std::io::Error::other(
-                format!("file {} too large ({} bytes)", path, file.size()),
-            )));
+            return Err(BundleError::Io(std::io::Error::other(format!(
+                "file {} too large ({} bytes)",
+                path,
+                file.size()
+            ))));
         }
 
         let mut data = Vec::with_capacity(file.size() as usize);

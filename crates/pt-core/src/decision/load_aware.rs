@@ -113,12 +113,10 @@ pub fn compute_load_adjustment(
         + (config.weights.psi * psi_score))
         / weight_sum;
 
-    let keep_multiplier =
-        1.0 + load_score * (config.multipliers.keep_max - 1.0).max(0.0);
-    let reversible_multiplier = 1.0
-        - load_score * (1.0 - config.multipliers.reversible_min).max(0.0);
-    let risky_multiplier =
-        1.0 + load_score * (config.multipliers.risky_max - 1.0).max(0.0);
+    let keep_multiplier = 1.0 + load_score * (config.multipliers.keep_max - 1.0).max(0.0);
+    let reversible_multiplier =
+        1.0 - load_score * (1.0 - config.multipliers.reversible_min).max(0.0);
+    let risky_multiplier = 1.0 + load_score * (config.multipliers.risky_max - 1.0).max(0.0);
 
     Some(LoadAdjustment {
         load_score,

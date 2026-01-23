@@ -218,9 +218,6 @@ fn agent_tail_reads_session_log() {
     assert!(has_session_started, "missing session_started event");
     assert!(has_session_ended, "missing session_ended event");
     assert!(has_plan_ready, "missing plan_ready event");
-    assert!(
-        has_inference_started,
-        "missing inference_started event"
-    );
+    assert!(has_inference_started, "missing inference_started event");
     assert!(has_decision_started, "missing decision_started event");
 }

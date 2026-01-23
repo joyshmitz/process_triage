@@ -45,7 +45,10 @@ fn json_scan_outputs_valid_json() {
 
     // Verify expected fields
     assert!(json.get("session_id").is_some(), "should have session_id");
-    assert!(json.get("generated_at").is_some(), "should have generated_at");
+    assert!(
+        json.get("generated_at").is_some(),
+        "should have generated_at"
+    );
     assert!(json.get("scan").is_some(), "should have scan data");
 }
 
@@ -65,10 +68,7 @@ fn json_agent_snapshot_outputs_valid_json() {
     let json: serde_json::Value =
         serde_json::from_slice(&output).expect("snapshot output should be valid JSON");
 
-    assert!(
-        json.get("session_id").is_some(),
-        "should have session_id"
-    );
+    assert!(json.get("session_id").is_some(), "should have session_id");
     assert!(
         json.get("system_state").is_some(),
         "should have system_state"

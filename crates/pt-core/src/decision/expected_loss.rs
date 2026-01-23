@@ -429,11 +429,7 @@ pub fn apply_risk_sensitive_control(
     }
 
     // Get feasible actions from the expected loss results
-    let feasible_actions: Vec<Action> = outcome
-        .expected_loss
-        .iter()
-        .map(|e| e.action)
-        .collect();
+    let feasible_actions: Vec<Action> = outcome.expected_loss.iter().map(|e| e.action).collect();
 
     if feasible_actions.is_empty() {
         outcome.risk_sensitive = Some(RiskSensitiveOutcome {
@@ -505,11 +501,7 @@ pub fn apply_dro_control(
     epsilon: f64,
 ) -> DecisionOutcome {
     // Get feasible actions from the expected loss results
-    let feasible_actions: Vec<Action> = outcome
-        .expected_loss
-        .iter()
-        .map(|e| e.action)
-        .collect();
+    let feasible_actions: Vec<Action> = outcome.expected_loss.iter().map(|e| e.action).collect();
 
     // Apply DRO gate
     let dro_outcome = apply_dro_gate(
@@ -1125,8 +1117,8 @@ mod tests {
             zombie: 0.05,
         };
 
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
 
         let trigger = CvarTrigger {
             robot_mode: false,
@@ -1162,8 +1154,8 @@ mod tests {
             zombie: 0.001,
         };
 
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
         assert_eq!(
             outcome.optimal_action,
             Action::Kill,
@@ -1202,8 +1194,8 @@ mod tests {
             zombie: 0.25,
         };
 
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
 
         let trigger = CvarTrigger {
             robot_mode: false,
@@ -1217,10 +1209,7 @@ mod tests {
 
         assert!(result.risk_sensitive.is_some());
         let rs = result.risk_sensitive.unwrap();
-        assert!(
-            rs.applied,
-            "CVaR should be applied for high blast radius"
-        );
+        assert!(rs.applied, "CVaR should be applied for high blast radius");
         assert!(
             rs.reason.contains("high_blast_radius"),
             "Reason should mention blast radius"
@@ -1241,8 +1230,8 @@ mod tests {
             zombie: 0.05,
         };
 
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
 
         let trigger = DroTrigger::none();
 
@@ -1272,8 +1261,8 @@ mod tests {
             zombie: 0.001,
         };
 
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
         assert_eq!(
             outcome.optimal_action,
             Action::Kill,
@@ -1312,8 +1301,8 @@ mod tests {
             zombie: 0.10,
         };
 
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
 
         let trigger = DroTrigger {
             ppc_failure: false,
@@ -1350,8 +1339,8 @@ mod tests {
             zombie: 0.05,
         };
 
-        let outcome = decide_action(&posterior, &policy, &ActionFeasibility::allow_all())
-            .expect("decision");
+        let outcome =
+            decide_action(&posterior, &policy, &ActionFeasibility::allow_all()).expect("decision");
         let original_action = outcome.optimal_action;
 
         let trigger = DroTrigger {

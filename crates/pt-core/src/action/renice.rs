@@ -150,9 +150,7 @@ impl ReniceActionRunner {
 
         debug!(
             pid,
-            previous_nice,
-            applied_nice,
-            "capturing renice reversal metadata"
+            previous_nice, applied_nice, "capturing renice reversal metadata"
         );
 
         Some(ReniceReversalMetadata {
@@ -227,7 +225,12 @@ impl ReniceActionRunner {
         // Capture previous nice value for logging (reversal metadata can be captured separately)
         if self.config.capture_reversal {
             if let Some(previous) = self.get_nice_value(pid) {
-                debug!(pid, previous_nice = previous, new_nice = nice_value, "renice: capturing prior state");
+                debug!(
+                    pid,
+                    previous_nice = previous,
+                    new_nice = nice_value,
+                    "renice: capturing prior state"
+                );
             }
         }
 

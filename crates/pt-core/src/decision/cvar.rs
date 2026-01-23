@@ -102,10 +102,22 @@ pub fn compute_cvar(
 
     // Get losses for this action across all classes
     let losses_and_probs = [
-        (loss_for_action_class(action, &loss_matrix.useful)?, posterior.useful),
-        (loss_for_action_class(action, &loss_matrix.useful_bad)?, posterior.useful_bad),
-        (loss_for_action_class(action, &loss_matrix.abandoned)?, posterior.abandoned),
-        (loss_for_action_class(action, &loss_matrix.zombie)?, posterior.zombie),
+        (
+            loss_for_action_class(action, &loss_matrix.useful)?,
+            posterior.useful,
+        ),
+        (
+            loss_for_action_class(action, &loss_matrix.useful_bad)?,
+            posterior.useful_bad,
+        ),
+        (
+            loss_for_action_class(action, &loss_matrix.abandoned)?,
+            posterior.abandoned,
+        ),
+        (
+            loss_for_action_class(action, &loss_matrix.zombie)?,
+            posterior.zombie,
+        ),
     ];
 
     // Compute expected loss (for comparison)
@@ -307,7 +319,10 @@ pub struct CvarTrigger {
 impl CvarTrigger {
     /// Check if any trigger condition is met.
     pub fn should_apply(&self) -> bool {
-        self.robot_mode || self.low_confidence || self.high_blast_radius || self.explicit_conservative
+        self.robot_mode
+            || self.low_confidence
+            || self.high_blast_radius
+            || self.explicit_conservative
     }
 
     /// Get the reason string for why CVaR was applied.

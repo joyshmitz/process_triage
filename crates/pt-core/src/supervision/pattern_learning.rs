@@ -196,7 +196,10 @@ impl CommandNormalizer {
         let mut result = arg.to_string();
 
         // Replace UUIDs with pattern
-        result = self.uuid_pattern.replace_all(&result, "[0-9a-f-]+").to_string();
+        result = self
+            .uuid_pattern
+            .replace_all(&result, "[0-9a-f-]+")
+            .to_string();
 
         // Escape regex metacharacters but keep the replacements
         result = regex::escape(&result);
@@ -210,7 +213,10 @@ impl CommandNormalizer {
         let mut result = arg.to_string();
 
         // Strip absolute paths, keep final component
-        result = self.path_stripper.replace_all(&result, "${1}.*").to_string();
+        result = self
+            .path_stripper
+            .replace_all(&result, "${1}.*")
+            .to_string();
 
         // Replace home paths
         result = self
@@ -281,11 +287,7 @@ impl CommandNormalizer {
     }
 
     /// Generate pattern candidates at all specificity levels.
-    pub fn generate_candidates(
-        &self,
-        process_name: &str,
-        cmdline: &str,
-    ) -> Vec<PatternCandidate> {
+    pub fn generate_candidates(&self, process_name: &str, cmdline: &str) -> Vec<PatternCandidate> {
         let normalized_name = self.normalize_process_name(process_name);
 
         // Parse cmdline into components
@@ -295,9 +297,7 @@ impl CommandNormalizer {
         let args_to_process: Vec<&str> = if !args.is_empty() {
             // Check if first arg ends with the process name
             let first = args[0];
-            if first.ends_with(process_name)
-                || first.ends_with(&format!("/{}", process_name))
-            {
+            if first.ends_with(process_name) || first.ends_with(&format!("/{}", process_name)) {
                 args[1..].to_vec()
             } else {
                 args.to_vec()
@@ -320,10 +320,7 @@ impl CommandNormalizer {
                 level: SpecificityLevel::Exact,
                 process_pattern: format!("^{}$", regex::escape(&normalized_name)),
                 arg_patterns: exact_args.clone(),
-                description: format!(
-                    "Exact match for {} with specific args",
-                    normalized_name
-                ),
+                description: format!("Exact match for {} with specific args", normalized_name),
             });
         }
 
@@ -351,7 +348,13 @@ impl CommandNormalizer {
 
         candidates.push(PatternCandidate {
             level: SpecificityLevel::Broad,
-            process_pattern: format!("{}.*", normalized_name.split('.').next().unwrap_or(&normalized_name)),
+            process_pattern: format!(
+                "{}.*",
+                normalized_name
+                    .split('.')
+                    .next()
+                    .unwrap_or(&normalized_name)
+            ),
             arg_patterns: broad_args,
             description: format!("Broad match for {}-like processes", normalized_name),
         });
@@ -393,8 +396,8 @@ impl CommandNormalizer {
 
         // Known important subcommands
         let important_subcommands = [
-            "test", "serve", "dev", "build", "watch", "run", "start", "exec",
-            "lint", "check", "format", "compile", "bundle",
+            "test", "serve", "dev", "build", "watch", "run", "start", "exec", "lint", "check",
+            "format", "compile", "bundle",
         ];
         if important_subcommands.contains(&arg.to_lowercase().as_str()) {
             return true;
@@ -563,7 +566,10 @@ impl<'a> PatternLearner<'a> {
         };
 
         // Check action consistency - if actions are mixed, prefer broader patterns
-        let kill_count = observations.iter().filter(|o| o.action == DecisionAction::Kill).count();
+        let kill_count = observations
+            .iter()
+            .filter(|o| o.action == DecisionAction::Kill)
+            .count();
         let spare_count = observations.len() - kill_count;
 
         let action_consistency = if observations.is_empty() {
@@ -767,7 +773,13 @@ mod tests {
 
     #[test]
     fn test_specificity_priority() {
-        assert!(SpecificityLevel::Exact.priority_offset() < SpecificityLevel::Standard.priority_offset());
-        assert!(SpecificityLevel::Standard.priority_offset() < SpecificityLevel::Broad.priority_offset());
+        assert!(
+            SpecificityLevel::Exact.priority_offset()
+                < SpecificityLevel::Standard.priority_offset()
+        );
+        assert!(
+            SpecificityLevel::Standard.priority_offset()
+                < SpecificityLevel::Broad.priority_offset()
+        );
     }
 }

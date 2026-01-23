@@ -13,7 +13,7 @@ mod verification;
 
 pub use backup::{Backup, BackupManager, BackupMetadata};
 pub use rollback::{RollbackManager, RollbackResult, UpdateResult};
-pub use verification::{VerificationResult, verify_binary};
+pub use verification::{verify_binary, VerificationResult};
 
 use std::path::PathBuf;
 

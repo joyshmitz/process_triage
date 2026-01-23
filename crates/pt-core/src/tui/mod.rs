@@ -27,7 +27,9 @@ pub mod widgets;
 
 pub use app::{run_tui, App, AppState};
 pub use events::{handle_event, AppAction, KeyBindings};
-pub use layout::{Breakpoint, LayoutState, ResponsiveLayout, MainAreas, DetailAreas, GalaxyBrainAreas};
+pub use layout::{
+    Breakpoint, DetailAreas, GalaxyBrainAreas, LayoutState, MainAreas, ResponsiveLayout,
+};
 pub use theme::{Theme, ThemeMode};
 
 use thiserror::Error;

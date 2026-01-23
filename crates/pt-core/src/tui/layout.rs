@@ -167,9 +167,9 @@ impl ResponsiveLayout {
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Search input
-                Constraint::Min(10),    // Process table
-                Constraint::Length(1),  // Status bar
+                Constraint::Length(3), // Search input
+                Constraint::Min(10),   // Process table
+                Constraint::Length(1), // Status bar
             ])
             .split(main_area);
 
@@ -186,9 +186,9 @@ impl ResponsiveLayout {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),  // Search input
-                Constraint::Min(10),    // Process table
-                Constraint::Length(1),  // Status bar
+                Constraint::Length(3), // Search input
+                Constraint::Min(10),   // Process table
+                Constraint::Length(1), // Status bar
             ])
             .split(self.area);
 
@@ -205,9 +205,9 @@ impl ResponsiveLayout {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(1),  // Compact search
-                Constraint::Min(5),     // Process list
-                Constraint::Length(1),  // Status
+                Constraint::Length(1), // Compact search
+                Constraint::Min(5),    // Process list
+                Constraint::Length(1), // Status
             ])
             .split(self.area);
 
@@ -232,9 +232,9 @@ impl ResponsiveLayout {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(30),  // Process info header
-                Constraint::Percentage(50),  // Evidence ledger
-                Constraint::Percentage(20),  // Actions panel
+                Constraint::Percentage(30), // Process info header
+                Constraint::Percentage(50), // Evidence ledger
+                Constraint::Percentage(20), // Actions panel
             ])
             .split(self.area);
 
@@ -250,9 +250,9 @@ impl ResponsiveLayout {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(4),   // Compact header
-                Constraint::Min(5),      // Evidence (scrollable)
-                Constraint::Length(3),   // Actions
+                Constraint::Length(4), // Compact header
+                Constraint::Min(5),    // Evidence (scrollable)
+                Constraint::Length(3), // Actions
             ])
             .split(self.area);
 
@@ -276,8 +276,8 @@ impl ResponsiveLayout {
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(60),  // Math display
-                Constraint::Percentage(40),  // Explanation
+                Constraint::Percentage(60), // Math display
+                Constraint::Percentage(40), // Explanation
             ])
             .split(self.area);
 
@@ -292,8 +292,8 @@ impl ResponsiveLayout {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Percentage(60),  // Math display
-                Constraint::Percentage(40),  // Explanation
+                Constraint::Percentage(60), // Math display
+                Constraint::Percentage(40), // Explanation
             ])
             .split(self.area);
 
@@ -318,12 +318,7 @@ impl ResponsiveLayout {
         let x = (self.area.width.saturating_sub(width)) / 2;
         let y = (self.area.height.saturating_sub(height)) / 2;
 
-        Rect::new(
-            self.area.x + x,
-            self.area.y + y,
-            width,
-            height,
-        )
+        Rect::new(self.area.x + x, self.area.y + y, width, height)
     }
 }
 

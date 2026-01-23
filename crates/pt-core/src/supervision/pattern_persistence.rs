@@ -249,8 +249,7 @@ impl PatternStats {
     pub fn update_confidence(&mut self) {
         if self.match_count > 0 {
             // Use Laplace smoothing: (accept + 1) / (total + 2)
-            let confidence =
-                (self.accept_count as f64 + 1.0) / (self.match_count as f64 + 2.0);
+            let confidence = (self.accept_count as f64 + 1.0) / (self.match_count as f64 + 2.0);
             self.computed_confidence = Some(confidence);
         }
     }
@@ -266,10 +265,7 @@ impl PatternStats {
 
     /// Get suggested lifecycle based on stats.
     pub fn suggested_lifecycle(&self) -> PatternLifecycle {
-        PatternLifecycle::from_stats(
-            self.computed_confidence.unwrap_or(0.0),
-            self.match_count,
-        )
+        PatternLifecycle::from_stats(self.computed_confidence.unwrap_or(0.0), self.match_count)
     }
 }
 
@@ -766,7 +762,8 @@ impl PatternLibrary {
         self.custom.save_to_file(patterns_dir.join(CUSTOM_FILE))?;
 
         // Save disabled patterns
-        self.disabled.save_to_file(patterns_dir.join(DISABLED_FILE))?;
+        self.disabled
+            .save_to_file(patterns_dir.join(DISABLED_FILE))?;
 
         // Save statistics
         self.stats.save_to_file(self.config_dir.join(STATS_FILE))?;
@@ -813,9 +810,7 @@ impl PatternLibrary {
             .iter()
             .chain(self.learned.patterns.iter())
             .chain(self.custom.patterns.iter())
-            .filter(|p| {
-                p.lifecycle.is_active() && !self.disabled.is_disabled(&p.signature.name)
-            })
+            .filter(|p| p.lifecycle.is_active() && !self.disabled.is_disabled(&p.signature.name))
             .collect();
 
         // Sort by priority (lower number = higher priority)
@@ -909,9 +904,7 @@ impl PatternLibrary {
 
         // Try to remove from custom
         let custom_len_before = self.custom.patterns.len();
-        self.custom
-            .patterns
-            .retain(|p| p.signature.name != name);
+        self.custom.patterns.retain(|p| p.signature.name != name);
         if self.custom.patterns.len() < custom_len_before {
             self.dirty = true;
             return Ok(());
@@ -919,9 +912,7 @@ impl PatternLibrary {
 
         // Try to remove from learned
         let learned_len_before = self.learned.patterns.len();
-        self.learned
-            .patterns
-            .retain(|p| p.signature.name != name);
+        self.learned.patterns.retain(|p| p.signature.name != name);
         if self.learned.patterns.len() < learned_len_before {
             self.dirty = true;
             return Ok(());
@@ -931,7 +922,11 @@ impl PatternLibrary {
     }
 
     /// Disable a pattern.
-    pub fn disable_pattern(&mut self, name: &str, reason: Option<&str>) -> Result<(), PersistenceError> {
+    pub fn disable_pattern(
+        &mut self,
+        name: &str,
+        reason: Option<&str>,
+    ) -> Result<(), PersistenceError> {
         if self.get_pattern(name).is_none() {
             return Err(PersistenceError::PatternNotFound(name.to_string()));
         }
@@ -1084,7 +1079,8 @@ impl PatternLibrary {
         {
             if let Some(stats) = self.stats.get(&pattern.signature.name) {
                 let suggested = stats.suggested_lifecycle();
-                if pattern.lifecycle != suggested && pattern.lifecycle.can_transition_to(suggested) {
+                if pattern.lifecycle != suggested && pattern.lifecycle.can_transition_to(suggested)
+                {
                     let old = pattern.lifecycle;
                     pattern.lifecycle = suggested;
                     pattern.touch();

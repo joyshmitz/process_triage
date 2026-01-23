@@ -37,9 +37,9 @@ pub use config::{LogConfig, LogFormat, LogLevel};
 pub use events::{event_names, Level, LogContext, LogEvent, Stage};
 pub use layer::JsonlLayer;
 
+use pt_redact::{Action, FieldClass, RedactionEngine, RedactionPolicy};
 use std::io::IsTerminal;
 use std::sync::OnceLock;
-use pt_redact::{RedactionEngine, RedactionPolicy, FieldClass, Action};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, EnvFilter};
@@ -54,8 +54,7 @@ pub fn get_redactor() -> &'static RedactionEngine {
         let mut policy = RedactionPolicy::default();
         // Allow free text in logs to be readable (default is DetectAction which might be too aggressive)
         policy.set_action(FieldClass::FreeText, Action::Allow);
-        RedactionEngine::new(policy)
-            .expect("Failed to initialize default redaction engine")
+        RedactionEngine::new(policy).expect("Failed to initialize default redaction engine")
     })
 }
 

@@ -295,18 +295,19 @@ fn build_fast_path_ledger(
         },
         classification,
         confidence,
-        bayes_factors: vec![
-            BayesFactorEntry {
-                feature: "signature_match".to_string(),
-                bf: 1.0,
-                log_bf: 0.0,
-                delta_bits: 0.0,
-                direction: "fast_path".to_string(),
-                strength: format!("Matched '{}' (score={:.2})", signature_name, match_score),
-            },
-        ],
+        bayes_factors: vec![BayesFactorEntry {
+            feature: "signature_match".to_string(),
+            bf: 1.0,
+            log_bf: 0.0,
+            delta_bits: 0.0,
+            direction: "fast_path".to_string(),
+            strength: format!("Matched '{}' (score={:.2})", signature_name, match_score),
+        }],
         top_evidence: vec![
-            format!("Signature match: {} (score={:.2})", signature_name, match_score),
+            format!(
+                "Signature match: {} (score={:.2})",
+                signature_name, match_score
+            ),
             "Fast-path classification used".to_string(),
         ],
         why_summary,
@@ -326,11 +327,11 @@ pub fn fast_path_potentially_applicable(config: &FastPathConfig) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::priors::BetaParams;
     use crate::supervision::signature::{
         MatchDetails, MatchLevel, SignaturePatterns, SupervisorSignature,
     };
     use crate::supervision::SupervisorCategory;
-    use crate::config::priors::BetaParams;
 
     fn make_test_signature(name: &str, priors: SignaturePriors) -> SupervisorSignature {
         SupervisorSignature {
@@ -375,7 +376,10 @@ mod tests {
         let sig_match = SignatureMatch::new(&sig, MatchLevel::CommandOnly, details);
 
         let result = try_signature_fast_path(&config, Some(&sig_match), 1234);
-        assert!(matches!(result, Err(FastPathSkipReason::ScoreBelowThreshold)));
+        assert!(matches!(
+            result,
+            Err(FastPathSkipReason::ScoreBelowThreshold)
+        ));
     }
 
     #[test]
@@ -441,7 +445,7 @@ mod tests {
     fn test_derive_classification_abandoned() {
         let priors = SignaturePriors {
             abandoned: Some(BetaParams::new(9.0, 1.0)), // 90% abandoned
-            useful: Some(BetaParams::new(1.0, 9.0)),   // 10% useful
+            useful: Some(BetaParams::new(1.0, 9.0)),    // 10% useful
             ..Default::default()
         };
 
@@ -453,7 +457,7 @@ mod tests {
     fn test_derive_classification_useful() {
         let priors = SignaturePriors {
             abandoned: Some(BetaParams::new(1.0, 9.0)), // 10% abandoned
-            useful: Some(BetaParams::new(9.0, 1.0)),   // 90% useful
+            useful: Some(BetaParams::new(9.0, 1.0)),    // 90% useful
             ..Default::default()
         };
 
@@ -483,11 +487,17 @@ mod tests {
         let details = MatchDetails::default();
         let sig_match = SignatureMatch::new(&sig, MatchLevel::MultiPattern, details);
 
-        let result = try_signature_fast_path(&config, Some(&sig_match), 1234).unwrap().unwrap();
+        let result = try_signature_fast_path(&config, Some(&sig_match), 1234)
+            .unwrap()
+            .unwrap();
 
         // Check ledger contains signature information
         assert!(result.ledger.why_summary.contains("vscode-server"));
         assert!(result.ledger.why_summary.contains("Fast-path"));
-        assert!(result.ledger.top_evidence.iter().any(|e| e.contains("vscode-server")));
+        assert!(result
+            .ledger
+            .top_evidence
+            .iter()
+            .any(|e| e.contains("vscode-server")));
     }
 }

@@ -100,8 +100,8 @@ fn example_1_bun_test_high_cpu_short_runtime() {
     );
 
     // Decision should be KEEP or REVIEW, never ACT (kill)
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     assert!(
@@ -149,8 +149,8 @@ fn example_1_bun_test_stalled_signals_shift_posterior() {
     );
 
     // Decision can be ACT for stalled tests
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     // For stalled processes, we expect REVIEW or ACT (reversible action first)
@@ -199,8 +199,8 @@ fn example_2_gemini_worker_moderate_cpu_normal_runtime() {
         posterior.useful
     );
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     assert_eq!(
@@ -232,8 +232,8 @@ fn example_2_gemini_worker_long_runtime_but_active() {
     let result = compute_posterior(&priors, &evidence).expect("posterior computation failed");
     let posterior = result.posterior;
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     // Long-running but active agent should still be kept
@@ -283,8 +283,8 @@ fn example_3_gunicorn_server_normal_operation() {
         posterior.useful
     );
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     assert_eq!(
@@ -317,8 +317,8 @@ fn example_3_gunicorn_server_even_with_ambiguous_signals() {
     let result = compute_posterior(&priors, &evidence).expect("posterior computation failed");
     let posterior = result.posterior;
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     // Even with ambiguous signals, server category should prevent kill
@@ -368,8 +368,8 @@ fn example_4_claude_process_normal_operation() {
         posterior.useful
     );
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     // Allow Keep or Review (mild interventions like Renice are acceptable for high CPU)
@@ -408,8 +408,8 @@ fn example_4_claude_process_very_high_cpu() {
         posterior.abandoned
     );
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     // High CPU is more likely useful_bad than abandoned
@@ -451,8 +451,8 @@ fn example_4_claude_process_stalled() {
         posterior.abandoned
     );
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     // Stalled agent can be acted upon
@@ -550,8 +550,8 @@ fn regression_daemon_category_protects_against_kill() {
     let result = compute_posterior(&priors, &evidence).expect("posterior computation failed");
     let posterior = result.posterior;
 
-    let decision = decide_action(&posterior, &policy, &feasibility)
-        .expect("decision computation failed");
+    let decision =
+        decide_action(&posterior, &policy, &feasibility).expect("decision computation failed");
     let tier = get_action_tier(decision.optimal_action);
 
     // Daemon category should provide strong protection

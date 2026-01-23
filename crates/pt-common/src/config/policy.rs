@@ -219,7 +219,8 @@ impl LoadAwareDecision {
             return Ok(());
         }
 
-        let weight_sum = self.weights.queue + self.weights.load + self.weights.memory + self.weights.psi;
+        let weight_sum =
+            self.weights.queue + self.weights.load + self.weights.memory + self.weights.psi;
         if weight_sum <= 0.0 {
             return Err(Error::InvalidPolicy(
                 "load_aware.weights must have positive sum".to_string(),

@@ -214,8 +214,10 @@ fn validate_load_aware(load_aware: &crate::policy::LoadAwareDecision) -> Validat
         return Ok(());
     }
 
-    let weight_sum =
-        load_aware.weights.queue + load_aware.weights.load + load_aware.weights.memory + load_aware.weights.psi;
+    let weight_sum = load_aware.weights.queue
+        + load_aware.weights.load
+        + load_aware.weights.memory
+        + load_aware.weights.psi;
     if weight_sum <= 0.0 {
         return Err(ValidationError::InvalidValue {
             field: "load_aware.weights".to_string(),
@@ -266,8 +268,7 @@ fn validate_load_aware(load_aware: &crate::policy::LoadAwareDecision) -> Validat
             message: "must be >= 1.0".to_string(),
         });
     }
-    if load_aware.multipliers.reversible_min <= 0.0 || load_aware.multipliers.reversible_min > 1.0
-    {
+    if load_aware.multipliers.reversible_min <= 0.0 || load_aware.multipliers.reversible_min > 1.0 {
         return Err(ValidationError::InvalidValue {
             field: "load_aware.multipliers.reversible_min".to_string(),
             message: "must be in (0, 1]".to_string(),

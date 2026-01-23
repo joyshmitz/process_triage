@@ -36,7 +36,11 @@ impl ReportData {
         self.config
             .title
             .clone()
-            .or_else(|| self.overview.as_ref().map(|o| format!("Session {}", o.session_id)))
+            .or_else(|| {
+                self.overview
+                    .as_ref()
+                    .map(|o| format!("Session {}", o.session_id))
+            })
             .unwrap_or_else(|| "Process Triage Report".to_string())
     }
 }
@@ -150,8 +154,7 @@ impl ReportGenerator {
                 minify_css: true,
                 ..Default::default()
             };
-            String::from_utf8(minify_html::minify(html.as_bytes(), &cfg))
-                .unwrap_or(html)
+            String::from_utf8(minify_html::minify(html.as_bytes(), &cfg)).unwrap_or(html)
         };
 
         info!(
@@ -482,7 +485,8 @@ impl ReportGenerator {
             buttons.push(r#"<button class="tab-btn" data-tab="actions">Actions</button>"#);
         }
         if sections.galaxy_brain && data.galaxy_brain.is_some() {
-            buttons.push(r#"<button class="tab-btn" data-tab="galaxy-brain">Galaxy Brain</button>"#);
+            buttons
+                .push(r#"<button class="tab-btn" data-tab="galaxy-brain">Galaxy Brain</button>"#);
         }
 
         buttons.join("\n            ")
@@ -593,7 +597,10 @@ impl ReportGenerator {
             state = html_escape(&overview.state),
             os = html_escape(overview.os_family.as_deref().unwrap_or("Unknown")),
             arch = html_escape(overview.arch.as_deref().unwrap_or("Unknown")),
-            cores = overview.cores.map(|c| c.to_string()).unwrap_or_else(|| "N/A".to_string()),
+            cores = overview
+                .cores
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "N/A".to_string()),
             memory = overview.memory_formatted(),
             pt_version = html_escape(overview.pt_version.as_deref().unwrap_or("Unknown")),
             profile = html_escape(&overview.export_profile),
@@ -1028,7 +1035,7 @@ mod tests {
         };
         let html = generator.generate(data).unwrap();
         assert!(html.contains("test-123"));
-        assert!(html.contains("100"));  // processes scanned
+        assert!(html.contains("100")); // processes scanned
     }
 
     #[test]

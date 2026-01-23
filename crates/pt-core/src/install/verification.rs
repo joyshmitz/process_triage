@@ -24,7 +24,11 @@ pub struct VerificationResult {
 
 impl VerificationResult {
     /// Create a successful result
-    pub fn success(version: Option<String>, health_output: Option<String>, duration_ms: u64) -> Self {
+    pub fn success(
+        version: Option<String>,
+        health_output: Option<String>,
+        duration_ms: u64,
+    ) -> Self {
         Self {
             passed: true,
             version,
@@ -51,7 +55,10 @@ impl VerificationResult {
 /// Runs:
 /// 1. `binary --version` to check it starts and returns a version
 /// 2. `binary health` (if available) to verify basic functionality
-pub fn verify_binary(binary_path: &Path, expected_version: Option<&str>) -> io::Result<VerificationResult> {
+pub fn verify_binary(
+    binary_path: &Path,
+    expected_version: Option<&str>,
+) -> io::Result<VerificationResult> {
     let start = std::time::Instant::now();
     let timeout = Duration::from_secs(DEFAULT_VERIFICATION_TIMEOUT_SECS);
 
@@ -172,8 +179,8 @@ fn extract_version(output: &str) -> Option<String> {
     // Pattern 2: "version 1.2.3" or "v1.2.3"
     // Pattern 3: Just "1.2.3"
 
-    let version_regex = regex::Regex::new(r"(?:version\s+|v)?(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)")
-        .ok()?;
+    let version_regex =
+        regex::Regex::new(r"(?:version\s+|v)?(\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?)").ok()?;
 
     version_regex
         .captures(output)
@@ -201,7 +208,10 @@ mod tests {
         assert_eq!(extract_version("version 1.2.3"), Some("1.2.3".to_string()));
         assert_eq!(extract_version("v1.2.3"), Some("1.2.3".to_string()));
         assert_eq!(extract_version("1.2.3"), Some("1.2.3".to_string()));
-        assert_eq!(extract_version("pt-core 1.2.3-beta.1"), Some("1.2.3-beta.1".to_string()));
+        assert_eq!(
+            extract_version("pt-core 1.2.3-beta.1"),
+            Some("1.2.3-beta.1".to_string())
+        );
         assert_eq!(extract_version("no version here"), None);
     }
 

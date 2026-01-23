@@ -210,7 +210,12 @@ fn test_galaxy_brain_card_default_titles() {
     for card_id in CardId::all() {
         let title = card_id.default_title();
         assert!(!title.is_empty(), "Empty title for {:?}", card_id);
-        log_test!("DEBUG", "Card title", card_id = format!("{:?}", card_id), title = title);
+        log_test!(
+            "DEBUG",
+            "Card title",
+            card_id = format!("{:?}", card_id),
+            title = title
+        );
     }
 }
 
@@ -406,7 +411,10 @@ fn test_galaxy_brain_log_odds_matches_posterior() {
 
 #[test]
 fn test_evidence_ledger_classification_matches_posterior() {
-    log_test!("INFO", "Testing EvidenceLedger classification matches posterior");
+    log_test!(
+        "INFO",
+        "Testing EvidenceLedger classification matches posterior"
+    );
 
     // Test with abandoned-dominant posterior
     let abandoned_result = PosteriorResult {
@@ -549,7 +557,10 @@ fn test_galaxy_brain_data_serialization_roundtrip() {
     // Verify required fields are present in JSON
     let parsed: Value = serde_json::from_str(&json).expect("parse failed");
 
-    assert!(parsed.get("schema_version").is_some(), "Missing schema_version");
+    assert!(
+        parsed.get("schema_version").is_some(),
+        "Missing schema_version"
+    );
     assert!(parsed.get("cards").is_some(), "Missing cards");
 
     // Deserialize back
@@ -580,7 +591,10 @@ fn test_galaxy_brain_card_values_json_format() {
     let parsed: Value = serde_json::from_str(&json).expect("parse failed");
 
     // Verify cards array structure
-    let cards = parsed.get("cards").and_then(|c| c.as_array()).expect("cards array");
+    let cards = parsed
+        .get("cards")
+        .and_then(|c| c.as_array())
+        .expect("cards array");
 
     for card in cards {
         // Each card should have required fields
@@ -591,7 +605,11 @@ fn test_galaxy_brain_card_values_json_format() {
         // Values should be an object
         if let Some(values) = card.get("values").and_then(|v| v.as_object()) {
             for (key, val) in values {
-                assert!(val.get("value").is_some(), "Value {} missing 'value' field", key);
+                assert!(
+                    val.get("value").is_some(),
+                    "Value {} missing 'value' field",
+                    key
+                );
             }
         }
     }
@@ -805,8 +823,8 @@ fn test_galaxy_brain_expected_loss_numbers_match_decision() {
     let evidence = create_test_evidence_abandoned();
     let result = compute_posterior(&priors, &evidence).expect("compute_posterior failed");
     let feasibility = ActionFeasibility::allow_all();
-    let decision = decide_action(&result.posterior, &policy, &feasibility)
-        .expect("decide_action failed");
+    let decision =
+        decide_action(&result.posterior, &policy, &feasibility).expect("decide_action failed");
 
     // Verify expected loss is non-negative for all actions
     for entry in &decision.expected_loss {
@@ -845,9 +863,11 @@ fn test_galaxy_brain_expected_loss_numbers_match_decision() {
         + result.posterior.abandoned * 1.0
         + result.posterior.zombie * 1.0;
 
-    if let Some(kill_entry) = decision.expected_loss.iter().find(|e| {
-        matches!(e.action, pt_core::decision::Action::Kill)
-    }) {
+    if let Some(kill_entry) = decision
+        .expected_loss
+        .iter()
+        .find(|e| matches!(e.action, pt_core::decision::Action::Kill))
+    {
         let tolerance = 1e-6;
         assert!(
             (kill_entry.loss - expected_kill_loss).abs() < tolerance,
@@ -895,8 +915,8 @@ fn test_galaxy_brain_expected_loss_useful_process() {
     let evidence = create_test_evidence_useful();
     let result = compute_posterior(&priors, &evidence).expect("compute_posterior failed");
     let feasibility = ActionFeasibility::allow_all();
-    let decision = decide_action(&result.posterior, &policy, &feasibility)
-        .expect("decide_action failed");
+    let decision =
+        decide_action(&result.posterior, &policy, &feasibility).expect("decide_action failed");
 
     // For a useful process, Keep should have low loss, Kill should have high loss
     let keep_loss = decision
@@ -944,9 +964,7 @@ fn test_galaxy_brain_fdr_selection_matches_decision_output() {
         "Testing FDR selection results match decision parameters"
     );
 
-    use pt_core::decision::{
-        select_fdr, FdrCandidate, FdrMethod, TargetIdentity,
-    };
+    use pt_core::decision::{select_fdr, FdrCandidate, FdrMethod, TargetIdentity};
 
     // Create test candidates with e-values (Bayes factors)
     let candidates = vec![
@@ -985,8 +1003,7 @@ fn test_galaxy_brain_fdr_selection_matches_decision_output() {
     ];
 
     let alpha = 0.05;
-    let result = select_fdr(&candidates, alpha, FdrMethod::EBy)
-        .expect("FDR selection failed");
+    let result = select_fdr(&candidates, alpha, FdrMethod::EBy).expect("FDR selection failed");
 
     // Verify result structure
     assert_eq!(result.alpha, alpha, "Alpha mismatch");
@@ -1092,12 +1109,12 @@ fn test_galaxy_brain_fdr_monotonicity() {
         },
     ];
 
-    let result_strict = select_fdr(&candidates, 0.01, FdrMethod::EBy)
-        .expect("FDR selection failed for alpha=0.01");
-    let result_moderate = select_fdr(&candidates, 0.05, FdrMethod::EBy)
-        .expect("FDR selection failed for alpha=0.05");
-    let result_relaxed = select_fdr(&candidates, 0.10, FdrMethod::EBy)
-        .expect("FDR selection failed for alpha=0.10");
+    let result_strict =
+        select_fdr(&candidates, 0.01, FdrMethod::EBy).expect("FDR selection failed for alpha=0.01");
+    let result_moderate =
+        select_fdr(&candidates, 0.05, FdrMethod::EBy).expect("FDR selection failed for alpha=0.05");
+    let result_relaxed =
+        select_fdr(&candidates, 0.10, FdrMethod::EBy).expect("FDR selection failed for alpha=0.10");
 
     // Higher alpha should allow at least as many selections
     assert!(
@@ -1143,7 +1160,10 @@ fn test_galaxy_brain_ledger_to_json_consistency() {
     let parsed: Value = serde_json::from_str(&json).expect("ledger parse failed");
 
     // Verify all required fields are present
-    assert!(parsed.get("classification").is_some(), "Missing classification");
+    assert!(
+        parsed.get("classification").is_some(),
+        "Missing classification"
+    );
     assert!(parsed.get("confidence").is_some(), "Missing confidence");
     assert!(parsed.get("posterior").is_some(), "Missing posterior");
     assert!(parsed.get("why_summary").is_some(), "Missing why_summary");
@@ -1175,7 +1195,8 @@ fn test_galaxy_brain_ledger_to_json_consistency() {
     }
 
     // Deserialize back and compare
-    let restored: EvidenceLedger = serde_json::from_str(&json).expect("ledger deserialization failed");
+    let restored: EvidenceLedger =
+        serde_json::from_str(&json).expect("ledger deserialization failed");
     assert_eq!(
         ledger.classification, restored.classification,
         "Classification changed after roundtrip"
@@ -1203,43 +1224,50 @@ fn test_galaxy_brain_multiple_scenarios_consistency() {
 
     // Test various evidence combinations
     let scenarios: Vec<(&str, Evidence)> = vec![
-        ("abandoned_orphan", Evidence {
-            cpu: Some(CpuEvidence::Fraction { occupancy: 0.001 }),
-            runtime_seconds: Some(172800.0), // 2 days
-            orphan: Some(true),
-            tty: Some(false),
-            net: Some(false),
-            io_active: Some(false),
-            state_flag: None,
-            command_category: None,
-        }),
-        ("useful_active", Evidence {
-            cpu: Some(CpuEvidence::Fraction { occupancy: 0.75 }),
-            runtime_seconds: Some(300.0), // 5 minutes
-            orphan: Some(false),
-            tty: Some(true),
-            net: Some(true),
-            io_active: Some(true),
-            state_flag: None,
-            command_category: None,
-        }),
-        ("uncertain_mixed", Evidence {
-            cpu: Some(CpuEvidence::Fraction { occupancy: 0.1 }),
-            runtime_seconds: Some(3600.0), // 1 hour
-            orphan: Some(false),
-            tty: Some(false),
-            net: Some(true),
-            io_active: Some(false),
-            state_flag: None,
-            command_category: None,
-        }),
+        (
+            "abandoned_orphan",
+            Evidence {
+                cpu: Some(CpuEvidence::Fraction { occupancy: 0.001 }),
+                runtime_seconds: Some(172800.0), // 2 days
+                orphan: Some(true),
+                tty: Some(false),
+                net: Some(false),
+                io_active: Some(false),
+                state_flag: None,
+                command_category: None,
+            },
+        ),
+        (
+            "useful_active",
+            Evidence {
+                cpu: Some(CpuEvidence::Fraction { occupancy: 0.75 }),
+                runtime_seconds: Some(300.0), // 5 minutes
+                orphan: Some(false),
+                tty: Some(true),
+                net: Some(true),
+                io_active: Some(true),
+                state_flag: None,
+                command_category: None,
+            },
+        ),
+        (
+            "uncertain_mixed",
+            Evidence {
+                cpu: Some(CpuEvidence::Fraction { occupancy: 0.1 }),
+                runtime_seconds: Some(3600.0), // 1 hour
+                orphan: Some(false),
+                tty: Some(false),
+                net: Some(true),
+                io_active: Some(false),
+                state_flag: None,
+                command_category: None,
+            },
+        ),
     ];
 
     for (name, evidence) in scenarios {
-        let result = compute_posterior(&priors, &evidence).expect(&format!(
-            "compute_posterior failed for scenario {}",
-            name
-        ));
+        let result = compute_posterior(&priors, &evidence)
+            .expect(&format!("compute_posterior failed for scenario {}", name));
         let data = build_galaxy_brain_data_for_posterior(&result);
         let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
 
@@ -1300,25 +1328,52 @@ fn test_galaxy_brain_multiple_scenarios_consistency() {
 fn sensitive_patterns() -> Vec<(&'static str, regex::Regex)> {
     vec![
         // AWS credentials
-        ("AWS Access Key", regex::Regex::new(r"AKIA[0-9A-Z]{16}").unwrap()),
+        (
+            "AWS Access Key",
+            regex::Regex::new(r"AKIA[0-9A-Z]{16}").unwrap(),
+        ),
         // GitHub tokens
-        ("GitHub Token", regex::Regex::new(r"gh[pousr]_[A-Za-z0-9_]{36,}").unwrap()),
+        (
+            "GitHub Token",
+            regex::Regex::new(r"gh[pousr]_[A-Za-z0-9_]{36,}").unwrap(),
+        ),
         // GitLab tokens
-        ("GitLab Token", regex::Regex::new(r"glpat-[A-Za-z0-9\-_]{20,}").unwrap()),
+        (
+            "GitLab Token",
+            regex::Regex::new(r"glpat-[A-Za-z0-9\-_]{20,}").unwrap(),
+        ),
         // Slack tokens
-        ("Slack Token", regex::Regex::new(r"xox[baprs]-[A-Za-z0-9\-]+").unwrap()),
+        (
+            "Slack Token",
+            regex::Regex::new(r"xox[baprs]-[A-Za-z0-9\-]+").unwrap(),
+        ),
         // JWTs
-        ("JWT", regex::Regex::new(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap()),
+        (
+            "JWT",
+            regex::Regex::new(r"eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+").unwrap(),
+        ),
         // Private keys
-        ("Private Key", regex::Regex::new(r"-----BEGIN[A-Z ]*PRIVATE KEY-----").unwrap()),
+        (
+            "Private Key",
+            regex::Regex::new(r"-----BEGIN[A-Z ]*PRIVATE KEY-----").unwrap(),
+        ),
         // AI API keys (OpenAI, Anthropic)
-        ("AI API Key", regex::Regex::new(r"sk-(?:ant-)?[A-Za-z0-9_-]{20,}").unwrap()),
+        (
+            "AI API Key",
+            regex::Regex::new(r"sk-(?:ant-)?[A-Za-z0-9_-]{20,}").unwrap(),
+        ),
         // Password arguments
-        ("Password Arg", regex::Regex::new(r"--password[=\s]+\S+").unwrap()),
+        (
+            "Password Arg",
+            regex::Regex::new(r"--password[=\s]+\S+").unwrap(),
+        ),
         // Token arguments
         ("Token Arg", regex::Regex::new(r"--token[=\s]+\S+").unwrap()),
         // API key arguments
-        ("API Key Arg", regex::Regex::new(r"--api-key[=\s]+\S+").unwrap()),
+        (
+            "API Key Arg",
+            regex::Regex::new(r"--api-key[=\s]+\S+").unwrap(),
+        ),
     ]
 }
 
@@ -1375,7 +1430,10 @@ fn test_galaxy_brain_data_no_secrets_leak() {
         );
     }
 
-    log_test!("INFO", "GalaxyBrainData JSON verified clean of sensitive patterns");
+    log_test!(
+        "INFO",
+        "GalaxyBrainData JSON verified clean of sensitive patterns"
+    );
 }
 
 #[test]

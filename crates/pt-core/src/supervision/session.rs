@@ -441,7 +441,7 @@ impl SessionAnalyzer {
     /// Walk the parent chain from a PID up to init.
     fn get_ancestry(&mut self, pid: u32) -> Vec<u32> {
         let mut chain = vec![pid];
-        
+
         #[cfg(target_os = "linux")]
         {
             let mut current = pid;
@@ -543,7 +543,7 @@ impl SessionAnalyzer {
                     }
                 }
             }
-            
+
             // Check 6: Foreground process group
             if self.config.protect_foreground_groups {
                 // pt's foreground process group

@@ -50,7 +50,14 @@ mod plan_basic {
     #[test]
     fn plan_with_json_format() {
         pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -61,7 +68,14 @@ mod plan_basic {
     #[test]
     fn plan_produces_valid_json() {
         let output = pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -83,7 +97,14 @@ mod plan_basic {
     #[test]
     fn plan_emits_progress_events() {
         pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -103,7 +124,14 @@ mod plan_options {
     #[test]
     fn plan_with_max_candidates() {
         pt_core_fast()
-            .args(["agent", "plan", "--max-candidates", "10", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "agent",
+                "plan",
+                "--max-candidates",
+                "10",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -112,7 +140,14 @@ mod plan_options {
     #[test]
     fn plan_with_threshold() {
         pt_core_fast()
-            .args(["agent", "plan", "--threshold", "0.8", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "agent",
+                "plan",
+                "--threshold",
+                "0.8",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -121,7 +156,14 @@ mod plan_options {
     #[test]
     fn plan_with_only_filter_kill() {
         pt_core_fast()
-            .args(["agent", "plan", "--only", "kill", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "agent",
+                "plan",
+                "--only",
+                "kill",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -130,7 +172,14 @@ mod plan_options {
     #[test]
     fn plan_with_only_filter_review() {
         pt_core_fast()
-            .args(["agent", "plan", "--only", "review", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "agent",
+                "plan",
+                "--only",
+                "review",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -139,7 +188,14 @@ mod plan_options {
     #[test]
     fn plan_with_only_filter_all() {
         pt_core_fast()
-            .args(["agent", "plan", "--only", "all", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "agent",
+                "plan",
+                "--only",
+                "all",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -185,7 +241,14 @@ mod plan_formats {
     #[test]
     fn plan_json_format() {
         pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -195,7 +258,14 @@ mod plan_formats {
     #[test]
     fn plan_summary_format() {
         pt_core_fast()
-            .args(["--format", "summary", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "summary",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -205,7 +275,14 @@ mod plan_formats {
     #[test]
     fn plan_prose_format() {
         pt_core_fast()
-            .args(["--format", "prose", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "prose",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -216,7 +293,14 @@ mod plan_formats {
     fn plan_exitcode_format() {
         // Exitcode format produces no output on success
         pt_core_fast()
-            .args(["--format", "exitcode", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "exitcode",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -234,7 +318,14 @@ mod plan_schema {
     #[test]
     fn plan_has_schema_version() {
         let output = pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -260,7 +351,14 @@ mod plan_schema {
     #[test]
     fn plan_session_id_is_valid() {
         let output = pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -287,7 +385,14 @@ mod plan_schema {
     #[test]
     fn plan_generated_at_is_iso8601() {
         let output = pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -366,7 +471,15 @@ mod plan_integration {
     #[test]
     fn plan_with_dry_run() {
         pt_core_fast()
-            .args(["--dry-run", "--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--dry-run",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -375,7 +488,15 @@ mod plan_integration {
     #[test]
     fn plan_with_robot_mode() {
         pt_core_fast()
-            .args(["--robot", "--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--robot",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -384,7 +505,15 @@ mod plan_integration {
     #[test]
     fn plan_with_shadow_mode() {
         pt_core_fast()
-            .args(["--shadow", "--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--shadow",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -393,7 +522,15 @@ mod plan_integration {
     #[test]
     fn plan_with_verbose_flag() {
         pt_core_fast()
-            .args(["-v", "--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "-v",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -402,7 +539,15 @@ mod plan_integration {
     #[test]
     fn plan_with_quiet_flag() {
         pt_core_fast()
-            .args(["-q", "--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "-q",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -412,7 +557,14 @@ mod plan_integration {
     fn plan_with_standalone_flag() {
         // pt_core_fast already includes --standalone, so just test format
         pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
@@ -421,7 +573,14 @@ mod plan_integration {
     #[test]
     fn consecutive_plans_have_different_session_ids() {
         let output1 = pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -430,7 +589,14 @@ mod plan_integration {
             .clone();
 
         let output2 = pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", TEST_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
             .assert()
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]))
@@ -696,7 +862,14 @@ mod inference_safety {
     #[test]
     fn protected_filter_stats_in_summary() {
         let output = pt_core_fast()
-            .args(["--format", "json", "agent", "plan", "--sample-size", SAFETY_SAMPLE_SIZE])
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                SAFETY_SAMPLE_SIZE,
+            ])
             .assert()
             .code(predicate::in_iter([0, 1]))
             .get_output()

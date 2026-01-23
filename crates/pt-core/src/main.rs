@@ -26,6 +26,9 @@ use pt_core::session::{
     ListSessionsOptions, SessionContext, SessionHandle, SessionManifest, SessionMode, SessionState,
     SessionStore,
 };
+use pt_core::signature_cli::load_user_signatures;
+use pt_core::supervision::pattern_persistence::DisabledPatterns;
+use pt_core::supervision::signature::{ProcessMatchContext, SignatureDatabase};
 #[cfg(target_os = "linux")]
 use pt_core::supervision::{
     detect_supervision, is_human_supervised, AppActionType, AppSupervisionAnalyzer,
@@ -35,9 +38,6 @@ use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use pt_core::signature_cli::load_user_signatures;
-use pt_core::supervision::pattern_persistence::DisabledPatterns;
-use pt_core::supervision::signature::{ProcessMatchContext, SignatureDatabase};
 
 /// Process Triage Core - Intelligent process classification and cleanup
 #[derive(Parser)]
@@ -100,7 +100,6 @@ struct GlobalOpts {
     standalone: bool,
 
     // Token-efficient output options
-
     /// Select specific output fields (comma-separated or preset: minimal, standard, full)
     #[arg(long, global = true, value_name = "FIELDS")]
     fields: Option<String>,
@@ -147,7 +146,11 @@ impl GlobalOpts {
     /// Returns the processed string and optional metadata.
     fn process_output(&self, value: serde_json::Value) -> String {
         // If no token-efficient options specified, use standard pretty print
-        if self.fields.is_none() && !self.compact && self.max_tokens.is_none() && !self.estimate_tokens {
+        if self.fields.is_none()
+            && !self.compact
+            && self.max_tokens.is_none()
+            && !self.estimate_tokens
+        {
             return serde_json::to_string_pretty(&value).unwrap_or_default();
         }
 
@@ -161,7 +164,8 @@ impl GlobalOpts {
                 "truncated": result.truncated,
                 "continuation_token": result.continuation_token,
                 "remaining_count": result.remaining_count,
-            })).unwrap_or_default();
+            }))
+            .unwrap_or_default();
         }
 
         // If truncated, add metadata wrapper
@@ -555,7 +559,11 @@ struct AgentPlanArgs {
     max_candidates: u32,
 
     /// Minimum posterior probability threshold for candidate selection
-    #[arg(long = "min-posterior", visible_alias = "threshold", default_value = "0.7")]
+    #[arg(
+        long = "min-posterior",
+        visible_alias = "threshold",
+        default_value = "0.7"
+    )]
     min_posterior: f64,
 
     /// Filter by recommendation (kill, review, all)
@@ -585,17 +593,22 @@ struct AgentPlanArgs {
     // === Future flags (stub implementation for API surface discovery) ===
     // These are parsed but not yet functional. Using them will generate a warning.
     // Full implementation is tracked in separate beads.
-
     /// Compare against prior session for differential analysis (coming in v1.2)
     #[arg(long, help = "Compare against prior session (coming in v1.2)")]
     since: Option<String>,
 
     /// Compare against time for temporal differential analysis (coming in v1.2)
-    #[arg(long, help = "Compare against time, e.g. '2h' or ISO timestamp (coming in v1.2)")]
+    #[arg(
+        long,
+        help = "Compare against time, e.g. '2h' or ISO timestamp (coming in v1.2)"
+    )]
     since_time: Option<String>,
 
     /// Resource recovery goal for goal-oriented optimization (coming in v1.2)
-    #[arg(long, help = "Resource recovery goal, e.g. 'free 4GB RAM' (coming in v1.2)")]
+    #[arg(
+        long,
+        help = "Resource recovery goal, e.g. 'free 4GB RAM' (coming in v1.2)"
+    )]
     goal: Option<String>,
 
     /// Include trajectory prediction analysis in output (coming in v1.2)
@@ -642,10 +655,12 @@ struct AgentExplainArgs {
     what_if: bool,
 }
 
-use pt_core::plan::Plan;
-use pt_core::decision::{RuntimeRobotConstraints, ConstraintChecker, RobotCandidate};
 #[cfg(target_os = "linux")]
-use pt_core::action::{ActionRunner, IdentityProvider, LiveIdentityProvider, SignalActionRunner, SignalConfig};
+use pt_core::action::{
+    ActionRunner, IdentityProvider, LiveIdentityProvider, SignalActionRunner, SignalConfig,
+};
+use pt_core::decision::{ConstraintChecker, RobotCandidate, RuntimeRobotConstraints};
+use pt_core::plan::Plan;
 
 #[derive(Args, Debug)]
 struct AgentApplyArgs {
@@ -2132,9 +2147,7 @@ fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
         AgentCommands::Report(args) => run_agent_report(global, args),
         AgentCommands::Init(args) => run_agent_init(global, args),
         AgentCommands::Export(args) => run_agent_export(global, args),
-        AgentCommands::Capabilities(args) => {
-            run_agent_capabilities(global, args)
-        }
+        AgentCommands::Capabilities(args) => run_agent_capabilities(global, args),
     }
 }
 
@@ -2648,7 +2661,11 @@ fn find_json_differences(
 }
 
 /// Export a preset to a file.
-fn run_config_export_preset(global: &GlobalOpts, preset_name: &str, output: Option<&str>) -> ExitCode {
+fn run_config_export_preset(
+    global: &GlobalOpts,
+    preset_name: &str,
+    output: Option<&str>,
+) -> ExitCode {
     let session_id = SessionId::new();
 
     // Parse preset name
@@ -2679,7 +2696,10 @@ fn run_config_export_preset(global: &GlobalOpts, preset_name: &str, output: Opti
 
     // Determine output destination
     let output_path = output.map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(format!("policy.{}.json", preset_name_parsed.to_string().to_lowercase()))
+        PathBuf::from(format!(
+            "policy.{}.json",
+            preset_name_parsed.to_string().to_lowercase()
+        ))
     });
 
     // Write to file
@@ -2696,11 +2716,20 @@ fn run_config_export_preset(global: &GlobalOpts, preset_name: &str, output: Opti
                     println!("{}", serde_json::to_string_pretty(&response).unwrap());
                 }
                 OutputFormat::Summary => {
-                    println!("[{}] exported {} to {}", session_id, preset_name_parsed, output_path.display());
+                    println!(
+                        "[{}] exported {} to {}",
+                        session_id,
+                        preset_name_parsed,
+                        output_path.display()
+                    );
                 }
                 OutputFormat::Exitcode => {}
                 _ => {
-                    println!("Exported {} preset to {}", preset_name_parsed, output_path.display());
+                    println!(
+                        "Exported {} preset to {}",
+                        preset_name_parsed,
+                        output_path.display()
+                    );
                 }
             }
             ExitCode::Clean
@@ -2739,7 +2768,9 @@ fn run_telemetry(global: &GlobalOpts, _args: &TelemetryArgs) -> ExitCode {
 }
 
 fn run_schema(global: &GlobalOpts, args: &SchemaArgs) -> ExitCode {
-    use pt_core::schema::{available_schemas, format_schema, generate_all_schemas, generate_schema, SchemaFormat};
+    use pt_core::schema::{
+        available_schemas, format_schema, generate_all_schemas, generate_schema, SchemaFormat,
+    };
 
     let format = if args.compact {
         SchemaFormat::JsonCompact
@@ -2880,54 +2911,97 @@ fn run_agent_capabilities(global: &GlobalOpts, args: &AgentCapabilitiesArgs) -> 
             "sigcont" | "cont" | "continue" => (true, "SIGCONT always available"),
             "strace" => (
                 caps.tools.strace.available && caps.tools.strace.works,
-                if caps.tools.strace.available { "strace available" } else { "strace not installed" },
+                if caps.tools.strace.available {
+                    "strace available"
+                } else {
+                    "strace not installed"
+                },
             ),
             "perf" => (
                 caps.tools.perf.available && caps.tools.perf.works,
-                if caps.tools.perf.available { "perf available" } else { "perf not installed" },
+                if caps.tools.perf.available {
+                    "perf available"
+                } else {
+                    "perf not installed"
+                },
             ),
             "lsof" => (
                 caps.tools.lsof.available && caps.tools.lsof.works,
-                if caps.tools.lsof.available { "lsof available" } else { "lsof not installed" },
+                if caps.tools.lsof.available {
+                    "lsof available"
+                } else {
+                    "lsof not installed"
+                },
             ),
             "nice" | "renice" => (
                 caps.tools.renice.available,
-                if caps.tools.renice.available { "renice available" } else { "renice not installed" },
+                if caps.tools.renice.available {
+                    "renice available"
+                } else {
+                    "renice not installed"
+                },
             ),
             "ionice" => (
                 caps.tools.ionice.available,
-                if caps.tools.ionice.available { "ionice available" } else { "ionice not installed" },
+                if caps.tools.ionice.available {
+                    "ionice available"
+                } else {
+                    "ionice not installed"
+                },
             ),
             "cgroup" | "cgroups" => (
                 caps.data_sources.cgroup_v2,
-                if caps.data_sources.cgroup_v2 { "cgroups v2 available" } else { "cgroups v2 not available" },
+                if caps.data_sources.cgroup_v2 {
+                    "cgroups v2 available"
+                } else {
+                    "cgroups v2 not available"
+                },
             ),
             "docker" => (
                 caps.tools.docker.available,
-                if caps.tools.docker.available { "docker available" } else { "docker not installed" },
+                if caps.tools.docker.available {
+                    "docker available"
+                } else {
+                    "docker not installed"
+                },
             ),
             "podman" => (
                 caps.tools.podman.available,
-                if caps.tools.podman.available { "podman available" } else { "podman not installed" },
+                if caps.tools.podman.available {
+                    "podman available"
+                } else {
+                    "podman not installed"
+                },
             ),
             "sudo" => (
                 caps.permissions.can_sudo,
-                if caps.permissions.can_sudo { "sudo available" } else { "cannot sudo" },
+                if caps.permissions.can_sudo {
+                    "sudo available"
+                } else {
+                    "cannot sudo"
+                },
             ),
             "root" => (
                 caps.permissions.is_root,
-                if caps.permissions.is_root { "running as root" } else { "not running as root" },
+                if caps.permissions.is_root {
+                    "running as root"
+                } else {
+                    "not running as root"
+                },
             ),
             _ => (false, "unknown action type"),
         };
 
         match global.format {
             OutputFormat::Json => {
-                println!("{}", serde_json::json!({
-                    "action": action,
-                    "supported": supported,
-                    "reason": reason,
-                }));
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "action": action,
+                        "supported": supported,
+                        "reason": reason,
+                    })
+                );
             }
             OutputFormat::Summary => {
                 if supported {
@@ -2946,7 +3020,11 @@ fn run_agent_capabilities(global: &GlobalOpts, args: &AgentCapabilitiesArgs) -> 
             }
         }
 
-        return if supported { ExitCode::Clean } else { ExitCode::CapabilityError };
+        return if supported {
+            ExitCode::Clean
+        } else {
+            ExitCode::CapabilityError
+        };
     }
 
     // Otherwise, output full capabilities
@@ -3354,7 +3432,9 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                 processes.sort_by(|a, b| {
                     let a_score = a.cpu_percent + (a.rss_bytes as f64 / 1_073_741_824.0); // GB
                     let b_score = b.cpu_percent + (b.rss_bytes as f64 / 1_073_741_824.0);
-                    b_score.partial_cmp(&a_score).unwrap_or(std::cmp::Ordering::Equal)
+                    b_score
+                        .partial_cmp(&a_score)
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
                 // Limit to top N if specified
@@ -3394,10 +3474,9 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                                     })
                                     .filter(|k| !k.is_empty())
                                     .collect();
-                                obj.as_object_mut().unwrap().insert(
-                                    "env_keys".to_string(),
-                                    serde_json::json!(keys),
-                                );
+                                obj.as_object_mut()
+                                    .unwrap()
+                                    .insert("env_keys".to_string(), serde_json::json!(keys));
                             }
                         }
 
@@ -3413,9 +3492,7 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                                             e.path()
                                                 .read_link()
                                                 .map(|target| {
-                                                    target
-                                                        .to_string_lossy()
-                                                        .starts_with("socket:")
+                                                    target.to_string_lossy().starts_with("socket:")
                                                 })
                                                 .unwrap_or(false)
                                         })
@@ -3481,10 +3558,10 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                 "capabilities": capabilities_summary,
             });
             if let Some(procs) = &process_snapshot {
-                output.as_object_mut().unwrap().insert(
-                    "process_snapshot".to_string(),
-                    procs.clone(),
-                );
+                output
+                    .as_object_mut()
+                    .unwrap()
+                    .insert("process_snapshot".to_string(), procs.clone());
             }
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
@@ -3572,7 +3649,10 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                         println!("    {:>7} {:<20} {:>5.1}% CPU {:>6}MB", pid, comm, cpu, rss);
                     }
                     if procs.len() > 10 {
-                        println!("    ... and {} more (use --format json for full list)", procs.len() - 10);
+                        println!(
+                            "    ... and {} more (use --format json for full list)",
+                            procs.len() - 10
+                        );
                     }
                 }
             }
@@ -4641,11 +4721,18 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
 
     // Determine which actions to apply
     let target_pids: Vec<u32> = if args.recommended {
-        plan.actions.iter().filter(|a| !a.blocked).map(|a| a.target.pid.0).collect()
+        plan.actions
+            .iter()
+            .filter(|a| !a.blocked)
+            .map(|a| a.target.pid.0)
+            .collect()
     } else if !args.pids.is_empty() {
         args.pids.clone()
     } else if !args.targets.is_empty() {
-        args.targets.iter().filter_map(|t| t.split(':').next().and_then(|p| p.parse().ok())).collect()
+        args.targets
+            .iter()
+            .filter_map(|t| t.split(':').next().and_then(|p| p.parse().ok()))
+            .collect()
     } else {
         eprintln!("agent apply: must specify --recommended, --pids, or --targets");
         return ExitCode::ArgsError;
@@ -4656,7 +4743,11 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         return ExitCode::Clean;
     }
 
-    let actions_to_apply: Vec<_> = plan.actions.iter().filter(|a| target_pids.contains(&a.target.pid.0)).collect();
+    let actions_to_apply: Vec<_> = plan
+        .actions
+        .iter()
+        .filter(|a| target_pids.contains(&a.target.pid.0))
+        .collect();
     if actions_to_apply.is_empty() {
         output_apply_nothing(global, &sid);
         return ExitCode::Clean;
@@ -4675,8 +4766,16 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         .with_max_blast_radius_mb(args.max_blast_radius)
         .with_max_total_blast_radius_mb(args.max_total_blast_radius)
         .with_max_kills(args.max_kills)
-        .with_require_known_signature(if args.require_known_signature { Some(true) } else { None })
-        .with_allow_categories(if args.only_categories.is_empty() { None } else { Some(args.only_categories.clone()) })
+        .with_require_known_signature(if args.require_known_signature {
+            Some(true)
+        } else {
+            None
+        })
+        .with_allow_categories(if args.only_categories.is_empty() {
+            None
+        } else {
+            Some(args.only_categories.clone())
+        })
         .with_exclude_categories(args.exclude_categories.clone());
 
     let checker = ConstraintChecker::new(constraints.clone());
@@ -4731,7 +4830,9 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                 if !check.allowed {
                     blocked_by_constraints += 1;
                     outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "blocked_by_constraints", "time_ms": start.elapsed().as_millis()}));
-                    if args.abort_on_unknown { break; }
+                    if args.abort_on_unknown {
+                        break;
+                    }
                     continue;
                 }
                 match identity_provider.revalidate(&action.target) {
@@ -4739,13 +4840,17 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                     Ok(false) => {
                         failed += 1;
                         outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "identity_mismatch", "time_ms": start.elapsed().as_millis()}));
-                        if args.abort_on_unknown { break; }
+                        if args.abort_on_unknown {
+                            break;
+                        }
                         continue;
                     }
                     Err(_) => {
                         failed += 1;
                         outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "identity_check_failed", "time_ms": start.elapsed().as_millis()}));
-                        if args.abort_on_unknown { break; }
+                        if args.abort_on_unknown {
+                            break;
+                        }
                         continue;
                     }
                 }
@@ -4760,7 +4865,9 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                     Err(e) => {
                         failed += 1;
                         outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "failed", "error": format!("{:?}", e), "time_ms": start.elapsed().as_millis()}));
-                        if args.abort_on_unknown { break; }
+                        if args.abort_on_unknown {
+                            break;
+                        }
                     }
                 }
             }
@@ -4777,12 +4884,22 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     // Write outcomes
     let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
     let _ = std::fs::create_dir_all(handle.dir.join("action"));
-    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&outcomes_path) {
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&outcomes_path)
+    {
         use std::io::Write;
-        for o in &outcomes { let _ = writeln!(file, "{}", o); }
+        for o in &outcomes {
+            let _ = writeln!(file, "{}", o);
+        }
     }
 
-    let final_state = if failed > 0 { SessionState::Failed } else { SessionState::Completed };
+    let final_state = if failed > 0 {
+        SessionState::Failed
+    } else {
+        SessionState::Completed
+    };
     let _ = handle.update_state(final_state);
 
     let result = serde_json::json!({
@@ -4794,13 +4911,23 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     });
     match global.format {
         OutputFormat::Json => println!("{}", global.process_output(result)),
-        OutputFormat::Summary => println!("[{}] apply: {} ok, {} fail, {} skip, {} blocked", sid, succeeded, failed, skipped, blocked_by_constraints),
-        _ => println!("# apply\nSession: {}\nSucceeded: {}\nFailed: {}", sid, succeeded, failed),
+        OutputFormat::Summary => println!(
+            "[{}] apply: {} ok, {} fail, {} skip, {} blocked",
+            sid, succeeded, failed, skipped, blocked_by_constraints
+        ),
+        _ => println!(
+            "# apply\nSession: {}\nSucceeded: {}\nFailed: {}",
+            sid, succeeded, failed
+        ),
     }
 
-    if blocked_by_constraints > 0 && succeeded == 0 && failed == 0 { ExitCode::PolicyBlocked }
-    else if failed > 0 { ExitCode::PartialFail }
-    else { ExitCode::ActionsOk }
+    if blocked_by_constraints > 0 && succeeded == 0 && failed == 0 {
+        ExitCode::PolicyBlocked
+    } else if failed > 0 {
+        ExitCode::PartialFail
+    } else {
+        ExitCode::ActionsOk
+    }
 }
 
 fn output_apply_nothing(global: &GlobalOpts, sid: &SessionId) {
@@ -4846,7 +4973,11 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
     let plan_content = match std::fs::read_to_string(&plan_path) {
         Ok(content) => content,
         Err(e) => {
-            eprintln!("agent verify: failed to read {}: {}", plan_path.display(), e);
+            eprintln!(
+                "agent verify: failed to read {}: {}",
+                plan_path.display(),
+                e
+            );
             return ExitCode::IoError;
         }
     };
@@ -4918,10 +5049,7 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
         return ExitCode::IoError;
     }
     let verify_path = verify_dir.join("verifications.json");
-    if let Err(e) = std::fs::write(
-        &verify_path,
-        serde_json::to_string_pretty(&report).unwrap(),
-    ) {
+    if let Err(e) = std::fs::write(&verify_path, serde_json::to_string_pretty(&report).unwrap()) {
         eprintln!(
             "agent verify: failed to write {}: {}",
             verify_path.display(),
@@ -4966,9 +5094,7 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
         scan_result
             .processes
             .iter()
-            .filter(|p| {
-                killed_commands.iter().any(|kc| p.cmd.contains(kc))
-            })
+            .filter(|p| killed_commands.iter().any(|kc| p.cmd.contains(kc)))
             .count()
     } else {
         0
@@ -4987,15 +5113,18 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
             let mut output = serde_json::to_value(&report).unwrap_or_default();
             if args.check_respawn {
                 if let Some(obj) = output.as_object_mut() {
-                    obj.insert("respawn_check".to_string(), serde_json::json!({
-                        "enabled": true,
-                        "respawned_count": respawned_count,
-                        "warning": if respawned_count > 0 {
-                            Some(format!("{} processes may have respawned", respawned_count))
-                        } else {
-                            None
-                        }
-                    }));
+                    obj.insert(
+                        "respawn_check".to_string(),
+                        serde_json::json!({
+                            "enabled": true,
+                            "respawned_count": respawned_count,
+                            "warning": if respawned_count > 0 {
+                                Some(format!("{} processes may have respawned", respawned_count))
+                            } else {
+                                None
+                            }
+                        }),
+                    );
                 }
             }
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
@@ -5018,12 +5147,17 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
         }
         OutputFormat::Exitcode => {}
         _ => {
-            println!("# pt-core agent verify
-");
+            println!(
+                "# pt-core agent verify
+"
+            );
             println!("Session: {}", sid);
             println!("Plan: {}", plan_path.display());
-            println!("Report: {}
-", verify_path.display());
+            println!(
+                "Report: {}
+",
+                verify_path.display()
+            );
             println!(
                 "- Outcomes: {} verified, {} failed",
                 verified_count, failed_count
@@ -5332,20 +5466,37 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
 
     // Apply focus filter
     let focus = args.focus.to_lowercase();
-    let (show_new, show_worsened, show_improved, show_resolved, show_persistent) = match focus.as_str() {
-        "new" => (true, false, false, false, false),
-        "removed" | "resolved" => (false, false, false, true, false),
-        "changed" | "worsened" => (false, true, true, false, false),
-        "improved" => (false, false, true, false, false),
-        "persistent" => (false, false, false, false, true),
-        "resources" | "all" | _ => (true, true, true, true, true),
-    };
+    let (show_new, show_worsened, show_improved, show_resolved, show_persistent) =
+        match focus.as_str() {
+            "new" => (true, false, false, false, false),
+            "removed" | "resolved" => (false, false, false, true, false),
+            "changed" | "worsened" => (false, true, true, false, false),
+            "improved" => (false, false, true, false, false),
+            "persistent" => (false, false, false, false, true),
+            "resources" | "all" | _ => (true, true, true, true, true),
+        };
 
     let filtered_new = if show_new { new_list.clone() } else { vec![] };
-    let filtered_worsened = if show_worsened { worsened.clone() } else { vec![] };
-    let filtered_improved = if show_improved { improved.clone() } else { vec![] };
-    let filtered_resolved = if show_resolved { resolved.clone() } else { vec![] };
-    let filtered_persistent = if show_persistent { persistent.clone() } else { vec![] };
+    let filtered_worsened = if show_worsened {
+        worsened.clone()
+    } else {
+        vec![]
+    };
+    let filtered_improved = if show_improved {
+        improved.clone()
+    } else {
+        vec![]
+    };
+    let filtered_resolved = if show_resolved {
+        resolved.clone()
+    } else {
+        vec![]
+    };
+    let filtered_persistent = if show_persistent {
+        persistent.clone()
+    } else {
+        vec![]
+    };
 
     let output = serde_json::json!({
         "comparison": {
@@ -5379,7 +5530,11 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             println!("{}", global.process_output(output.clone()));
         }
         OutputFormat::Summary => {
-            let focus_note = if focus != "all" { format!(" (focus: {})", focus) } else { String::new() };
+            let focus_note = if focus != "all" {
+                format!(" (focus: {})", focus)
+            } else {
+                String::new()
+            };
             println!(
                 "[{} → {}] agent diff: +{} new, {} worsened, {} improved, {} resolved, {} persistent{}",
                 base.0,
@@ -5709,11 +5864,7 @@ fn run_agent_import_priors(global: &GlobalOpts, args: &AgentImportPriorsArgs) ->
     use pt_core::config::priors::Priors;
 
     // Default to merge if neither --merge nor --replace specified
-    let mode = if args.replace {
-        "replace"
-    } else {
-        "merge"
-    };
+    let mode = if args.replace { "replace" } else { "merge" };
 
     // Read the input file
     let input_path = PathBuf::from(&args.from);
@@ -5783,28 +5934,22 @@ fn run_agent_import_priors(global: &GlobalOpts, args: &AgentImportPriorsArgs) ->
     };
 
     // Determine priors output path
-    let priors_path = config
-        .snapshot()
-        .priors_path
-        .unwrap_or_else(|| {
-            global
-                .config
-                .as_ref()
-                .map(|c| PathBuf::from(c).join("priors.json"))
-                .unwrap_or_else(|| {
-                    dirs::config_dir()
-                        .unwrap_or_else(|| PathBuf::from("."))
-                        .join("pt")
-                        .join("priors.json")
-                })
-        });
+    let priors_path = config.snapshot().priors_path.unwrap_or_else(|| {
+        global
+            .config
+            .as_ref()
+            .map(|c| PathBuf::from(c).join("priors.json"))
+            .unwrap_or_else(|| {
+                dirs::config_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("pt")
+                    .join("priors.json")
+            })
+    });
 
     // Check host profile compatibility
     if let Some(ref filter_profile) = args.host_profile {
-        if let Some(imported_profile) = import_doc
-            .get("host_profile")
-            .and_then(|v| v.as_str())
-        {
+        if let Some(imported_profile) = import_doc.get("host_profile").and_then(|v| v.as_str()) {
             if imported_profile != filter_profile {
                 eprintln!(
                     "agent import-priors: warning: imported host_profile '{}' differs from target '{}'",
@@ -5961,9 +6106,7 @@ fn run_agent_export(global: &GlobalOpts, args: &AgentExportArgs) -> ExitCode {
 }
 
 fn run_agent_init(global: &GlobalOpts, args: &AgentInitArgs) -> ExitCode {
-    use pt_core::agent_init::{
-        initialize_agents, AgentType, InitOptions,
-    };
+    use pt_core::agent_init::{initialize_agents, AgentType, InitOptions};
 
     // Parse agent filter
     let agent_filter = args.agent.as_ref().and_then(|a| {
@@ -6013,14 +6156,16 @@ fn run_agent_init(global: &GlobalOpts, args: &AgentInitArgs) -> ExitCode {
                 }
                 _ => {
                     eprintln!("No supported coding agents found.");
-                    eprintln!("Install one of: Claude Code, Codex, GitHub Copilot, Cursor, or Windsurf");
+                    eprintln!(
+                        "Install one of: Claude Code, Codex, GitHub Copilot, Cursor, or Windsurf"
+                    );
                 }
             }
             // No agents found is a capability error - user needs to install agents
             ExitCode::CapabilityError
         }
         Err(pt_core::agent_init::AgentInitError::Config(
-            pt_core::agent_init::ConfigError::DryRun
+            pt_core::agent_init::ConfigError::DryRun,
         )) => {
             // Dry run is not an error
             ExitCode::Clean
@@ -6048,11 +6193,7 @@ fn output_agent_init_result(global: &GlobalOpts, result: &pt_core::agent_init::I
                 } else {
                     "partial"
                 };
-                println!(
-                    "  - {} ({})",
-                    agent.agent_type.display_name(),
-                    status
-                );
+                println!("  - {} ({})", agent.agent_type.display_name(), status);
                 if let Some(version) = &agent.info.version {
                     println!("    Version: {}", version);
                 }
@@ -6086,7 +6227,11 @@ fn output_agent_init_result(global: &GlobalOpts, result: &pt_core::agent_init::I
             if !result.backups.is_empty() {
                 println!("Backups created:");
                 for backup in &result.backups {
-                    println!("  {} -> {}", backup.original_path.display(), backup.backup_path.display());
+                    println!(
+                        "  {} -> {}",
+                        backup.original_path.display(),
+                        backup.backup_path.display()
+                    );
                 }
                 println!();
             }
@@ -6242,7 +6387,10 @@ fn run_agent_inbox(global: &GlobalOpts, args: &AgentInboxArgs) -> ExitCode {
                 );
                 for item in &items {
                     let status = if item.acknowledged { "✓" } else { "○" };
-                    println!("{} [{}] {} - {}", status, item.item_type, item.id, item.summary);
+                    println!(
+                        "{} [{}] {} - {}",
+                        status, item.item_type, item.id, item.summary
+                    );
                     if let Some(ref session_id) = item.session_id {
                         println!("  Session: {}", session_id);
                     }
@@ -6296,10 +6444,7 @@ fn run_agent_tail(_global: &GlobalOpts, args: &AgentTailArgs) -> ExitCode {
                 sleep(Duration::from_millis(250));
                 continue;
             }
-            eprintln!(
-                "agent tail: no session log found at {}",
-                log_path.display()
-            );
+            eprintln!("agent tail: no session log found at {}", log_path.display());
             return ExitCode::ArgsError;
         }
 
@@ -6370,7 +6515,10 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
         "dark" => ReportTheme::Dark,
         "auto" | "" => ReportTheme::Auto,
         _ => {
-            eprintln!("agent report: invalid theme '{}', use: light, dark, auto", args.theme);
+            eprintln!(
+                "agent report: invalid theme '{}', use: light, dark, auto",
+                args.theme
+            );
             return ExitCode::ArgsError;
         }
     };
@@ -6460,22 +6608,20 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
             // Write HTML to file or stdout
             if let Some(ref out_path) = args.out {
                 match std::fs::write(out_path, &html) {
-                    Ok(_) => {
-                        match global.format {
-                            OutputFormat::Json => {
-                                let response = serde_json::json!({
-                                    "status": "success",
-                                    "output_path": out_path,
-                                    "size_bytes": html.len(),
-                                    "format": "html",
-                                });
-                                println!("{}", serde_json::to_string_pretty(&response).unwrap());
-                            }
-                            _ => {
-                                println!("Report written to: {}", out_path);
-                            }
+                    Ok(_) => match global.format {
+                        OutputFormat::Json => {
+                            let response = serde_json::json!({
+                                "status": "success",
+                                "output_path": out_path,
+                                "size_bytes": html.len(),
+                                "format": "html",
+                            });
+                            println!("{}", serde_json::to_string_pretty(&response).unwrap());
                         }
-                    }
+                        _ => {
+                            println!("Report written to: {}", out_path);
+                        }
+                    },
                     Err(e) => {
                         eprintln!("agent report: failed to write output: {}", e);
                         return ExitCode::InternalError;
@@ -6521,7 +6667,10 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
             }
         }
         _ => {
-            eprintln!("agent report: invalid format '{}', use: html, slack, prose", args.format);
+            eprintln!(
+                "agent report: invalid format '{}', use: html, slack, prose",
+                args.format
+            );
             return ExitCode::ArgsError;
         }
     }
@@ -6536,12 +6685,12 @@ fn generate_report_from_session(
     handle: &pt_core::session::SessionHandle,
 ) -> pt_report::Result<String> {
     use pt_report::sections::*;
-    use pt_report::{ReportData, ReportConfig};
+    use pt_report::{ReportConfig, ReportData};
 
     // Read manifest for session metadata
-    let manifest = handle.read_manifest().map_err(|e| {
-        pt_report::ReportError::MissingData(format!("manifest: {}", e))
-    })?;
+    let manifest = handle
+        .read_manifest()
+        .map_err(|e| pt_report::ReportError::MissingData(format!("manifest: {}", e)))?;
 
     // Build overview section from session data
     let overview = OverviewSection {
@@ -6616,26 +6765,25 @@ fn generate_slack_summary(prose_style: &str) -> String {
         "terse" => {
             "*Process Triage Summary*\n• Session completed\n• No critical issues found".to_string()
         }
-        "formal" => {
-            "*Process Triage Report*\n\nThe session has been completed successfully. \
+        "formal" => "*Process Triage Report*\n\nThe session has been completed successfully. \
              All processes have been analyzed according to the configured policy.\n\n\
-             _Report generated by pt-core_".to_string()
-        }
-        "technical" => {
-            "*Process Triage Technical Summary*\n\n\
+             _Report generated by pt-core_"
+            .to_string(),
+        "technical" => "*Process Triage Technical Summary*\n\n\
              ```\n\
              Session: completed\n\
              Candidates: analyzed\n\
              Actions: pending review\n\
              ```\n\n\
-             See full HTML report for detailed evidence ledger and posterior computations.".to_string()
-        }
+             See full HTML report for detailed evidence ledger and posterior computations."
+            .to_string(),
         _ => {
             // conversational (default)
             "*Process Triage Complete* 🎯\n\n\
              I've finished analyzing your processes. The session has been saved \
              and you can review the detailed findings in the HTML report.\n\n\
-             Let me know if you'd like me to explain any of the recommendations!".to_string()
+             Let me know if you'd like me to explain any of the recommendations!"
+                .to_string()
         }
     }
 }
@@ -6644,28 +6792,25 @@ fn generate_slack_summary(prose_style: &str) -> String {
 #[cfg(feature = "report")]
 fn generate_prose_summary(prose_style: &str) -> String {
     match prose_style {
-        "terse" => {
-            "Session complete. Candidates analyzed. Report ready.".to_string()
-        }
-        "formal" => {
-            "The process triage session has concluded. All candidate processes have been \
+        "terse" => "Session complete. Candidates analyzed. Report ready.".to_string(),
+        "formal" => "The process triage session has concluded. All candidate processes have been \
              evaluated using Bayesian inference, and recommendations have been generated \
              based on the configured policy parameters. The full report is available for \
-             your review.".to_string()
-        }
-        "technical" => {
-            "Process triage session completed. The inference engine computed posterior \
+             your review."
+            .to_string(),
+        "technical" => "Process triage session completed. The inference engine computed posterior \
              probabilities for each candidate across the four-class model (useful, useful_bad, \
              abandoned, zombie). Expected loss calculations and FDR control were applied \
              to generate action recommendations. See the galaxy-brain tab in the HTML report \
-             for full mathematical derivations.".to_string()
-        }
+             for full mathematical derivations."
+            .to_string(),
         _ => {
             // conversational (default)
             "All done! I've analyzed your running processes and identified any that might \
              be abandoned or stuck. You can check out the full report to see the details \
              and decide what to do with each one. The report shows my reasoning for each \
-             recommendation, so you'll know exactly why I flagged something.".to_string()
+             recommendation, so you'll know exactly why I flagged something."
+                .to_string()
         }
     }
 }
@@ -6674,9 +6819,7 @@ fn run_agent_sessions(global: &GlobalOpts, args: &AgentSessionsArgs) -> ExitCode
     // Validate flag combinations: --session mode is incompatible with list/cleanup options
     if args.session.is_some() {
         if args.cleanup {
-            eprintln!(
-                "agent sessions: --session cannot be combined with --cleanup"
-            );
+            eprintln!("agent sessions: --session cannot be combined with --cleanup");
             return ExitCode::ArgsError;
         }
         if args.limit != 10 {
@@ -6795,15 +6938,13 @@ fn run_agent_session_status(
     let outcomes_detail = if include_detail {
         let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
         if outcomes_path.exists() {
-            std::fs::read_to_string(&outcomes_path)
-                .ok()
-                .map(|content| {
-                    content
-                        .lines()
-                        .filter(|l| !l.trim().is_empty())
-                        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-                        .collect::<Vec<_>>()
-                })
+            std::fs::read_to_string(&outcomes_path).ok().map(|content| {
+                content
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                    .collect::<Vec<_>>()
+            })
         } else {
             None
         }
@@ -6851,10 +6992,16 @@ fn run_agent_session_status(
             // Add detail if requested
             if include_detail {
                 if let Some(plan) = &plan_detail {
-                    output.as_object_mut().unwrap().insert("plan".to_string(), plan.clone());
+                    output
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("plan".to_string(), plan.clone());
                 }
                 if let Some(outcomes) = &outcomes_detail {
-                    output.as_object_mut().unwrap().insert("outcomes".to_string(), serde_json::json!(outcomes));
+                    output
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("outcomes".to_string(), serde_json::json!(outcomes));
                 }
             }
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
@@ -6913,7 +7060,10 @@ fn run_agent_session_status(
                         for (i, c) in candidates.iter().take(5).enumerate() {
                             let pid = c.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
                             let cmd = c.get("cmd_short").and_then(|v| v.as_str()).unwrap_or("?");
-                            let action = c.get("recommended_action").and_then(|v| v.as_str()).unwrap_or("?");
+                            let action = c
+                                .get("recommended_action")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("?");
                             println!("    {}. PID {} ({}) -> {}", i + 1, pid, cmd, action);
                         }
                         if candidates.len() > 5 {
@@ -7178,15 +7328,18 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
 
             match global.format {
                 OutputFormat::Json => {
-                    let backup_list: Vec<_> = backups.iter().map(|b| {
-                        serde_json::json!({
-                            "version": b.metadata.version,
-                            "created_at": b.metadata.created_at,
-                            "checksum": b.metadata.checksum,
-                            "size_bytes": b.metadata.size_bytes,
-                            "path": b.binary_path.display().to_string()
+                    let backup_list: Vec<_> = backups
+                        .iter()
+                        .map(|b| {
+                            serde_json::json!({
+                                "version": b.metadata.version,
+                                "created_at": b.metadata.created_at,
+                                "checksum": b.metadata.checksum,
+                                "size_bytes": b.metadata.size_bytes,
+                                "path": b.binary_path.display().to_string()
+                            })
                         })
-                    }).collect();
+                        .collect();
                     let output = serde_json::json!({
                         "schema_version": SCHEMA_VERSION,
                         "backups": backup_list,
@@ -7210,13 +7363,18 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                         println!("No backups found.");
                         println!("\nBackups are created automatically during updates.");
                     } else {
-                        println!("{:<12} {:<28} {:<20} {:<12}", "VERSION", "CREATED", "CHECKSUM", "SIZE");
+                        println!(
+                            "{:<12} {:<28} {:<20} {:<12}",
+                            "VERSION", "CREATED", "CHECKSUM", "SIZE"
+                        );
                         for b in &backups {
                             println!(
                                 "{:<12} {:<28} {:<20} {:<12}",
                                 b.metadata.version,
-                                &b.metadata.created_at[..std::cmp::min(28, b.metadata.created_at.len())],
-                                &b.metadata.checksum[..std::cmp::min(16, b.metadata.checksum.len())],
+                                &b.metadata.created_at
+                                    [..std::cmp::min(28, b.metadata.created_at.len())],
+                                &b.metadata.checksum
+                                    [..std::cmp::min(16, b.metadata.checksum.len())],
                                 format_bytes(b.metadata.size_bytes)
                             );
                         }
@@ -7298,13 +7456,23 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                         }
                         _ => {
                             if is_valid {
-                                println!("Backup {} is valid (checksum matches)", b.metadata.version);
+                                println!(
+                                    "Backup {} is valid (checksum matches)",
+                                    b.metadata.version
+                                );
                             } else {
-                                eprintln!("Backup {} is INVALID (checksum mismatch)", b.metadata.version);
+                                eprintln!(
+                                    "Backup {} is INVALID (checksum mismatch)",
+                                    b.metadata.version
+                                );
                             }
                         }
                     }
-                    if is_valid { ExitCode::Clean } else { ExitCode::PartialFail }
+                    if is_valid {
+                        ExitCode::Clean
+                    } else {
+                        ExitCode::PartialFail
+                    }
                 }
                 None => {
                     match global.format {
@@ -7343,8 +7511,12 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                                 println!("{}", serde_json::to_string_pretty(&output).unwrap());
                             }
                             _ => {
-                                println!("Successfully rolled back to version {}",
-                                    rollback_result.restored_version.unwrap_or_else(|| "unknown".to_string()));
+                                println!(
+                                    "Successfully rolled back to version {}",
+                                    rollback_result
+                                        .restored_version
+                                        .unwrap_or_else(|| "unknown".to_string())
+                                );
                             }
                         }
                         ExitCode::Clean
@@ -7358,7 +7530,12 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                                 eprintln!("{}", serde_json::to_string_pretty(&error).unwrap());
                             }
                             _ => {
-                                eprintln!("Rollback failed: {}", rollback_result.error.unwrap_or_else(|| "unknown error".to_string()));
+                                eprintln!(
+                                    "Rollback failed: {}",
+                                    rollback_result
+                                        .error
+                                        .unwrap_or_else(|| "unknown error".to_string())
+                                );
                             }
                         }
                         ExitCode::InternalError

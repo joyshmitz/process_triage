@@ -509,7 +509,7 @@ impl ImpactScorer {
                 components.open_write_fds_count = write;
                 components.critical_writes_count = critical;
                 components.critical_write_categories = categories;
-                
+
                 // If truncated, ensure score is at least high enough to trigger caution
                 if fd_info.truncated {
                     score.max(0.75) // Treat as Critical/High impact

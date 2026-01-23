@@ -308,7 +308,10 @@ pub fn mixture_sprt_bernoulli(
     }
     if alpha_h1 <= 0.0 || beta_h1 <= 0.0 {
         return Err(CompositeTestError::InvalidLogLikelihood {
-            message: format!("Beta parameters must be positive: α={}, β={}", alpha_h1, beta_h1),
+            message: format!(
+                "Beta parameters must be positive: α={}, β={}",
+                alpha_h1, beta_h1
+            ),
         });
     }
 
@@ -320,7 +323,11 @@ pub fn mixture_sprt_bernoulli(
     let p1_failure = beta_h1 / (alpha_h1 + beta_h1);
 
     for &obs in observations {
-        let log_lik_h1 = if obs { p1_success.ln() } else { p1_failure.ln() };
+        let log_lik_h1 = if obs {
+            p1_success.ln()
+        } else {
+            p1_failure.ln()
+        };
         let log_lik_h0 = if obs { p0.ln() } else { (1.0 - p0).ln() };
         state.update(log_lik_h1, log_lik_h0);
     }
@@ -564,7 +571,11 @@ impl CompositeEvidenceAggregator {
     /// Get the top N contributing terms (by absolute magnitude).
     pub fn top_terms(&self, n: usize) -> Vec<(String, f64)> {
         let mut sorted = self.terms.clone();
-        sorted.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| {
+            b.1.abs()
+                .partial_cmp(&a.1.abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         sorted.into_iter().take(n).collect()
     }
 }
@@ -797,9 +808,14 @@ mod tests {
         let alpha_h1 = 4.0; // Prior favoring success
         let beta_h1 = 1.0;
 
-        let result =
-            mixture_sprt_bernoulli(&observations, p0, alpha_h1, beta_h1, &MixtureSprtConfig::default())
-                .unwrap();
+        let result = mixture_sprt_bernoulli(
+            &observations,
+            p0,
+            alpha_h1,
+            beta_h1,
+            &MixtureSprtConfig::default(),
+        )
+        .unwrap();
 
         // All successes should favor H1 (biased toward success)
         assert!(result.log_lambda > 0.0);
@@ -813,9 +829,14 @@ mod tests {
         let alpha_h1 = 4.0; // Prior favoring success
         let beta_h1 = 1.0;
 
-        let result =
-            mixture_sprt_bernoulli(&observations, p0, alpha_h1, beta_h1, &MixtureSprtConfig::default())
-                .unwrap();
+        let result = mixture_sprt_bernoulli(
+            &observations,
+            p0,
+            alpha_h1,
+            beta_h1,
+            &MixtureSprtConfig::default(),
+        )
+        .unwrap();
 
         // All failures when H1 favors success -> evidence for H0
         assert!(result.log_lambda < 0.0);
@@ -848,9 +869,14 @@ mod tests {
         let observations = vec![true, true, false, true];
         let p0 = 0.5;
 
-        let result =
-            mixture_sprt_beta_sequential(&observations, p0, 1.0, 1.0, &MixtureSprtConfig::default())
-                .unwrap();
+        let result = mixture_sprt_beta_sequential(
+            &observations,
+            p0,
+            1.0,
+            1.0,
+            &MixtureSprtConfig::default(),
+        )
+        .unwrap();
 
         // Should have processed all observations
         assert_eq!(result.n_observations, 4);

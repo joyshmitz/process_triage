@@ -8,7 +8,7 @@
 
 use pt_core::supervision::{
     CommandNormalizer, PatternLearner, PatternLibrary, PatternLifecycle, SpecificityLevel,
-    SupervisorSignature, SupervisorCategory,
+    SupervisorCategory, SupervisorSignature,
 };
 use std::path::PathBuf;
 use tempfile::tempdir;
@@ -45,7 +45,9 @@ fn test_command_normalizer_generates_candidates() {
     let patterns: Vec<_> = candidates.iter().map(|c| &c.process_pattern).collect();
     assert!(patterns.iter().any(|p| p.contains("node")));
     // Use type annotation for closure parameter to help inference
-    assert!(patterns.iter().any(|p: &&String| p.contains(".*") || p.contains(".+")));
+    assert!(patterns
+        .iter()
+        .any(|p: &&String| p.contains(".*") || p.contains(".+")));
 }
 
 #[test]
@@ -78,7 +80,7 @@ fn test_pattern_library_create_and_save() {
     let sig = SupervisorSignature::new("test-pattern", SupervisorCategory::Other)
         .with_process_patterns(vec!["node .*/jest"])
         .with_notes("test");
-        
+
     library.add_learned(sig).expect("add pattern");
 
     // Save the library
@@ -94,13 +96,12 @@ fn test_pattern_persistence_roundtrip() {
 
     // Create and save a pattern
     {
-        let mut library =
-            PatternLibrary::new(temp_dir.clone());
-            
+        let mut library = PatternLibrary::new(temp_dir.clone());
+
         let sig = SupervisorSignature::new("reload-test", SupervisorCategory::Other)
             .with_process_patterns(vec!["python.* -m pytest"])
             .with_notes("testing");
-            
+
         library.add_learned(sig).expect("add pattern");
         library.save().expect("save library");
     }
@@ -121,8 +122,7 @@ fn test_pattern_learner_record_kill_decision() {
 
     // Record a kill decision
     {
-        let mut learner = PatternLearner::new(&mut library)
-            .with_min_observations(1);
+        let mut learner = PatternLearner::new(&mut library).with_min_observations(1);
         learner
             .record_decision(
                 "node",
@@ -134,7 +134,9 @@ fn test_pattern_learner_record_kill_decision() {
 
     // Check that patterns were created
     // With 100% consistency (1 kill), Exact level is chosen -> "learned_node_exact"
-    let stats = library.get_stats("learned_node_exact").expect("stats exist");
+    let stats = library
+        .get_stats("learned_node_exact")
+        .expect("stats exist");
     assert_eq!(stats.match_count, 1);
     assert_eq!(stats.reject_count, 1); // Kill = rejected (not a supervisor)
 }
@@ -146,8 +148,7 @@ fn test_pattern_learner_record_spare_decision() {
 
     // Record a spare decision
     {
-        let mut learner = PatternLearner::new(&mut library)
-            .with_min_observations(1);
+        let mut learner = PatternLearner::new(&mut library).with_min_observations(1);
 
         learner
             .record_decision("node", "/usr/bin/node ./server.js", false) // spare
@@ -156,7 +157,9 @@ fn test_pattern_learner_record_spare_decision() {
 
     // Check that patterns were created
     // With 100% consistency (1 spare), Exact level is chosen -> "learned_node_exact"
-    let stats = library.get_stats("learned_node_exact").expect("stats exist");
+    let stats = library
+        .get_stats("learned_node_exact")
+        .expect("stats exist");
     assert_eq!(stats.match_count, 1);
     assert_eq!(stats.accept_count, 1); // Spare = accepted (is a supervisor)
 }
@@ -168,15 +171,20 @@ fn test_pattern_learner_multiple_decisions() {
 
     // Record multiple decisions
     {
-        let mut learner = PatternLearner::new(&mut library)
-            .with_min_observations(1);
+        let mut learner = PatternLearner::new(&mut library).with_min_observations(1);
 
         // 2 spares, 1 kill
         // First decision creates pattern with 100% consistency -> Exact level
         // Subsequent decisions use the same pattern
-        learner.record_decision("node", "node app.js", false).unwrap();
-        learner.record_decision("node", "node app.js", false).unwrap();
-        learner.record_decision("node", "node app.js", true).unwrap();
+        learner
+            .record_decision("node", "node app.js", false)
+            .unwrap();
+        learner
+            .record_decision("node", "node app.js", false)
+            .unwrap();
+        learner
+            .record_decision("node", "node app.js", true)
+            .unwrap();
     }
 
     // Check that stats were recorded for the pattern
@@ -195,14 +203,19 @@ fn test_mixed_actions_prefer_broad() {
     // Record mixed decisions (some kills, some spares)
     // With < 80% consistency, should prefer Broad level
     {
-        let mut learner = PatternLearner::new(&mut library)
-            .with_min_observations(3);
+        let mut learner = PatternLearner::new(&mut library).with_min_observations(3);
 
         // Mix of actions: 2 kills, 2 spares = 50% consistency
         // This should result in a Broad level pattern
-        learner.record_decision("node", "node /path/to/app.js", true).unwrap();  // kill
-        learner.record_decision("node", "node /path/to/server.js", false).unwrap();  // spare
-        learner.record_decision("node", "node /other/path/main.js", true).unwrap();  // kill
+        learner
+            .record_decision("node", "node /path/to/app.js", true)
+            .unwrap(); // kill
+        learner
+            .record_decision("node", "node /path/to/server.js", false)
+            .unwrap(); // spare
+        learner
+            .record_decision("node", "node /other/path/main.js", true)
+            .unwrap(); // kill
 
         // After 3rd observation (first time we meet min_observations),
         // pattern should be created with Broad level due to 66% consistency
@@ -237,11 +250,13 @@ fn test_pattern_lifecycle_transitions() {
     library.load().expect("load");
 
     // Verify pattern exists with New lifecycle
-    let pattern = library.get_pattern("lifecycle-test").expect("pattern exists");
+    let pattern = library
+        .get_pattern("lifecycle-test")
+        .expect("pattern exists");
     assert_eq!(pattern.lifecycle, PatternLifecycle::New);
-    
+
     // Simulate usage to advance lifecycle
-    // (This requires manipulating stats and calling update_lifecycles, 
+    // (This requires manipulating stats and calling update_lifecycles,
     // which might be complex to mock here without direct access to private fields.
     // For now, we just verify it loads as New)
 }
@@ -250,25 +265,22 @@ fn test_pattern_lifecycle_transitions() {
 fn test_persistence_integration() {
     let dir = tempdir().expect("tempdir");
     let temp_dir = dir.path().to_path_buf();
-    
+
     // Create library, record decisions, save
     {
-        let mut library =
-            PatternLibrary::new(temp_dir.clone());
-        let mut learner = PatternLearner::new(&mut library)
-            .with_min_observations(1); // Learn immediately
+        let mut library = PatternLibrary::new(temp_dir.clone());
+        let mut learner = PatternLearner::new(&mut library).with_min_observations(1); // Learn immediately
 
         learner
             .record_decision("node", "/usr/bin/node ./app.js", true)
             .expect("record");
-            
+
         library.save().expect("save");
     }
 
     // Load fresh, verify patterns
     {
-        let mut library =
-            PatternLibrary::new(temp_dir.clone());
+        let mut library = PatternLibrary::new(temp_dir.clone());
         library.load().expect("load");
 
         let patterns = library.all_active_patterns();
@@ -282,12 +294,12 @@ fn test_persistence_integration() {
 
         // Add more decisions
         let mut learner = PatternLearner::new(&mut library); // Default min_obs=3
-        
+
         // This won't create a NEW pattern immediately but will update stats of existing
         learner
             .record_decision("node", "/usr/bin/node ./app.js", false)
             .expect("record");
-            
+
         library.save().expect("save");
     }
 
@@ -297,7 +309,9 @@ fn test_persistence_integration() {
         library.load().expect("load");
 
         // Pattern was created at Exact level -> "learned_node_exact"
-        let stats = library.get_stats("learned_node_exact").expect("stats exist");
+        let stats = library
+            .get_stats("learned_node_exact")
+            .expect("stats exist");
         assert!(stats.match_count >= 2, "should have updated stats");
     }
 }

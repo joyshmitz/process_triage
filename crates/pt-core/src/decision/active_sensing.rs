@@ -6,7 +6,7 @@
 
 use crate::config::Policy;
 use crate::decision::expected_loss::ActionFeasibility;
-use crate::decision::voi::{compute_voi, ProbeCost, ProbeCostModel, ProbeType, VoiError, ProbeVoi};
+use crate::decision::voi::{compute_voi, ProbeCost, ProbeCostModel, ProbeType, ProbeVoi, VoiError};
 use crate::inference::ClassScores;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -179,7 +179,10 @@ pub fn allocate_probes(
     let mut selections = Vec::new();
 
     for opp in opportunities {
-        let count = per_candidate_counts.get(&opp.candidate_id).copied().unwrap_or(0);
+        let count = per_candidate_counts
+            .get(&opp.candidate_id)
+            .copied()
+            .unwrap_or(0);
         if count >= selection_policy.max_probes_per_candidate {
             continue;
         }
@@ -245,14 +248,8 @@ mod tests {
         let selection_policy = ActiveSensingPolicy::default();
         let budget = ProbeBudget::new(2.0, 0.2); // Tight budget
 
-        let plan = allocate_probes(
-            &candidates,
-            &policy,
-            &cost_model,
-            &selection_policy,
-            budget,
-        )
-        .expect("allocation should succeed");
+        let plan = allocate_probes(&candidates, &policy, &cost_model, &selection_policy, budget)
+            .expect("allocation should succeed");
 
         let used_time = budget.time_seconds - plan.remaining_budget.time_seconds;
         let used_overhead = budget.overhead - plan.remaining_budget.overhead;
@@ -287,14 +284,8 @@ mod tests {
         };
         let budget = ProbeBudget::new(10.0, 1.0);
 
-        let plan = allocate_probes(
-            &candidates,
-            &policy,
-            &cost_model,
-            &selection_policy,
-            budget,
-        )
-        .expect("allocation should succeed");
+        let plan = allocate_probes(&candidates, &policy, &cost_model, &selection_policy, budget)
+            .expect("allocation should succeed");
 
         assert!(
             plan.selections.len() >= 1,
@@ -318,14 +309,8 @@ mod tests {
         let selection_policy = ActiveSensingPolicy::default();
         let budget = ProbeBudget::new(60.0, 1.0);
 
-        let plan = allocate_probes(
-            &candidates,
-            &policy,
-            &cost_model,
-            &selection_policy,
-            budget,
-        )
-        .expect("allocation should succeed");
+        let plan = allocate_probes(&candidates, &policy, &cost_model, &selection_policy, budget)
+            .expect("allocation should succeed");
 
         // With high confidence, VOI should be non-negative; default policy skips.
         assert!(plan.selections.is_empty());

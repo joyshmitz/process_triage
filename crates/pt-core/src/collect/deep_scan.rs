@@ -450,7 +450,7 @@ fn scan_process(
             }
         }
     };
-    
+
     let stat_info = parse_stat(&stat_content, pid)?;
 
     // Parse /proc/[pid]/status for UID and username

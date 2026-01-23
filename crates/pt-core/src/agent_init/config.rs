@@ -161,7 +161,10 @@ pub fn generate_config(agent_type: &AgentType) -> AgentConfig {
 }
 
 /// Configure Claude Code.
-fn configure_claude_code(config_dir: &Path, options: &InitOptions) -> Result<ConfigResult, ConfigError> {
+fn configure_claude_code(
+    config_dir: &Path,
+    options: &InitOptions,
+) -> Result<ConfigResult, ConfigError> {
     let settings_path = config_dir.join("settings.json");
     let mut changes = Vec::new();
 
@@ -249,9 +252,9 @@ fn configure_codex(config_dir: &Path, options: &InitOptions) -> Result<ConfigRes
 
     // Check if pt tool already exists
     let tools = config["tools"].as_array_mut().unwrap();
-    let has_pt = tools.iter().any(|t| {
-        t.get("name").and_then(|n| n.as_str()) == Some("process_triage")
-    });
+    let has_pt = tools
+        .iter()
+        .any(|t| t.get("name").and_then(|n| n.as_str()) == Some("process_triage"));
 
     if !has_pt {
         tools.push(json!({
@@ -280,7 +283,10 @@ fn configure_codex(config_dir: &Path, options: &InitOptions) -> Result<ConfigRes
 }
 
 /// Configure GitHub Copilot.
-fn configure_copilot(config_dir: &Path, options: &InitOptions) -> Result<ConfigResult, ConfigError> {
+fn configure_copilot(
+    config_dir: &Path,
+    options: &InitOptions,
+) -> Result<ConfigResult, ConfigError> {
     // Copilot uses gh CLI extensions/aliases
     // We'll create a suggestion file since direct config modification isn't straightforward
     let suggestion_path = config_dir.join("pt-copilot-setup.md");
@@ -385,7 +391,10 @@ fn configure_cursor(config_dir: &Path, options: &InitOptions) -> Result<ConfigRe
 }
 
 /// Configure Windsurf.
-fn configure_windsurf(config_dir: &Path, options: &InitOptions) -> Result<ConfigResult, ConfigError> {
+fn configure_windsurf(
+    config_dir: &Path,
+    options: &InitOptions,
+) -> Result<ConfigResult, ConfigError> {
     // Windsurf configuration is similar to Cursor
     configure_cursor(config_dir, options)
 }

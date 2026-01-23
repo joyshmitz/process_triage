@@ -39,8 +39,7 @@ impl BackupMetadata {
     /// Load metadata from a JSON file
     pub fn load(path: &Path) -> io::Result<Self> {
         let content = fs::read_to_string(path)?;
-        serde_json::from_str(&content)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        serde_json::from_str(&content).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     }
 
     /// Save metadata to a JSON file
@@ -275,12 +274,7 @@ mod tests {
     #[test]
     fn test_backup_metadata_roundtrip() {
         let temp = TempDir::new().unwrap();
-        let meta = BackupMetadata::new(
-            "1.0.0",
-            Path::new("/usr/bin/pt-core"),
-            "abc123",
-            1024,
-        );
+        let meta = BackupMetadata::new("1.0.0", Path::new("/usr/bin/pt-core"), "abc123", 1024);
 
         let meta_path = temp.path().join("meta.json");
         meta.save(&meta_path).unwrap();
@@ -306,11 +300,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let binary_path = create_test_binary(temp.path(), b"binary content");
 
-        let manager = BackupManager::with_config(
-            temp.path().join("rollback"),
-            "pt-core",
-            3,
-        );
+        let manager = BackupManager::with_config(temp.path().join("rollback"), "pt-core", 3);
 
         // Create a backup
         let backup = manager.create_backup(&binary_path, "1.0.0").unwrap();
@@ -335,7 +325,9 @@ mod tests {
 
         // Create 4 backups
         for i in 1..=4 {
-            let _ = manager.create_backup(&binary_path, &format!("1.0.{}", i)).unwrap();
+            let _ = manager
+                .create_backup(&binary_path, &format!("1.0.{}", i))
+                .unwrap();
             std::thread::sleep(std::time::Duration::from_millis(10)); // Ensure different timestamps
         }
 
@@ -353,11 +345,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let binary_path = create_test_binary(temp.path(), b"binary content");
 
-        let manager = BackupManager::with_config(
-            temp.path().join("rollback"),
-            "pt-core",
-            3,
-        );
+        let manager = BackupManager::with_config(temp.path().join("rollback"), "pt-core", 3);
 
         let backup = manager.create_backup(&binary_path, "1.0.0").unwrap();
 
@@ -376,11 +364,7 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let binary_path = create_test_binary(temp.path(), b"binary content");
 
-        let manager = BackupManager::with_config(
-            temp.path().join("rollback"),
-            "pt-core",
-            5,
-        );
+        let manager = BackupManager::with_config(temp.path().join("rollback"), "pt-core", 5);
 
         let _ = manager.create_backup(&binary_path, "1.0.0").unwrap();
         std::thread::sleep(std::time::Duration::from_millis(10));

@@ -211,7 +211,11 @@ pub fn greedy_select_k(
 }
 
 fn feature_weight(feature_weights: &HashMap<FeatureKey, f64>, feature: &FeatureKey) -> f64 {
-    feature_weights.get(feature).copied().unwrap_or(1.0).max(0.0)
+    feature_weights
+        .get(feature)
+        .copied()
+        .unwrap_or(1.0)
+        .max(0.0)
 }
 
 #[cfg(test)]

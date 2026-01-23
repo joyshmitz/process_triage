@@ -251,10 +251,7 @@ impl RegimePriors {
 
     /// Get the prior for a regime.
     pub fn get(&self, regime: &Regime) -> GammaParams {
-        self.priors
-            .get(regime)
-            .copied()
-            .unwrap_or_default()
+        self.priors.get(regime).copied().unwrap_or_default()
     }
 
     /// Set a custom prior for a regime.

@@ -27,16 +27,13 @@
 //! pt agent init --agent claude
 //! ```
 
-mod detect;
 mod config;
+mod detect;
 
-pub use detect::{
-    detect_agents, AgentInfo, AgentType, DetectedAgent, DetectionResult,
-};
 pub use config::{
-    configure_agent, generate_config, ConfigError, ConfigResult,
-    AgentConfig, BackupInfo,
+    configure_agent, generate_config, AgentConfig, BackupInfo, ConfigError, ConfigResult,
 };
+pub use detect::{detect_agents, AgentInfo, AgentType, DetectedAgent, DetectionResult};
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -118,7 +115,7 @@ pub struct InitOptions {
 
 /// Initialize pt for detected agents.
 pub fn initialize_agents(options: &InitOptions) -> Result<InitResult, AgentInitError> {
-    use tracing::{info, debug, warn};
+    use tracing::{debug, info, warn};
 
     info!(mode = ?options, "Starting agent initialization");
 

@@ -9,8 +9,8 @@
 //! 3. **Category** - Supervisor category-level defaults (future)
 //! 4. **Global** - Default priors from config
 
-use crate::config::priors::Priors;
 use crate::config::priors::BetaParams;
+use crate::config::priors::Priors;
 use crate::supervision::signature::{MatchLevel, SignatureMatch, SignaturePriors};
 use serde::Serialize;
 
@@ -193,10 +193,7 @@ pub struct ResolvedPriors {
 }
 
 /// Apply signature priors to a Priors config, returning overrides info.
-fn apply_signature_priors(
-    priors: &mut Priors,
-    sig_priors: &SignaturePriors,
-) -> AppliedOverrides {
+fn apply_signature_priors(priors: &mut Priors, sig_priors: &SignaturePriors) -> AppliedOverrides {
     let mut overrides = AppliedOverrides::default();
 
     if let Some(ref useful_beta) = sig_priors.useful {
@@ -315,7 +312,10 @@ pub fn resolve_priors(context: &PriorContext<'_>) -> ResolvedPriors {
         }
     }
 
-    ResolvedPriors { priors, source_info }
+    ResolvedPriors {
+        priors,
+        source_info,
+    }
 }
 
 /// Compute posterior with prior override resolution.
@@ -336,7 +336,9 @@ pub fn compute_posterior_with_overrides(
 mod tests {
     use super::*;
     use crate::config::priors::Priors;
-    use crate::supervision::signature::{MatchDetails, ProcessExpectations, SignaturePatterns, SupervisorSignature};
+    use crate::supervision::signature::{
+        MatchDetails, ProcessExpectations, SignaturePatterns, SupervisorSignature,
+    };
     use crate::supervision::SupervisorCategory;
 
     fn default_priors() -> Priors {

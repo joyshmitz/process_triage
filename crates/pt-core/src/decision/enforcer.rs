@@ -355,7 +355,10 @@ pub struct PolicyEnforcer {
 
 impl PolicyEnforcer {
     /// Create a new enforcer from a policy.
-    pub fn new(policy: &Policy, state_path: Option<&std::path::Path>) -> Result<Self, EnforcerError> {
+    pub fn new(
+        policy: &Policy,
+        state_path: Option<&std::path::Path>,
+    ) -> Result<Self, EnforcerError> {
         // Compile protected patterns
         let protected_patterns = policy
             .guardrails
@@ -400,14 +403,23 @@ impl PolicyEnforcer {
             .map(|c| c.to_lowercase())
             .collect();
 
-        let never_kill_pid: HashSet<i32> =
-            policy.guardrails.never_kill_pid.iter().map(|&p| p as i32).collect();
-        let never_kill_ppid: HashSet<i32> =
-            policy.guardrails.never_kill_ppid.iter().map(|&p| p as i32).collect();
+        let never_kill_pid: HashSet<i32> = policy
+            .guardrails
+            .never_kill_pid
+            .iter()
+            .map(|&p| p as i32)
+            .collect();
+        let never_kill_ppid: HashSet<i32> = policy
+            .guardrails
+            .never_kill_ppid
+            .iter()
+            .map(|&p| p as i32)
+            .collect();
 
         // Initialize rate limiter
-        let rate_limiter = SlidingWindowRateLimiter::from_guardrails(&policy.guardrails, state_path)
-            .map_err(|e: RateLimitError| EnforcerError::PolicyInvalid(e.to_string()))?;
+        let rate_limiter =
+            SlidingWindowRateLimiter::from_guardrails(&policy.guardrails, state_path)
+                .map_err(|e: RateLimitError| EnforcerError::PolicyInvalid(e.to_string()))?;
 
         Ok(Self {
             protected_patterns,
@@ -581,13 +593,13 @@ impl PolicyEnforcer {
             };
 
             // Check if rate limit would be exceeded
-            // Note: This only CHECKS, it does not increment. 
+            // Note: This only CHECKS, it does not increment.
             // The actual increment should happen when the action is executed.
             // However, PolicyEnforcer is often used as a gate before execution.
             // If we want to strictly enforce here, we might need a way to reserve or check-only.
             // SlidingWindowRateLimiter::check(false) does a check without recording.
             // SlidingWindowRateLimiter::check_with_override(false, limit) does a check.
-            
+
             if let Err(e) = self.rate_limiter.check_with_override(false, limit) {
                 // If it returns error (e.g. lock poisoned), we fail safe/open? Fail safe (block).
                 return PolicyCheckResult::blocked(PolicyViolation {
@@ -597,12 +609,15 @@ impl PolicyEnforcer {
                     context: None,
                 });
             }
-            
+
             // We need to unwrap the result from check_with_override to see if allowed
             match self.rate_limiter.check_with_override(false, limit) {
                 Ok(result) => {
                     if !result.allowed {
-                        let reason = result.block_reason.map(|b| b.message).unwrap_or_else(|| "rate limit exceeded".to_string());
+                        let reason = result
+                            .block_reason
+                            .map(|b| b.message)
+                            .unwrap_or_else(|| "rate limit exceeded".to_string());
                         return PolicyCheckResult::blocked(PolicyViolation {
                             kind: ViolationKind::RateLimitExceeded,
                             message: reason,
@@ -616,7 +631,7 @@ impl PolicyEnforcer {
                     }
                 }
                 Err(e) => {
-                     return PolicyCheckResult::blocked(PolicyViolation {
+                    return PolicyCheckResult::blocked(PolicyViolation {
                         kind: ViolationKind::RateLimitExceeded,
                         message: format!("rate limit check failed: {}", e),
                         rule: "guardrails.rate_limit_error".to_string(),
@@ -1003,7 +1018,12 @@ impl PolicyEnforcer {
     }
 
     /// Record a kill event (consumes rate limit budget).
-    pub fn record_kill(&self) -> Result<crate::decision::rate_limit::RateLimitCounts, crate::decision::rate_limit::RateLimitError> {
+    pub fn record_kill(
+        &self,
+    ) -> Result<
+        crate::decision::rate_limit::RateLimitCounts,
+        crate::decision::rate_limit::RateLimitError,
+    > {
         self.rate_limiter.record_kill()
     }
 
@@ -1233,7 +1253,12 @@ mod tests {
 
         let result = enforcer.check_action(&candidate, Action::Kill, true);
         assert!(!result.allowed);
-        assert!(result.violation.as_ref().unwrap().message.contains("posterior"));
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("posterior"));
     }
 
     #[test]
@@ -1251,7 +1276,12 @@ mod tests {
 
         let result = enforcer.check_action(&candidate, Action::Kill, true);
         assert!(!result.allowed);
-        assert!(result.violation.as_ref().unwrap().message.contains("memory"));
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("memory"));
     }
 
     #[test]
@@ -1280,7 +1310,12 @@ mod tests {
 
         let result = enforcer.check_action(&candidate, Action::Kill, false);
         assert!(!result.allowed);
-        assert!(result.violation.as_ref().unwrap().message.contains("locked"));
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("locked"));
     }
 
     #[test]

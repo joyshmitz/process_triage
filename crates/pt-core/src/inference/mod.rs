@@ -27,8 +27,8 @@ pub mod ppc;
 pub mod prior_override;
 pub mod robust;
 pub mod robust_stats;
-pub mod sketches;
 pub mod signature_fast_path;
+pub mod sketches;
 pub mod wasserstein;
 
 pub use belief_prop::{

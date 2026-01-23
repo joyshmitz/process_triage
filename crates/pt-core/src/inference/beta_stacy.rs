@@ -257,7 +257,7 @@ impl BetaStacyModel {
                     value: sample.duration_s,
                 });
             }
-            
+
             if let Some(idx) = self.scheme.index_for_duration(sample.duration_s) {
                 // Sample falls within our binning range
                 for i in 0..=idx {
@@ -372,9 +372,18 @@ mod tests {
         // Sample 2: 40.0s, event=true (out of bounds)
         // Sample 3: 50.0s, event=false (out of bounds)
         let samples = vec![
-            LifetimeSample { duration_s: 5.0, event: true },
-            LifetimeSample { duration_s: 40.0, event: true },
-            LifetimeSample { duration_s: 50.0, event: false },
+            LifetimeSample {
+                duration_s: 5.0,
+                event: true,
+            },
+            LifetimeSample {
+                duration_s: 40.0,
+                event: true,
+            },
+            LifetimeSample {
+                duration_s: 50.0,
+                event: false,
+            },
         ];
 
         model.update_from_samples(&samples).unwrap();
@@ -384,19 +393,28 @@ mod tests {
         // - Sample 2 survived this bin.
         // - Sample 3 survived this bin.
         // Expected at_risk: 3
-        assert_eq!(model.bins[0].at_risk, 3, "Bin 0 at_risk should include out-of-bounds samples");
+        assert_eq!(
+            model.bins[0].at_risk, 3,
+            "Bin 0 at_risk should include out-of-bounds samples"
+        );
 
         // Bin 1 (10-20s):
         // - Sample 1 already failed/censored.
         // - Sample 2 survived this bin.
         // - Sample 3 survived this bin.
         // Expected at_risk: 2
-        assert_eq!(model.bins[1].at_risk, 2, "Bin 1 at_risk should include out-of-bounds samples");
+        assert_eq!(
+            model.bins[1].at_risk, 2,
+            "Bin 1 at_risk should include out-of-bounds samples"
+        );
 
         // Bin 2 (20-30s):
         // - Sample 2 survived this bin.
         // - Sample 3 survived this bin.
         // Expected at_risk: 2
-        assert_eq!(model.bins[2].at_risk, 2, "Bin 2 at_risk should include out-of-bounds samples");
+        assert_eq!(
+            model.bins[2].at_risk, 2,
+            "Bin 2 at_risk should include out-of-bounds samples"
+        );
     }
 }

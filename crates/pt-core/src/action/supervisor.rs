@@ -1306,10 +1306,7 @@ mod tests {
 
         let (program, args) = runner.build_command(&action).unwrap();
         assert_eq!(program, "launchctl");
-        assert_eq!(
-            args,
-            vec!["kickstart", "-k", "gui/501/com.apple.Spotlight"]
-        );
+        assert_eq!(args, vec!["kickstart", "-k", "gui/501/com.apple.Spotlight"]);
     }
 
     #[test]

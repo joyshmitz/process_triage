@@ -399,16 +399,10 @@ impl RetentionEnforcer {
 
         for table in all_tables() {
             let table_name = table.as_str().to_string();
-            let table_candidates: Vec<_> = candidates
-                .iter()
-                .filter(|c| c.table == table)
-                .collect();
+            let table_candidates: Vec<_> = candidates.iter().filter(|c| c.table == table).collect();
 
             let ttl = self.config.effective_ttl(table);
-            let over_ttl: Vec<_> = table_candidates
-                .iter()
-                .filter(|c| c.age() > ttl)
-                .collect();
+            let over_ttl: Vec<_> = table_candidates.iter().filter(|c| c.age() > ttl).collect();
 
             by_table.insert(
                 table_name.clone(),
@@ -472,10 +466,8 @@ impl RetentionEnforcer {
             let mut by_table: HashMap<String, TablePreview> = HashMap::new();
             for table in all_tables() {
                 let table_name = table.as_str().to_string();
-                let table_all: Vec<_> = all_candidates
-                    .iter()
-                    .filter(|c| c.table == table)
-                    .collect();
+                let table_all: Vec<_> =
+                    all_candidates.iter().filter(|c| c.table == table).collect();
 
                 by_table.insert(
                     table_name.clone(),
@@ -525,9 +517,8 @@ impl RetentionEnforcer {
         }
 
         // Phase 2: Budget-based pruning (if still over budget after TTL pruning)
-        let bytes_after_ttl: u64 = current_usage.saturating_sub(
-            prune_candidates.iter().map(|c| c.size_bytes).sum::<u64>(),
-        );
+        let bytes_after_ttl: u64 = current_usage
+            .saturating_sub(prune_candidates.iter().map(|c| c.size_bytes).sum::<u64>());
 
         if self.config.disk_budget_bytes > 0 && bytes_after_ttl > self.config.disk_budget_bytes {
             let mut need_to_free = bytes_after_ttl - self.config.disk_budget_bytes;
@@ -593,10 +584,7 @@ impl RetentionEnforcer {
                 .iter()
                 .filter(|c| c.table == table_name)
                 .collect();
-            let table_all: Vec<_> = all_candidates
-                .iter()
-                .filter(|c| c.table == table)
-                .collect();
+            let table_all: Vec<_> = all_candidates.iter().filter(|c| c.table == table).collect();
 
             by_table.insert(
                 table_name.clone(),
@@ -714,10 +702,7 @@ impl RetentionEnforcer {
         fs::create_dir_all(log_dir)?;
 
         let now = Utc::now();
-        let filename = format!(
-            "retention_events_{}.jsonl",
-            now.format("%Y%m%d_%H%M%S")
-        );
+        let filename = format!("retention_events_{}.jsonl", now.format("%Y%m%d_%H%M%S"));
         let log_path = log_dir.join(filename);
 
         let file = fs::File::create(&log_path)?;
@@ -728,7 +713,11 @@ impl RetentionEnforcer {
             std::io::Write::write_all(&mut writer, b"\n")?;
         }
 
-        info!("Wrote {} retention events to {}", events.len(), log_path.display());
+        info!(
+            "Wrote {} retention events to {}",
+            events.len(),
+            log_path.display()
+        );
         Ok(())
     }
 
@@ -813,9 +802,7 @@ fn extract_partition_info(path: &str) -> (Option<chrono::NaiveDate>, Option<Stri
     }
 
     let date = year.and_then(|y| {
-        month.and_then(|m| {
-            day.and_then(|d| chrono::NaiveDate::from_ymd_opt(y, m, d))
-        })
+        month.and_then(|m| day.and_then(|d| chrono::NaiveDate::from_ymd_opt(y, m, d)))
     });
 
     (date, host_id)
@@ -893,7 +880,10 @@ mod tests {
         let path = "proc_samples/year=2025/month=01/day=15/host_id=abc123/file.parquet";
         let (date, host_id) = extract_partition_info(path);
 
-        assert_eq!(date, Some(chrono::NaiveDate::from_ymd_opt(2025, 1, 15).unwrap()));
+        assert_eq!(
+            date,
+            Some(chrono::NaiveDate::from_ymd_opt(2025, 1, 15).unwrap())
+        );
         assert_eq!(host_id, Some("abc123".to_string()));
     }
 
@@ -1027,26 +1017,35 @@ mod tests {
         let new_file = root.join("proc_samples/year=2025/month=01/day=15/host_id=test/new.parquet");
 
         create_fake_parquet(&old_file, 1024, 45).unwrap(); // 45 days old - over TTL
-        create_fake_parquet(&new_file, 1024, 5).unwrap();  // 5 days old - under TTL
+        create_fake_parquet(&new_file, 1024, 5).unwrap(); // 5 days old - under TTL
 
         // Create runs file (TTL = 90 days)
         let runs_file = root.join("runs/year=2025/month=01/day=01/host_id=test/run.parquet");
         create_fake_parquet(&runs_file, 1024, 50).unwrap(); // 50 days old - under 90-day TTL
 
         let config = RetentionConfig::default();
-        let enforcer = RetentionEnforcer::with_host_id(
-            root.to_path_buf(),
-            config,
-            "test-host".to_string(),
-        );
+        let enforcer =
+            RetentionEnforcer::with_host_id(root.to_path_buf(), config, "test-host".to_string());
 
         // Preview should identify only the old proc_samples file
         let preview = enforcer.preview().unwrap();
 
-        assert_eq!(preview.files_to_prune, 1, "Should prune exactly 1 TTL-expired file");
-        assert!(preview.candidates.iter().any(|c| c.file_path.contains("old.parquet")));
-        assert!(!preview.candidates.iter().any(|c| c.file_path.contains("new.parquet")));
-        assert!(!preview.candidates.iter().any(|c| c.file_path.contains("run.parquet")));
+        assert_eq!(
+            preview.files_to_prune, 1,
+            "Should prune exactly 1 TTL-expired file"
+        );
+        assert!(preview
+            .candidates
+            .iter()
+            .any(|c| c.file_path.contains("old.parquet")));
+        assert!(!preview
+            .candidates
+            .iter()
+            .any(|c| c.file_path.contains("new.parquet")));
+        assert!(!preview
+            .candidates
+            .iter()
+            .any(|c| c.file_path.contains("run.parquet")));
 
         // Verify the reason is TTL expiration
         let candidate = &preview.candidates[0];
@@ -1072,7 +1071,10 @@ mod tests {
         ];
 
         for (table, name, size, age) in &files {
-            let path = root.join(format!("{}/year=2025/month=01/day=15/host_id=test/{}", table, name));
+            let path = root.join(format!(
+                "{}/year=2025/month=01/day=15/host_id=test/{}",
+                table, name
+            ));
             create_fake_parquet(&path, *size, *age).unwrap();
         }
 
@@ -1082,22 +1084,32 @@ mod tests {
             ..Default::default()
         };
 
-        let enforcer = RetentionEnforcer::with_host_id(
-            root.to_path_buf(),
-            config,
-            "test-host".to_string(),
-        );
+        let enforcer =
+            RetentionEnforcer::with_host_id(root.to_path_buf(), config, "test-host".to_string());
 
         let preview = enforcer.preview().unwrap();
 
         // Should prune at least 1 file to get under budget
-        assert!(preview.files_to_prune >= 1, "Should prune files to meet disk budget");
-        assert!(preview.bytes_to_free >= 1024 * 1024, "Should free at least 1MB");
+        assert!(
+            preview.files_to_prune >= 1,
+            "Should prune files to meet disk budget"
+        );
+        assert!(
+            preview.bytes_to_free >= 1024 * 1024,
+            "Should free at least 1MB"
+        );
 
         // Verify pruning priority: proc_samples should be pruned before outcomes
-        let pruned_tables: Vec<_> = preview.candidates.iter().map(|c| c.table.as_str()).collect();
+        let pruned_tables: Vec<_> = preview
+            .candidates
+            .iter()
+            .map(|c| c.table.as_str())
+            .collect();
         if preview.files_to_prune == 1 {
-            assert!(pruned_tables.contains(&"proc_samples"), "proc_samples should be pruned first");
+            assert!(
+                pruned_tables.contains(&"proc_samples"),
+                "proc_samples should be pruned first"
+            );
         }
     }
 
@@ -1116,11 +1128,8 @@ mod tests {
             ..Default::default()
         };
 
-        let mut enforcer = RetentionEnforcer::with_host_id(
-            root.to_path_buf(),
-            config,
-            "test-host".to_string(),
-        );
+        let mut enforcer =
+            RetentionEnforcer::with_host_id(root.to_path_buf(), config, "test-host".to_string());
 
         // Run dry-run
         let events = enforcer.dry_run().unwrap();
@@ -1128,7 +1137,10 @@ mod tests {
         // Should have events but file should still exist
         assert_eq!(events.len(), 1);
         assert!(events[0].dry_run);
-        assert!(old_file.exists(), "File should not be deleted in dry-run mode");
+        assert!(
+            old_file.exists(),
+            "File should not be deleted in dry-run mode"
+        );
 
         // Should have logged events
         assert!(event_log_dir.exists());
@@ -1150,11 +1162,8 @@ mod tests {
             ..Default::default()
         };
 
-        let mut enforcer = RetentionEnforcer::with_host_id(
-            root.to_path_buf(),
-            config,
-            "test-host".to_string(),
-        );
+        let mut enforcer =
+            RetentionEnforcer::with_host_id(root.to_path_buf(), config, "test-host".to_string());
 
         // Run actual enforcement
         let events = enforcer.enforce().unwrap();
@@ -1162,7 +1171,10 @@ mod tests {
         // Should have events and file should be deleted
         assert_eq!(events.len(), 1);
         assert!(!events[0].dry_run);
-        assert!(!old_file.exists(), "File should be deleted after enforcement");
+        assert!(
+            !old_file.exists(),
+            "File should be deleted after enforcement"
+        );
     }
 
     #[test]
@@ -1179,16 +1191,16 @@ mod tests {
         ];
 
         for (table, name, size, age) in &files {
-            let path = root.join(format!("{}/year=2025/month=01/day=15/host_id=test/{}", table, name));
+            let path = root.join(format!(
+                "{}/year=2025/month=01/day=15/host_id=test/{}",
+                table, name
+            ));
             create_fake_parquet(&path, *size, *age).unwrap();
         }
 
         let config = RetentionConfig::default();
-        let enforcer = RetentionEnforcer::with_host_id(
-            root.to_path_buf(),
-            config,
-            "test-host".to_string(),
-        );
+        let enforcer =
+            RetentionEnforcer::with_host_id(root.to_path_buf(), config, "test-host".to_string());
 
         let status = enforcer.status().unwrap();
 
@@ -1223,7 +1235,10 @@ mod tests {
         ];
 
         for (table, name, size, age) in &files {
-            let path = root.join(format!("{}/year=2025/month=01/day=15/host_id=test/{}", table, name));
+            let path = root.join(format!(
+                "{}/year=2025/month=01/day=15/host_id=test/{}",
+                table, name
+            ));
             create_fake_parquet(&path, *size, *age).unwrap();
         }
 
@@ -1233,11 +1248,8 @@ mod tests {
             ..Default::default()
         };
 
-        let enforcer = RetentionEnforcer::with_host_id(
-            root.to_path_buf(),
-            config,
-            "test-host".to_string(),
-        );
+        let enforcer =
+            RetentionEnforcer::with_host_id(root.to_path_buf(), config, "test-host".to_string());
 
         let preview = enforcer.preview().unwrap();
 
@@ -1265,11 +1277,8 @@ mod tests {
             ..Default::default()
         };
 
-        let mut enforcer = RetentionEnforcer::with_host_id(
-            root.to_path_buf(),
-            config,
-            "test-host".to_string(),
-        );
+        let mut enforcer =
+            RetentionEnforcer::with_host_id(root.to_path_buf(), config, "test-host".to_string());
 
         // Run enforcement
         let _ = enforcer.enforce().unwrap();

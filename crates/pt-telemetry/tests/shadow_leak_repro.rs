@@ -1,6 +1,6 @@
-use pt_telemetry::shadow::{ShadowStorage, ShadowStorageConfig, Observation, StateSnapshot};
-use tempfile::TempDir;
 use chrono::Utc;
+use pt_telemetry::shadow::{Observation, ShadowStorage, ShadowStorageConfig, StateSnapshot};
+use tempfile::TempDir;
 
 #[test]
 fn test_shadow_storage_identity_leak_on_pid_reuse() {
@@ -19,7 +19,10 @@ fn test_shadow_storage_identity_leak_on_pid_reuse() {
         timestamp: Utc::now(),
         pid,
         identity_hash: "identity_A".to_string(),
-        state: StateSnapshot { cpu_percent: 10.0, ..Default::default() },
+        state: StateSnapshot {
+            cpu_percent: 10.0,
+            ..Default::default()
+        },
         ..Default::default()
     };
     storage.record(obs_a).unwrap();
@@ -29,20 +32,27 @@ fn test_shadow_storage_identity_leak_on_pid_reuse() {
         timestamp: Utc::now() + chrono::Duration::seconds(10),
         pid,
         identity_hash: "identity_B".to_string(),
-        state: StateSnapshot { cpu_percent: 20.0, ..Default::default() },
+        state: StateSnapshot {
+            cpu_percent: 20.0,
+            ..Default::default()
+        },
         ..Default::default()
     };
     storage.record(obs_b).unwrap();
 
     // 3. Query history for Identity A
     let history_a = storage.get_history(
-        "identity_A", 
-        Utc::now() - chrono::Duration::hours(1), 
-        Utc::now() + chrono::Duration::hours(1), 
-        100
+        "identity_A",
+        Utc::now() - chrono::Duration::hours(1),
+        Utc::now() + chrono::Duration::hours(1),
+        100,
     );
 
     // Should only contain observations for A
-    assert_eq!(history_a.observations.len(), 1, "Should have 1 observation for A");
+    assert_eq!(
+        history_a.observations.len(),
+        1,
+        "Should have 1 observation for A"
+    );
     assert_eq!(history_a.observations[0].identity_hash, "identity_A");
 }

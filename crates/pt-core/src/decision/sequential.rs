@@ -159,7 +159,11 @@ fn estimate_esn(voi: &VoiAnalysis) -> Option<f64> {
     }
 
     let mut losses = voi.current_expected_loss.clone();
-    losses.sort_by(|a, b| a.loss.partial_cmp(&b.loss).unwrap_or(std::cmp::Ordering::Equal));
+    losses.sort_by(|a, b| {
+        a.loss
+            .partial_cmp(&b.loss)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let gap = (losses[1].loss - losses[0].loss).max(0.0);
     if gap <= 0.0 {

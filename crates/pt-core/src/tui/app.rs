@@ -22,8 +22,8 @@ use super::events::{handle_event, AppAction, KeyBindings};
 use super::layout::{Breakpoint, LayoutState, ResponsiveLayout};
 use super::theme::Theme;
 use super::widgets::{
-    ConfirmChoice, ConfirmDialog, ConfirmDialogState, ProcessTable, ProcessTableState,
-    SearchInput, SearchInputState,
+    ConfirmChoice, ConfirmDialog, ConfirmDialogState, ProcessTable, ProcessTableState, SearchInput,
+    SearchInputState,
 };
 use super::{TuiError, TuiResult};
 
@@ -347,11 +347,8 @@ impl App {
     /// Apply the current search filter to the process table.
     fn apply_search_filter(&mut self) {
         let query = self.search.value().to_lowercase();
-        self.process_table.set_filter(if query.is_empty() {
-            None
-        } else {
-            Some(query)
-        });
+        self.process_table
+            .set_filter(if query.is_empty() { None } else { Some(query) });
     }
 
     /// Show confirmation dialog for executing actions.

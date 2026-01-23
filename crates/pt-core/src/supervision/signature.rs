@@ -914,7 +914,7 @@ impl SignatureDatabase {
     /// Add a signature and compile its patterns.
     pub fn add(&mut self, signature: SupervisorSignature) -> Result<(), SignatureError> {
         signature.validate()?;
-        
+
         // Compile process name regexes
         let mut proc_res = Vec::new();
         for pattern in &signature.patterns.process_names {
@@ -1517,9 +1517,10 @@ impl SignatureDatabase {
                 .with_confidence(0.90)
                 .with_notes("GitHub Copilot")
                 .with_process_patterns(vec![r"^copilot$", r"^copilot-agent$"])
-                .with_env_patterns(HashMap::from([
-                    ("GITHUB_COPILOT_TOKEN".into(), ".*".into()),
-                ]))
+                .with_env_patterns(HashMap::from([(
+                    "GITHUB_COPILOT_TOKEN".into(),
+                    ".*".into(),
+                )]))
                 .as_builtin(),
         );
 
@@ -1655,7 +1656,10 @@ impl SignatureDatabase {
                 .with_notes("Playwright E2E test runner")
                 .with_process_patterns(vec![r"^playwright$"])
                 .with_arg_patterns(vec![r"playwright"])
-                .with_env_patterns(HashMap::from([("PLAYWRIGHT_BROWSERS_PATH".into(), ".*".into())]))
+                .with_env_patterns(HashMap::from([(
+                    "PLAYWRIGHT_BROWSERS_PATH".into(),
+                    ".*".into(),
+                )]))
                 .with_priors(SignaturePriors::likely_abandoned())
                 .with_expectations(ProcessExpectations::short_lived_task())
                 .as_builtin(),
@@ -1667,7 +1671,10 @@ impl SignatureDatabase {
                 .with_notes("Cypress E2E test runner")
                 .with_process_patterns(vec![r"^Cypress$", r"^cypress$"])
                 .with_arg_patterns(vec![r"cypress"])
-                .with_env_patterns(HashMap::from([("CYPRESS_CACHE_FOLDER".into(), ".*".into())]))
+                .with_env_patterns(HashMap::from([(
+                    "CYPRESS_CACHE_FOLDER".into(),
+                    ".*".into(),
+                )]))
                 .with_priors(SignaturePriors::likely_abandoned())
                 .with_expectations(ProcessExpectations::short_lived_task())
                 .as_builtin(),
@@ -1732,7 +1739,10 @@ impl SignatureDatabase {
                 .with_confidence(0.80)
                 .with_notes("Django Python web server")
                 .with_arg_patterns(vec![r"manage\.py\s+runserver", r"django"])
-                .with_env_patterns(HashMap::from([("DJANGO_SETTINGS_MODULE".into(), ".*".into())]))
+                .with_env_patterns(HashMap::from([(
+                    "DJANGO_SETTINGS_MODULE".into(),
+                    ".*".into(),
+                )]))
                 .with_priors(SignaturePriors::likely_useful())
                 .with_expectations(ProcessExpectations::dev_server())
                 .as_builtin(),

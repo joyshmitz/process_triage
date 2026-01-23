@@ -65,7 +65,11 @@ impl<'a> SearchInput<'a> {
                 theme.style_border()
             }
         } else {
-            Style::default().fg(if focused { Color::Cyan } else { Color::DarkGray })
+            Style::default().fg(if focused {
+                Color::Cyan
+            } else {
+                Color::DarkGray
+            })
         };
 
         Block::default()

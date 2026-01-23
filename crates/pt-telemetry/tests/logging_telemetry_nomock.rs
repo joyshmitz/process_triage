@@ -70,8 +70,7 @@ fn validate_retention_event_schema(json: &str) -> Result<(), String> {
 
     // Validate timestamp is ISO-8601
     if let Some(ts) = obj.get("timestamp").and_then(|v| v.as_str()) {
-        DateTime::parse_from_rfc3339(ts)
-            .map_err(|e| format!("Invalid timestamp format: {}", e))?;
+        DateTime::parse_from_rfc3339(ts).map_err(|e| format!("Invalid timestamp format: {}", e))?;
     }
 
     // Validate table is a known value
@@ -113,7 +112,8 @@ fn validate_jsonl_file(path: &Path) -> Result<Vec<RetentionEvent>, String> {
     let mut events = Vec::new();
 
     for (line_num, line_result) in reader.lines().enumerate() {
-        let line = line_result.map_err(|e| format!("Read error at line {}: {}", line_num + 1, e))?;
+        let line =
+            line_result.map_err(|e| format!("Read error at line {}: {}", line_num + 1, e))?;
 
         if line.trim().is_empty() {
             continue;
@@ -217,11 +217,13 @@ fn test_retention_event_jsonl_all_reason_variants() {
             .unwrap_or_else(|e| panic!("Schema validation failed for {}: {}", reason_debug, e));
 
         // Verify roundtrip
-        let parsed: RetentionEvent =
-            serde_json::from_str(&json).expect("deserialize");
+        let parsed: RetentionEvent = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(parsed.table, "proc_samples");
 
-        eprintln!("[INFO] Reason variant {} serializes correctly", reason_debug);
+        eprintln!(
+            "[INFO] Reason variant {} serializes correctly",
+            reason_debug
+        );
     }
 }
 
@@ -254,7 +256,9 @@ fn test_retention_event_jsonl_roundtrip_fidelity() {
     assert_eq!(roundtrip.session_ids, original.session_ids);
 
     // Timestamp should be within 1 second (chrono precision)
-    let time_diff = (roundtrip.timestamp - original.timestamp).num_seconds().abs();
+    let time_diff = (roundtrip.timestamp - original.timestamp)
+        .num_seconds()
+        .abs();
     assert!(time_diff <= 1, "Timestamp drift: {} seconds", time_diff);
 
     eprintln!("[INFO] retention_event_jsonl_roundtrip_fidelity passed");
@@ -298,8 +302,7 @@ fn test_retention_jsonl_log_file_format() {
     let root = dir.path();
 
     // Create a file that exceeds TTL
-    let old_file =
-        root.join("proc_samples/year=2025/month=01/day=01/host_id=test/old.parquet");
+    let old_file = root.join("proc_samples/year=2025/month=01/day=01/host_id=test/old.parquet");
     create_fake_parquet(&old_file, 2048, 45).expect("create fake parquet");
 
     let event_log_dir = root.join("retention_logs");
@@ -308,11 +311,8 @@ fn test_retention_jsonl_log_file_format() {
         ..Default::default()
     };
 
-    let mut enforcer = RetentionEnforcer::with_host_id(
-        root.to_path_buf(),
-        config,
-        "test-host-nomock".to_string(),
-    );
+    let mut enforcer =
+        RetentionEnforcer::with_host_id(root.to_path_buf(), config, "test-host-nomock".to_string());
 
     // Run enforcement
     let events = enforcer.enforce().expect("enforce");
@@ -328,8 +328,7 @@ fn test_retention_jsonl_log_file_format() {
     assert_eq!(log_files.len(), 1, "Should have 1 JSONL log file");
 
     let log_path = log_files[0].path();
-    let validated_events =
-        validate_jsonl_file(&log_path).expect("JSONL file should be valid");
+    let validated_events = validate_jsonl_file(&log_path).expect("JSONL file should be valid");
 
     assert_eq!(validated_events.len(), 1, "Log file should contain 1 event");
 
@@ -350,8 +349,7 @@ fn test_retention_dry_run_jsonl_log() {
     let root = dir.path();
 
     // Create files to trigger pruning
-    let old_file =
-        root.join("proc_samples/year=2025/month=01/day=01/host_id=test/old.parquet");
+    let old_file = root.join("proc_samples/year=2025/month=01/day=01/host_id=test/old.parquet");
     create_fake_parquet(&old_file, 4096, 40).expect("create fake parquet");
 
     let event_log_dir = root.join("retention_logs");
@@ -360,11 +358,8 @@ fn test_retention_dry_run_jsonl_log() {
         ..Default::default()
     };
 
-    let mut enforcer = RetentionEnforcer::with_host_id(
-        root.to_path_buf(),
-        config,
-        "dry-run-host".to_string(),
-    );
+    let mut enforcer =
+        RetentionEnforcer::with_host_id(root.to_path_buf(), config, "dry-run-host".to_string());
 
     // Run dry-run
     let events = enforcer.dry_run().expect("dry_run");
@@ -393,7 +388,10 @@ fn test_retention_dry_run_jsonl_log() {
         assert!(event.dry_run, "All logged events should have dry_run=true");
     }
 
-    eprintln!("[INFO] Dry-run JSONL log validated: {} events", validated_events.len());
+    eprintln!(
+        "[INFO] Dry-run JSONL log validated: {} events",
+        validated_events.len()
+    );
 }
 
 #[test]
@@ -422,11 +420,8 @@ fn test_retention_multiple_files_jsonl_log() {
         ..Default::default()
     };
 
-    let mut enforcer = RetentionEnforcer::with_host_id(
-        root.to_path_buf(),
-        config,
-        "multi-file-host".to_string(),
-    );
+    let mut enforcer =
+        RetentionEnforcer::with_host_id(root.to_path_buf(), config, "multi-file-host".to_string());
 
     let events = enforcer.enforce().expect("enforce");
     assert!(events.len() >= 2, "Should prune at least 2 files");
@@ -450,18 +445,21 @@ fn test_retention_multiple_files_jsonl_log() {
     // Verify each line is valid JSONL (no trailing comma issues, proper newlines)
     let content = fs::read_to_string(log_files[0].path()).expect("read log");
     for (i, line) in content.lines().enumerate() {
-        let parsed: serde_json::Value =
-            serde_json::from_str(line).unwrap_or_else(|e| {
-                panic!("Line {} is not valid JSON: {} - content: {}", i + 1, e, line)
-            });
-        assert!(
-            parsed.is_object(),
-            "Line {} should be a JSON object",
-            i + 1
-        );
+        let parsed: serde_json::Value = serde_json::from_str(line).unwrap_or_else(|e| {
+            panic!(
+                "Line {} is not valid JSON: {} - content: {}",
+                i + 1,
+                e,
+                line
+            )
+        });
+        assert!(parsed.is_object(), "Line {} should be a JSON object", i + 1);
     }
 
-    eprintln!("[INFO] Multiple file JSONL log validated: {} events", validated_events.len());
+    eprintln!(
+        "[INFO] Multiple file JSONL log validated: {} events",
+        validated_events.len()
+    );
 }
 
 // ============================================================================
@@ -474,8 +472,7 @@ fn test_retention_respects_keep_everything_mode() {
     let root = dir.path();
 
     // Create files that would normally be pruned
-    let old_file =
-        root.join("proc_samples/year=2025/month=01/day=01/host_id=test/old.parquet");
+    let old_file = root.join("proc_samples/year=2025/month=01/day=01/host_id=test/old.parquet");
     create_fake_parquet(&old_file, 1024, 100).expect("create fake parquet");
 
     let config = RetentionConfig {
@@ -576,16 +573,18 @@ fn test_retention_ttl_override_respected() {
     let root = dir.path();
 
     // Create a file 50 days old (default proc_samples TTL=30, but we'll override to 60)
-    let file =
-        root.join("proc_samples/year=2025/month=01/day=01/host_id=test/data.parquet");
+    let file = root.join("proc_samples/year=2025/month=01/day=01/host_id=test/data.parquet");
     create_fake_parquet(&file, 1024, 50).expect("create fake parquet");
 
     let mut config = RetentionConfig::default();
     config.ttl_days.insert("proc_samples".to_string(), 60); // Override to 60 days
     config.event_log_dir = Some(root.join("retention_logs"));
 
-    let enforcer =
-        RetentionEnforcer::with_host_id(root.to_path_buf(), config, "ttl-override-host".to_string());
+    let enforcer = RetentionEnforcer::with_host_id(
+        root.to_path_buf(),
+        config,
+        "ttl-override-host".to_string(),
+    );
 
     let preview = enforcer.preview().expect("preview");
 
@@ -608,8 +607,7 @@ fn test_retention_log_artifacts_ci_compatible() {
     let root = dir.path();
 
     // Create test data
-    let file =
-        root.join("proc_samples/year=2025/month=01/day=01/host_id=test/data.parquet");
+    let file = root.join("proc_samples/year=2025/month=01/day=01/host_id=test/data.parquet");
     create_fake_parquet(&file, 1024, 45).expect("create fake parquet");
 
     let artifacts_dir = root.join("ci_artifacts");
@@ -716,8 +714,11 @@ fn test_retention_config_validation() {
 fn test_retention_status_jsonl_serializable() {
     let dir = tempdir().expect("tempdir");
     let config = RetentionConfig::default();
-    let enforcer =
-        RetentionEnforcer::with_host_id(dir.path().to_path_buf(), config, "status-host".to_string());
+    let enforcer = RetentionEnforcer::with_host_id(
+        dir.path().to_path_buf(),
+        config,
+        "status-host".to_string(),
+    );
 
     let status = enforcer.status().expect("status");
 
@@ -735,8 +736,11 @@ fn test_retention_status_jsonl_serializable() {
 fn test_retention_preview_jsonl_serializable() {
     let dir = tempdir().expect("tempdir");
     let config = RetentionConfig::default();
-    let enforcer =
-        RetentionEnforcer::with_host_id(dir.path().to_path_buf(), config, "preview-host".to_string());
+    let enforcer = RetentionEnforcer::with_host_id(
+        dir.path().to_path_buf(),
+        config,
+        "preview-host".to_string(),
+    );
 
     let preview = enforcer.preview().expect("preview");
 

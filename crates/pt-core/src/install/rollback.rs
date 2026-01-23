@@ -5,7 +5,7 @@
 use std::fs::{self, File};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, error, info, warn};
 
 use super::backup::{Backup, BackupManager};
 use super::verification::{verify_binary, VerificationResult};
@@ -97,7 +97,9 @@ impl RollbackManager {
             ));
         }
 
-        let backup = self.backup_manager.create_backup(&self.target_path, current_version)?;
+        let backup = self
+            .backup_manager
+            .create_backup(&self.target_path, current_version)?;
 
         info!(
             target: "update.backup_complete",
@@ -203,7 +205,10 @@ impl RollbackManager {
         // Copy to temp file in same directory (for atomic rename)
         let temp_path = target_dir.join(format!(
             ".{}.new.{}",
-            self.target_path.file_name().unwrap_or_default().to_string_lossy(),
+            self.target_path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy(),
             std::process::id()
         ));
 
@@ -348,15 +353,24 @@ pub fn write_recovery_instructions(path: &Path, details: &str) -> io::Result<()>
     let mut file = File::create(path)?;
     writeln!(file, "# Process Triage Recovery Instructions")?;
     writeln!(file)?;
-    writeln!(file, "The automatic update/rollback failed. Follow these steps to recover:")?;
+    writeln!(
+        file,
+        "The automatic update/rollback failed. Follow these steps to recover:"
+    )?;
     writeln!(file)?;
     writeln!(file, "## Details")?;
     writeln!(file, "{}", details)?;
     writeln!(file)?;
     writeln!(file, "## Manual Recovery Steps")?;
     writeln!(file)?;
-    writeln!(file, "1. Download a known good version from GitHub releases:")?;
-    writeln!(file, "   https://github.com/Dicklesworthstone/process_triage/releases")?;
+    writeln!(
+        file,
+        "1. Download a known good version from GitHub releases:"
+    )?;
+    writeln!(
+        file,
+        "   https://github.com/Dicklesworthstone/process_triage/releases"
+    )?;
     writeln!(file)?;
     writeln!(file, "2. Replace the binary manually:")?;
     writeln!(file, "   cp pt-core ~/.local/bin/pt-core")?;
@@ -367,8 +381,14 @@ pub fn write_recovery_instructions(path: &Path, details: &str) -> io::Result<()>
     writeln!(file, "4. Verify the installation:")?;
     writeln!(file, "   pt-core --version")?;
     writeln!(file)?;
-    writeln!(file, "If you continue to experience issues, please report at:")?;
-    writeln!(file, "https://github.com/Dicklesworthstone/process_triage/issues")?;
+    writeln!(
+        file,
+        "If you continue to experience issues, please report at:"
+    )?;
+    writeln!(
+        file,
+        "https://github.com/Dicklesworthstone/process_triage/issues"
+    )?;
     Ok(())
 }
 

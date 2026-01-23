@@ -57,10 +57,7 @@ impl CdnLibrary {
 
     /// Get the full CDN URL for this library.
     pub fn url(&self, base_url: &str, package_name: &str) -> String {
-        let path = self
-            .path
-            .as_deref()
-            .unwrap_or("dist/index.min.js");
+        let path = self.path.as_deref().unwrap_or("dist/index.min.js");
         format!("{}/{}@{}/{}", base_url, package_name, self.version, path)
     }
 }

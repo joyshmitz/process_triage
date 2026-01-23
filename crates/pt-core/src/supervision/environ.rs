@@ -408,8 +408,7 @@ impl EnvironAnalyzer {
                 evidence_type: EvidenceType::Environment,
                 description: format!(
                     "Environment variable {} indicates {} supervision",
-                    pattern.var_name,
-                    pattern.supervisor_name
+                    pattern.var_name, pattern.supervisor_name
                 ),
                 weight: pattern.confidence,
             })

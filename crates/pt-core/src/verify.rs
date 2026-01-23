@@ -216,17 +216,29 @@ pub fn verify_plan(
                             if proc.state == ProcessState::Stopped {
                                 (VerifyOutcome::ConfirmedStopped, "stopped".to_string(), None)
                             } else {
-                                (VerifyOutcome::StillRunning, "still_running".to_string(), None)
+                                (
+                                    VerifyOutcome::StillRunning,
+                                    "still_running".to_string(),
+                                    None,
+                                )
                             }
                         }
                         "kill" | "restart" => {
                             if proc.state == ProcessState::Zombie {
                                 (VerifyOutcome::ConfirmedDead, "zombie".to_string(), None)
                             } else {
-                                (VerifyOutcome::StillRunning, "still_running".to_string(), None)
+                                (
+                                    VerifyOutcome::StillRunning,
+                                    "still_running".to_string(),
+                                    None,
+                                )
                             }
                         }
-                        _ => (VerifyOutcome::StillRunning, "still_running".to_string(), None),
+                        _ => (
+                            VerifyOutcome::StillRunning,
+                            "still_running".to_string(),
+                            None,
+                        ),
                     }
                 }
             }
@@ -257,11 +269,13 @@ pub fn verify_plan(
             freed_mb += expected_mem;
         }
 
-        if matches!(outcome, VerifyOutcome::Respawned | VerifyOutcome::StillRunning) {
+        if matches!(
+            outcome,
+            VerifyOutcome::Respawned | VerifyOutcome::StillRunning
+        ) {
             recommendations.push(format!(
                 "PID {} ({}) still active; consider supervisor stop or deeper investigation",
-                candidate.pid,
-                candidate.cmd_short
+                candidate.pid, candidate.cmd_short
             ));
         }
         if matches!(outcome, VerifyOutcome::PidReused) {
@@ -409,8 +423,12 @@ fn start_id_matches(parsed: PlanStartId, proc: &ProcessRecord) -> bool {
 
 fn matches_pid(parsed: &PlanStartId, pid: u32) -> bool {
     match parsed {
-        PlanStartId::Legacy { pid: parsed_pid, .. } => *parsed_pid == pid,
-        PlanStartId::Full { pid: parsed_pid, .. } => *parsed_pid == pid,
+        PlanStartId::Legacy {
+            pid: parsed_pid, ..
+        } => *parsed_pid == pid,
+        PlanStartId::Full {
+            pid: parsed_pid, ..
+        } => *parsed_pid == pid,
         PlanStartId::Unknown => true,
     }
 }

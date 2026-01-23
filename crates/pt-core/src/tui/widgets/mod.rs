@@ -10,12 +10,12 @@
 //! - `ConfirmDialog`: Confirmation dialog for actions
 //! - `ConfigEditor`: Form for editing configuration values
 
-mod confirm_dialog;
 mod config_editor;
+mod confirm_dialog;
 mod process_table;
 mod search_input;
 
-pub use confirm_dialog::{ConfirmChoice, ConfirmDialog, ConfirmDialogState};
 pub use config_editor::{ConfigEditor, ConfigEditorState, ConfigField, ConfigFieldType};
+pub use confirm_dialog::{ConfirmChoice, ConfirmDialog, ConfirmDialogState};
 pub use process_table::{ProcessRow, ProcessTable, ProcessTableState, SortColumn, SortOrder};
 pub use search_input::{SearchInput, SearchInputState};

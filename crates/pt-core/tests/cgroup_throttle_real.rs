@@ -249,7 +249,10 @@ fn test_throttle_spawned_process() {
             || error_msg.contains("no writable cgroup")
             || error_msg.contains("permission")
         {
-            pt_core::test_log!(INFO, "Skipping verification: cgroup write access unavailable");
+            pt_core::test_log!(
+                INFO,
+                "Skipping verification: cgroup write access unavailable"
+            );
             return;
         }
     }

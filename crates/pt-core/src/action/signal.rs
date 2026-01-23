@@ -439,7 +439,7 @@ fn ids_match(expected: &str, current: &str) -> bool {
             }
             // Fallback to exact string match
             e == c
-        },
+        }
         _ => false,
     }
 }

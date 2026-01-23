@@ -278,7 +278,9 @@ mod hawkes_tests {
 // ============================================================================
 
 mod evt_tests {
-    use pt_core::inference::evt::{EstimationMethod, GpdConfig, GpdFitter, TailType, ThresholdMethod};
+    use pt_core::inference::evt::{
+        EstimationMethod, GpdConfig, GpdFitter, TailType, ThresholdMethod,
+    };
 
     /// Generate synthetic data with known GPD tail.
     fn synthetic_gpd_data(xi: f64, sigma: f64, threshold: f64, n: usize) -> Vec<f64> {
@@ -507,12 +509,7 @@ mod sketch_tests {
         }
 
         // Check quantile estimates
-        let test_quantiles = vec![
-            (0.1, 100.0),
-            (0.5, 500.0),
-            (0.9, 900.0),
-            (0.99, 990.0),
-        ];
+        let test_quantiles = vec![(0.1, 100.0), (0.5, 500.0), (0.9, 900.0), (0.99, 990.0)];
 
         for (q, expected) in test_quantiles {
             let estimate = digest.quantile(q).expect("quantile should succeed");
@@ -558,7 +555,10 @@ mod belief_prop_tests {
     use std::collections::HashMap;
 
     /// Create a simple two-node tree for testing.
-    fn two_node_tree(parent_belief: HashMap<State, f64>, child_belief: HashMap<State, f64>) -> BeliefPropagator {
+    fn two_node_tree(
+        parent_belief: HashMap<State, f64>,
+        child_belief: HashMap<State, f64>,
+    ) -> BeliefPropagator {
         let config = BeliefPropConfig::default();
         let mut propagator = BeliefPropagator::new(config);
 
@@ -638,7 +638,10 @@ mod belief_prop_tests {
         let result = propagator.propagate().expect("propagation should succeed");
 
         // Child's posterior should be influenced toward Abandoned
-        let child_marginal = result.marginals.get(&200).expect("child should have marginal");
+        let child_marginal = result
+            .marginals
+            .get(&200)
+            .expect("child should have marginal");
         let child_abandoned = child_marginal.get(&State::Abandoned).unwrap_or(&0.0);
         let prior_abandoned = child_belief.get(&State::Abandoned).unwrap_or(&0.0);
 
@@ -725,8 +728,10 @@ mod imm_tests {
         // The IMM should detect some significant state changes
         // (may not always be exactly at the switch point due to filtering)
         // We verify that the combined state tracks the observation pattern
-        let final_state = analyzer.update(data[data.len()-1]).expect("update should succeed");
-        
+        let final_state = analyzer
+            .update(data[data.len() - 1])
+            .expect("update should succeed");
+
         // Final observations are high (~0.7), so combined state should reflect this
         assert!(
             final_state.combined_state > 0.3,
@@ -923,10 +928,7 @@ mod dro_tests {
         assert!(outcome.applied, "DRO should be applied when PPC failed");
 
         // DRO should inflate the kill loss
-        let kill_dro = outcome
-            .dro_losses
-            .iter()
-            .find(|d| d.action == Action::Kill);
+        let kill_dro = outcome.dro_losses.iter().find(|d| d.action == Action::Kill);
 
         if let Some(kill) = kill_dro {
             assert!(
@@ -1058,7 +1060,12 @@ mod alpha_investing_tests {
             });
 
             // Wealth should never go negative
-            assert!(wealth >= 0.0, "Wealth went negative at step {}: {}", i, wealth);
+            assert!(
+                wealth >= 0.0,
+                "Wealth went negative at step {}: {}",
+                i,
+                wealth
+            );
         }
     }
 
@@ -1074,12 +1081,7 @@ mod alpha_investing_tests {
         let spend = policy.alpha_spend_for_wealth(wealth);
 
         // Should not spend more than available wealth
-        assert!(
-            spend <= wealth,
-            "Spend {} exceeds wealth {}",
-            spend,
-            wealth
-        );
+        assert!(spend <= wealth, "Spend {} exceeds wealth {}", spend, wealth);
     }
 
     #[test]

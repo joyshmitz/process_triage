@@ -240,7 +240,10 @@ fn test_descendant_enumeration_single_node() {
     tree.add_process(SimulatedProcess::new(1000, 1));
 
     let descendants = tree.enumerate_descendants(1000);
-    assert!(descendants.is_empty(), "Single node should have no descendants");
+    assert!(
+        descendants.is_empty(),
+        "Single node should have no descendants"
+    );
 
     let resources = tree.aggregate_resources(1000);
     assert_eq!(resources.total_descendants, 0);
@@ -360,8 +363,7 @@ fn test_resource_aggregation_connections() {
 
     let resources = tree.aggregate_resources(1000);
     assert_eq!(
-        resources.total_connections,
-        52,
+        resources.total_connections, 52,
         "Should have 2 + (5 * 10) = 52 connections"
     );
     assert_eq!(resources.total_descendants, 5);
@@ -423,8 +425,7 @@ fn test_resource_aggregation_cascading_failure() {
 
     let resources = tree.aggregate_resources(1000);
     assert_eq!(
-        resources.total_connections,
-        105,
+        resources.total_connections, 105,
         "Should aggregate all connections"
     );
     assert_eq!(resources.total_descendants, 100);
@@ -612,9 +613,7 @@ fn test_warning_generation_high_descendants() {
     let warnings = generate_blast_radius_warnings(&resources, &thresholds);
 
     assert!(
-        warnings
-            .iter()
-            .any(|w| w.contains("High descendant count")),
+        warnings.iter().any(|w| w.contains("High descendant count")),
         "Should warn about high descendants"
     );
     assert!(warnings.iter().any(|w| w.contains("15")));
@@ -691,7 +690,10 @@ fn test_warning_generation_no_warnings() {
     let thresholds = BlastRadiusThresholds::default();
     let warnings = generate_blast_radius_warnings(&resources, &thresholds);
 
-    assert!(warnings.is_empty(), "Low impact should generate no warnings");
+    assert!(
+        warnings.is_empty(),
+        "Low impact should generate no warnings"
+    );
 }
 
 #[test]
@@ -864,7 +866,10 @@ fn test_e2e_scenario_isolated_process() {
     assert!((resources.total_memory_mb - 50.0).abs() < 0.1);
 
     let warnings = generate_blast_radius_warnings(&resources, &BlastRadiusThresholds::default());
-    assert!(warnings.is_empty(), "Isolated process should have no warnings");
+    assert!(
+        warnings.is_empty(),
+        "Isolated process should have no warnings"
+    );
 }
 
 #[test]
@@ -896,9 +901,7 @@ fn test_e2e_scenario_supervisor_with_workers() {
 
     // Should warn about high descendants (>10)
     assert!(
-        warnings
-            .iter()
-            .any(|w| w.contains("High descendant count")),
+        warnings.iter().any(|w| w.contains("High descendant count")),
         "Should warn about 11 descendants exceeding threshold of 10"
     );
 
@@ -944,7 +947,10 @@ fn test_e2e_scenario_cascading_failure() {
     let warnings = generate_blast_radius_warnings(&resources, &BlastRadiusThresholds::default());
 
     // Should have all warnings
-    assert!(warnings.len() >= 3, "Cascading failure should trigger multiple warnings: descendants, memory, connections");
+    assert!(
+        warnings.len() >= 3,
+        "Cascading failure should trigger multiple warnings: descendants, memory, connections"
+    );
 }
 
 // ============================================================================

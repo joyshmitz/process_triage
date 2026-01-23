@@ -245,7 +245,9 @@ pub fn belief_to_class_scores(belief: &BeliefState) -> ClassScores {
 }
 
 /// Convert ClassScores to BeliefState.
-pub fn class_scores_to_belief(scores: &ClassScores) -> std::result::Result<BeliefState, crate::inference::belief_state::BeliefStateError> {
+pub fn class_scores_to_belief(
+    scores: &ClassScores,
+) -> std::result::Result<BeliefState, crate::inference::belief_state::BeliefStateError> {
     BeliefState::from_probs([
         scores.useful,
         scores.useful_bad,
@@ -290,18 +292,42 @@ pub fn compute_expected_loss_for_action(
 }
 
 /// Get the cost for a specific action from a state's loss row.
-fn get_action_cost(action: Action, row: &LossRow, class_name: &'static str) -> std::result::Result<f64, DecisionError> {
+fn get_action_cost(
+    action: Action,
+    row: &LossRow,
+    class_name: &'static str,
+) -> std::result::Result<f64, DecisionError> {
     match action {
         Action::Keep => Ok(row.keep),
-        Action::Renice => row.renice.ok_or(DecisionError::MissingLoss { action, class: class_name }),
-        Action::Pause | Action::Resume => row.pause.ok_or(DecisionError::MissingLoss { action, class: class_name }),
+        Action::Renice => row.renice.ok_or(DecisionError::MissingLoss {
+            action,
+            class: class_name,
+        }),
+        Action::Pause | Action::Resume => row.pause.ok_or(DecisionError::MissingLoss {
+            action,
+            class: class_name,
+        }),
         // Freeze uses Pause cost as fallback if specific freeze cost is missing (not in LossRow struct yet?)
         // Actually LossRow has pause, keep, kill, restart, renice, throttle.
         // It does NOT have freeze or quarantine. Assuming they map to pause/throttle.
-        Action::Freeze | Action::Unfreeze => row.pause.ok_or(DecisionError::MissingLoss { action, class: class_name }),
-        Action::Throttle => row.throttle.ok_or(DecisionError::MissingLoss { action, class: class_name }),
-        Action::Quarantine | Action::Unquarantine => row.throttle.ok_or(DecisionError::MissingLoss { action, class: class_name }),
-        Action::Restart => row.restart.ok_or(DecisionError::MissingLoss { action, class: class_name }),
+        Action::Freeze | Action::Unfreeze => row.pause.ok_or(DecisionError::MissingLoss {
+            action,
+            class: class_name,
+        }),
+        Action::Throttle => row.throttle.ok_or(DecisionError::MissingLoss {
+            action,
+            class: class_name,
+        }),
+        Action::Quarantine | Action::Unquarantine => {
+            row.throttle.ok_or(DecisionError::MissingLoss {
+                action,
+                class: class_name,
+            })
+        }
+        Action::Restart => row.restart.ok_or(DecisionError::MissingLoss {
+            action,
+            class: class_name,
+        }),
         Action::Kill => Ok(row.kill),
     }
 }
@@ -334,7 +360,11 @@ pub fn compute_loss_table(
     }
 
     // Sort by expected loss (ascending)
-    table.sort_by(|a, b| a.expected_loss.partial_cmp(&b.expected_loss).unwrap_or(std::cmp::Ordering::Equal));
+    table.sort_by(|a, b| {
+        a.expected_loss
+            .partial_cmp(&b.expected_loss)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     table
 }
@@ -472,7 +502,9 @@ pub fn decide_from_belief_constrained(
                 current_wealth: alpha.wealth,
                 required_spend,
             };
-            if !summary.sufficient_wealth && matches!(unconstrained_action, Action::Kill | Action::Restart) {
+            if !summary.sufficient_wealth
+                && matches!(unconstrained_action, Action::Kill | Action::Restart)
+            {
                 blocked_actions.push(unconstrained_action);
             }
             constraint_summary.alpha_investing = Some(summary);
@@ -586,39 +618,39 @@ mod tests {
         LossMatrix {
             useful: LossRow {
                 // For a USEFUL process:
-                keep: 0.0,            // Keeping is correct (no loss)
-                pause: Some(0.3),     // Pausing useful = moderate cost
-                throttle: Some(0.2),  // Throttling useful = small cost
-                renice: Some(0.1),    // Renicing useful = very small cost
-                kill: 1.0,            // Killing useful = maximum loss
-                restart: Some(0.8),   // Restarting useful = high cost
+                keep: 0.0,           // Keeping is correct (no loss)
+                pause: Some(0.3),    // Pausing useful = moderate cost
+                throttle: Some(0.2), // Throttling useful = small cost
+                renice: Some(0.1),   // Renicing useful = very small cost
+                kill: 1.0,           // Killing useful = maximum loss
+                restart: Some(0.8),  // Restarting useful = high cost
             },
             useful_bad: LossRow {
                 // For a USEFUL_BAD process (running but misbehaving):
-                keep: 0.5,            // Keeping has cost (it's misbehaving)
-                pause: Some(0.2),     // Pausing can help investigate
-                throttle: Some(0.1),  // Throttling is often good
-                renice: Some(0.1),    // Renicing can help
-                kill: 0.5,            // Killing loses value but stops harm
-                restart: Some(0.4),   // Restarting might fix it
+                keep: 0.5,           // Keeping has cost (it's misbehaving)
+                pause: Some(0.2),    // Pausing can help investigate
+                throttle: Some(0.1), // Throttling is often good
+                renice: Some(0.1),   // Renicing can help
+                kill: 0.5,           // Killing loses value but stops harm
+                restart: Some(0.4),  // Restarting might fix it
             },
             abandoned: LossRow {
                 // For an ABANDONED process:
-                keep: 1.0,            // Keeping wastes resources (high loss)
-                pause: Some(0.5),     // Pausing is okay but doesn't free resources
-                throttle: Some(0.6),  // Throttling reduces impact
-                renice: Some(0.8),    // Renicing doesn't help much
-                kill: 0.0,            // Killing is correct (no loss)
-                restart: Some(0.2),   // Restarting cleans up
+                keep: 1.0,           // Keeping wastes resources (high loss)
+                pause: Some(0.5),    // Pausing is okay but doesn't free resources
+                throttle: Some(0.6), // Throttling reduces impact
+                renice: Some(0.8),   // Renicing doesn't help much
+                kill: 0.0,           // Killing is correct (no loss)
+                restart: Some(0.2),  // Restarting cleans up
             },
             zombie: LossRow {
                 // For a ZOMBIE process:
-                keep: 1.0,            // Keeping wastes resources
-                pause: Some(0.7),     // Pausing a zombie does nothing
-                throttle: Some(0.8),  // Throttling a zombie does nothing
-                renice: Some(0.9),    // Renicing a zombie does nothing
-                kill: 0.0,            // Cleaning up zombie is correct
-                restart: Some(0.3),   // Restarting parent can help
+                keep: 1.0,           // Keeping wastes resources
+                pause: Some(0.7),    // Pausing a zombie does nothing
+                throttle: Some(0.8), // Throttling a zombie does nothing
+                renice: Some(0.9),   // Renicing a zombie does nothing
+                kill: 0.0,           // Cleaning up zombie is correct
+                restart: Some(0.3),  // Restarting parent can help
             },
         }
     }

@@ -360,8 +360,8 @@ mod cdn_pinning {
 
         // All CDN URLs should have @version pinning
         // Pattern: jsdelivr.net/npm/package@X.Y.Z/
-        let cdn_url_pattern = Regex::new(r#"cdn\.jsdelivr\.net/npm/([a-z-]+)@(\d+\.\d+\.\d+)"#)
-            .expect("valid regex");
+        let cdn_url_pattern =
+            Regex::new(r#"cdn\.jsdelivr\.net/npm/([a-z-]+)@(\d+\.\d+\.\d+)"#).expect("valid regex");
 
         let mut found_cdn_urls = false;
         for cap in cdn_url_pattern.captures_iter(&html) {
@@ -390,7 +390,10 @@ mod cdn_pinning {
             }
         }
 
-        assert!(found_cdn_urls, "HTML should contain CDN URLs with pinned versions");
+        assert!(
+            found_cdn_urls,
+            "HTML should contain CDN URLs with pinned versions"
+        );
     }
 
     #[test]
@@ -400,9 +403,8 @@ mod cdn_pinning {
         let html = generator.generate(data).unwrap();
 
         // Find all script tags with CDN src
-        let script_pattern =
-            Regex::new(r#"<script[^>]+src="[^"]*cdn\.jsdelivr\.net[^"]*"[^>]*>"#)
-                .expect("valid regex");
+        let script_pattern = Regex::new(r#"<script[^>]+src="[^"]*cdn\.jsdelivr\.net[^"]*"[^>]*>"#)
+            .expect("valid regex");
 
         for script_match in script_pattern.find_iter(&html) {
             let script_tag = script_match.as_str();
@@ -430,9 +432,8 @@ mod cdn_pinning {
         let html = generator.generate(data).unwrap();
 
         // Find all link tags with CDN href
-        let link_pattern =
-            Regex::new(r#"<link[^>]+href="[^"]*cdn\.jsdelivr\.net[^"]*"[^>]*>"#)
-                .expect("valid regex");
+        let link_pattern = Regex::new(r#"<link[^>]+href="[^"]*cdn\.jsdelivr\.net[^"]*"[^>]*>"#)
+            .expect("valid regex");
 
         for link_match in link_pattern.find_iter(&html) {
             let link_tag = link_match.as_str();
@@ -460,7 +461,8 @@ mod cdn_pinning {
         let html = generator.generate(data).unwrap();
 
         // SRI hashes should be sha384-... format
-        let sri_pattern = Regex::new(r#"integrity="(sha\d+-[A-Za-z0-9+/=]+)""#).expect("valid regex");
+        let sri_pattern =
+            Regex::new(r#"integrity="(sha\d+-[A-Za-z0-9+/=]+)""#).expect("valid regex");
 
         let mut found_sri = false;
         for cap in sri_pattern.captures_iter(&html) {
@@ -469,7 +471,9 @@ mod cdn_pinning {
 
             // Should start with sha384- (preferred) or sha256- or sha512-
             assert!(
-                hash.starts_with("sha384-") || hash.starts_with("sha256-") || hash.starts_with("sha512-"),
+                hash.starts_with("sha384-")
+                    || hash.starts_with("sha256-")
+                    || hash.starts_with("sha512-"),
                 "SRI hash must use sha256, sha384, or sha512: {}",
                 hash
             );
@@ -540,10 +544,7 @@ mod cdn_pinning {
         );
 
         let katex = config.libraries.get("katex").unwrap();
-        assert!(
-            !katex.sri.is_empty(),
-            "KaTeX library must have SRI hash"
-        );
+        assert!(!katex.sri.is_empty(), "KaTeX library must have SRI hash");
     }
 }
 
@@ -703,11 +704,7 @@ mod themes {
         ];
 
         for var in expected_vars {
-            assert!(
-                html.contains(var),
-                "HTML must define CSS variable {}",
-                var
-            );
+            assert!(html.contains(var), "HTML must define CSS variable {}", var);
         }
     }
 
@@ -783,10 +780,7 @@ mod security {
         );
 
         // No eval() calls
-        assert!(
-            !html.contains("eval("),
-            "HTML must not use eval()"
-        );
+        assert!(!html.contains("eval("), "HTML must not use eval()");
 
         // No document.write
         assert!(

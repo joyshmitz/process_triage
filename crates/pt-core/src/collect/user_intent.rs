@@ -29,11 +29,11 @@
 //! }
 //! ```
 
+#[cfg(target_os = "linux")]
+use crate::collect::parse_proc_stat as read_proc_stat;
 use crate::supervision::session::{
     detect_screen_session, detect_ssh_connection, detect_tmux_session,
 };
-#[cfg(target_os = "linux")]
-use crate::collect::parse_proc_stat as read_proc_stat;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;

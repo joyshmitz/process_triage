@@ -63,7 +63,6 @@ pub struct SchedInfo {
     pub nice: Option<i32>,
 }
 
-
 /// Memory statistics from /proc/[pid]/statm.
 ///
 /// All values are in pages (typically 4KB on x86_64).
@@ -892,7 +891,6 @@ pub fn parse_environ_content(content: &[u8]) -> Option<HashMap<String, String>> 
     Some(env)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1422,7 +1420,10 @@ nice                                         :                    0
             );
             // If it IS the test runner, it means PID collision/reuse occurred
             if comm.starts_with("collect::proc_p") {
-                crate::test_log!(WARN, "PID reuse detected in test - sleep process likely exited early");
+                crate::test_log!(
+                    WARN,
+                    "PID reuse detected in test - sleep process likely exited early"
+                );
             }
         }
 
@@ -1639,11 +1640,19 @@ nice                                         :                    0
     fn test_critical_file_run_lock_is_soft() {
         // A standard application lock file in /run/lock should be treated as a generic AppLock
         let path = "/run/lock/my-custom-app.lock";
-        
+
         let cf = detect_critical_file(123, path).expect("Should detect as critical file");
-        
+
         // Should be an AppLock (Soft), not SystemPackageLock (Hard)
-        assert_eq!(cf.category, CriticalFileCategory::AppLock, "Should be classified as generic AppLock");
-        assert_eq!(cf.strength, DetectionStrength::Soft, "Should be a Soft block");
+        assert_eq!(
+            cf.category,
+            CriticalFileCategory::AppLock,
+            "Should be classified as generic AppLock"
+        );
+        assert_eq!(
+            cf.strength,
+            DetectionStrength::Soft,
+            "Should be a Soft block"
+        );
     }
 }

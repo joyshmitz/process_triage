@@ -283,7 +283,8 @@ impl HawkesDetector {
 
         // Compute final log-likelihood
         let (_, intensities) = self.e_step(&events, mu, alpha, beta);
-        let log_likelihood = self.log_likelihood(&events, window_end, mu, alpha, beta, &intensities);
+        let log_likelihood =
+            self.log_likelihood(&events, window_end, mu, alpha, beta, &intensities);
 
         let branching_ratio = if beta > 0.0 { alpha / beta } else { 0.0 };
 

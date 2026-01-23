@@ -55,17 +55,17 @@ pub fn available_schemas() -> Vec<(&'static str, &'static str)> {
         ("ProcessState", "Unix process state (R, S, D, Z, T, I, X)"),
         ("ProcessRecord", "Single process record from scan"),
         ("ScanMetadata", "Metadata about a scan operation"),
-        ("ScanResult", "Complete scan result with processes and metadata"),
+        (
+            "ScanResult",
+            "Complete scan result with processes and metadata",
+        ),
         // Decision types
-        ("Action", "Available process actions (keep, pause, kill, etc.)"),
         (
-            "DisabledAction",
-            "Action that was disabled with reason",
+            "Action",
+            "Available process actions (keep, pause, kill, etc.)",
         ),
-        (
-            "ActionFeasibility",
-            "Feasibility status for an action",
-        ),
+        ("DisabledAction", "Action that was disabled with reason"),
+        ("ActionFeasibility", "Feasibility status for an action"),
         ("ExpectedLoss", "Expected loss for a single action"),
         ("SprtBoundary", "SPRT decision boundary parameters"),
         (
@@ -77,24 +77,24 @@ pub fn available_schemas() -> Vec<(&'static str, &'static str)> {
             "Complete decision outcome with action and rationale",
         ),
         // Risk-sensitive types
-        ("CvarLoss", "CVaR computation result for risk-sensitive control"),
         (
-            "RiskSensitiveOutcome",
-            "Risk-sensitive decision outcome",
+            "CvarLoss",
+            "CVaR computation result for risk-sensitive control",
         ),
+        ("RiskSensitiveOutcome", "Risk-sensitive decision outcome"),
         ("DroLoss", "DRO computation result"),
         ("DroOutcome", "Distributionally robust optimization outcome"),
         // Causal intervention types
-        ("ProcessClass", "Process classification (useful, abandoned, zombie)"),
+        (
+            "ProcessClass",
+            "Process classification (useful, abandoned, zombie)",
+        ),
         (
             "RecoveryExpectation",
             "Expected recovery probability for an action",
         ),
         ("RecoveryTable", "Recovery expectations for all actions"),
-        (
-            "InterventionOutcome",
-            "Outcome of a causal intervention",
-        ),
+        ("InterventionOutcome", "Outcome of a causal intervention"),
         // Plan types
         ("Plan", "Complete action plan with staged actions"),
         ("PlanAction", "Single action in a plan"),
@@ -103,7 +103,10 @@ pub fn available_schemas() -> Vec<(&'static str, &'static str)> {
         ("PreCheck", "Pre-action check specification"),
         ("ActionRouting", "Routing for unkillable processes"),
         ("ActionConfidence", "Confidence level for an action"),
-        ("ActionRationale", "Rationale explaining why an action was chosen"),
+        (
+            "ActionRationale",
+            "Rationale explaining why an action was chosen",
+        ),
         ("ActionHook", "Pre/post action hooks"),
         (
             "DStateDiagnostics",
@@ -200,11 +203,7 @@ mod tests {
         // Every listed schema should generate successfully
         for (name, _desc) in available_schemas() {
             let schema = generate_schema(name);
-            assert!(
-                schema.is_some(),
-                "Schema for '{}' should generate",
-                name
-            );
+            assert!(schema.is_some(), "Schema for '{}' should generate", name);
         }
     }
 

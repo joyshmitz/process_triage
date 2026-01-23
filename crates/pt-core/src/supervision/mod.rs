@@ -49,13 +49,13 @@ mod environ;
 mod ipc;
 mod nohup;
 mod orphan;
+pub mod pattern_learning;
+pub mod pattern_persistence;
 pub mod session;
 pub mod signature;
 #[cfg(test)]
 mod supervision_tests;
 mod types;
-pub mod pattern_persistence;
-pub mod pattern_learning;
 
 pub use ancestry::{
     analyze_supervision, analyze_supervision_batch, AncestryAnalyzer, AncestryConfig,
@@ -84,6 +84,15 @@ pub use orphan::{
     detect_container, detect_unexpected_reparenting, is_orphaned, NohupSummary, OrphanAnalyzer,
     OrphanError, OrphanResult, ReparentingReason, SupervisionSummary,
 };
+pub use pattern_learning::{
+    CommandNormalizer, DecisionAction, LearningError, PatternCandidate, PatternLearner,
+    PatternObservation, SpecificityLevel,
+};
+pub use pattern_persistence::{
+    migrate_schema, AllPatternStats, ConfidenceSnapshot, ConflictResolution, DisabledPatterns,
+    ImportConflict, ImportResult, PatternLibrary, PatternLifecycle, PatternSource, PatternStats,
+    PersistedPattern, PersistedSchema, PersistenceError, SchemaMetadata,
+};
 pub use session::{
     check_session_protection, is_in_protected_session, ScreenInfo, SessionAnalyzer, SessionConfig,
     SessionError, SessionEvidence, SessionProtectionType, SessionResult, SshConnectionInfo,
@@ -92,15 +101,6 @@ pub use session::{
 pub use signature::{
     SignatureDatabase, SignatureError, SignatureMetadata, SignaturePatterns, SignatureSchema,
     SupervisorSignature, SCHEMA_VERSION,
-};
-pub use pattern_persistence::{
-    AllPatternStats, ConflictResolution, ConfidenceSnapshot, DisabledPatterns, ImportConflict,
-    ImportResult, PatternLibrary, PatternLifecycle, PatternSource, PatternStats, PersistedPattern,
-    PersistedSchema, PersistenceError, SchemaMetadata, migrate_schema,
-};
-pub use pattern_learning::{
-    CommandNormalizer, DecisionAction, LearningError, PatternCandidate, PatternLearner,
-    PatternObservation, SpecificityLevel,
 };
 pub use types::{
     AncestryEntry, EvidenceType, SupervisionEvidence, SupervisionResult, SupervisorCategory,

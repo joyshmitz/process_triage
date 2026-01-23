@@ -966,8 +966,7 @@ mod tests {
 
     #[test]
     fn test_parse_csrutil_output_custom() {
-        let output =
-            "System Integrity Protection status: enabled (Custom Configuration).";
+        let output = "System Integrity Protection status: enabled (Custom Configuration).";
         assert_eq!(parse_csrutil_output(output), SipStatus::CustomConfiguration);
     }
 

@@ -284,11 +284,10 @@ impl SlidingWindowRateLimiter {
             return Ok(PersistentState::default());
         }
 
-        let file =
-            File::open(path).map_err(|e| RateLimitError::LoadState(e.to_string()))?;
+        let file = File::open(path).map_err(|e| RateLimitError::LoadState(e.to_string()))?;
         let reader = BufReader::new(file);
-        let mut state: PersistentState =
-            serde_json::from_reader(reader).map_err(|e| RateLimitError::LoadState(e.to_string()))?;
+        let mut state: PersistentState = serde_json::from_reader(reader)
+            .map_err(|e| RateLimitError::LoadState(e.to_string()))?;
 
         // Prune old entries on load
         let now = current_unix_timestamp();
@@ -323,9 +322,10 @@ impl SlidingWindowRateLimiter {
     /// If `force` is true, the kill is allowed regardless of limits (for emergency override),
     /// but warnings are still generated.
     pub fn check(&self, force: bool) -> Result<RateLimitResult, RateLimitError> {
-        let state = self.state.read().map_err(|e| {
-            RateLimitError::LoadState(format!("lock poisoned: {}", e))
-        })?;
+        let state = self
+            .state
+            .read()
+            .map_err(|e| RateLimitError::LoadState(format!("lock poisoned: {}", e)))?;
 
         self.check_internal(&state, force, None)
     }
@@ -336,9 +336,10 @@ impl SlidingWindowRateLimiter {
         force: bool,
         override_per_run: Option<u32>,
     ) -> Result<RateLimitResult, RateLimitError> {
-        let state = self.state.read().map_err(|e| {
-            RateLimitError::LoadState(format!("lock poisoned: {}", e))
-        })?;
+        let state = self
+            .state
+            .read()
+            .map_err(|e| RateLimitError::LoadState(format!("lock poisoned: {}", e)))?;
 
         self.check_internal(&state, force, override_per_run)
     }
@@ -360,7 +361,11 @@ impl SlidingWindowRateLimiter {
         // Check each limit (starting with strictest window)
         let limits_to_check: Vec<(RateLimitWindow, u32, Option<u32>)> = vec![
             (RateLimitWindow::Run, counts.run, Some(effective_per_run)),
-            (RateLimitWindow::Minute, counts.minute, self.config.max_per_minute),
+            (
+                RateLimitWindow::Minute,
+                counts.minute,
+                self.config.max_per_minute,
+            ),
             (RateLimitWindow::Hour, counts.hour, self.config.max_per_hour),
             (RateLimitWindow::Day, counts.day, self.config.max_per_day),
         ];
@@ -417,9 +422,10 @@ impl SlidingWindowRateLimiter {
     ///
     /// Returns the updated counts after recording.
     pub fn record_kill(&self) -> Result<RateLimitCounts, RateLimitError> {
-        let mut state = self.state.write().map_err(|e| {
-            RateLimitError::SaveState(format!("lock poisoned: {}", e))
-        })?;
+        let mut state = self
+            .state
+            .write()
+            .map_err(|e| RateLimitError::SaveState(format!("lock poisoned: {}", e)))?;
 
         let now = current_unix_timestamp();
 
@@ -446,9 +452,10 @@ impl SlidingWindowRateLimiter {
         force: bool,
         override_per_run: Option<u32>,
     ) -> Result<RateLimitResult, RateLimitError> {
-        let mut state = self.state.write().map_err(|e| {
-            RateLimitError::SaveState(format!("lock poisoned: {}", e))
-        })?;
+        let mut state = self
+            .state
+            .write()
+            .map_err(|e| RateLimitError::SaveState(format!("lock poisoned: {}", e)))?;
 
         let result = self.check_internal(&state, force, override_per_run)?;
 
@@ -472,9 +479,10 @@ impl SlidingWindowRateLimiter {
 
     /// Get current counts without modifying state.
     pub fn get_counts(&self) -> Result<RateLimitCounts, RateLimitError> {
-        let state = self.state.read().map_err(|e| {
-            RateLimitError::LoadState(format!("lock poisoned: {}", e))
-        })?;
+        let state = self
+            .state
+            .read()
+            .map_err(|e| RateLimitError::LoadState(format!("lock poisoned: {}", e)))?;
 
         let now = current_unix_timestamp();
         Ok(self.get_counts_internal(&state, now))
@@ -491,9 +499,10 @@ impl SlidingWindowRateLimiter {
 
     /// Reset the per-run counter (call at start of new run).
     pub fn reset_run_counter(&self) -> Result<(), RateLimitError> {
-        let mut state = self.state.write().map_err(|e| {
-            RateLimitError::SaveState(format!("lock poisoned: {}", e))
-        })?;
+        let mut state = self
+            .state
+            .write()
+            .map_err(|e| RateLimitError::SaveState(format!("lock poisoned: {}", e)))?;
 
         state.kills_this_run = 0;
         Ok(())
@@ -501,9 +510,10 @@ impl SlidingWindowRateLimiter {
 
     /// Get current per-run kill count.
     pub fn current_run_count(&self) -> Result<u32, RateLimitError> {
-        let state = self.state.read().map_err(|e| {
-            RateLimitError::LoadState(format!("lock poisoned: {}", e))
-        })?;
+        let state = self
+            .state
+            .read()
+            .map_err(|e| RateLimitError::LoadState(format!("lock poisoned: {}", e)))?;
 
         Ok(state.kills_this_run)
     }

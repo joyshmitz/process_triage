@@ -89,7 +89,15 @@ mod robot_mode {
     fn test_robot_mode_agent_plan() {
         // Use --sample-size to limit inference for faster tests
         let output = pt_core()
-            .args(["--robot", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--robot",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes())
             .get_output()
@@ -134,7 +142,15 @@ mod shadow_mode {
         // It should complete successfully without making any changes
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--shadow", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--shadow",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes());
     }
@@ -143,7 +159,15 @@ mod shadow_mode {
     fn test_shadow_mode_produces_plan() {
         // Use --sample-size to limit inference for faster tests
         let output = pt_core()
-            .args(["--shadow", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--shadow",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes())
             .get_output()
@@ -176,7 +200,15 @@ mod shadow_mode {
         // Shadow mode should log what it would do (stderr contains event logs)
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--shadow", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--shadow",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes())
             // Stderr should contain structured log events
@@ -196,7 +228,15 @@ mod dry_run_mode {
         // Dry run computes plan but doesn't execute
         // Use --sample-size to limit inference for faster tests
         let output = pt_core()
-            .args(["--dry-run", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--dry-run",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes())
             .get_output()
@@ -213,7 +253,15 @@ mod dry_run_mode {
         // Run dry-run, then verify we can still run normal commands
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--dry-run", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--dry-run",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes());
 
@@ -253,7 +301,16 @@ mod combined_modes {
         // Robot + shadow: non-interactive, full pipeline, no execution
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--robot", "--shadow", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--robot",
+                "--shadow",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes());
     }
@@ -263,7 +320,16 @@ mod combined_modes {
         // Robot + dry-run: non-interactive, plan only
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--robot", "--dry-run", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--robot",
+                "--dry-run",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes());
     }
@@ -273,7 +339,16 @@ mod combined_modes {
         // Shadow + dry-run: both modes together
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--shadow", "--dry-run", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--shadow",
+                "--dry-run",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .assert()
             .code(plan_exit_codes());
     }
@@ -322,7 +397,15 @@ mod stdin_tty_handling {
         // Agent plan with closed stdin should work in robot mode
         // Use --sample-size to limit inference for faster tests
         pt_core()
-            .args(["--robot", "--format", "json", "agent", "plan", "--sample-size", "50"])
+            .args([
+                "--robot",
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--sample-size",
+                "50",
+            ])
             .write_stdin("")
             .timeout(Duration::from_secs(120))
             .assert()

@@ -255,7 +255,7 @@ impl ActionLock {
             // LOCK_EX = Exclusive lock
             // LOCK_NB = Non-blocking (fail if held)
             let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
-            
+
             if result != 0 {
                 let err = std::io::Error::last_os_error();
                 if err.kind() == std::io::ErrorKind::WouldBlock {
@@ -267,16 +267,14 @@ impl ActionLock {
 
         // On non-unix, we just hold the file handle (basic locking)
         // Ideally we'd use a crate like fs2 for cross-platform, but we stick to libc/std
-        
+
         // Truncate and write our PID
         file.set_len(0)?;
         let mut writer = &file;
         let _ = writer.write_all(format!("{}", std::process::id()).as_bytes());
         let _ = writer.flush();
 
-        Ok(Self {
-            file,
-        })
+        Ok(Self { file })
     }
 }
 
@@ -286,7 +284,9 @@ impl Drop for ActionLock {
         {
             use std::os::unix::io::AsRawFd;
             // Best effort unlock
-            unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN); }
+            unsafe {
+                libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+            }
         }
         // Do NOT remove the lock file. Removing it introduces a race condition
         // where a waiting process might acquire a lock on a file descriptor

@@ -143,9 +143,7 @@ impl FieldSelector {
                         if self.includes(&k) {
                             // Recursively filter nested objects
                             let filtered_v = match v {
-                                Value::Object(inner) => {
-                                    self.filter_nested_object(&k, inner)
-                                }
+                                Value::Object(inner) => self.filter_nested_object(&k, inner),
                                 other => other,
                             };
                             Some((k, filtered_v))
@@ -170,7 +168,10 @@ impl FieldSelector {
             .filter_map(|(k, v)| {
                 let full_path = format!("{}.{}", parent, k);
                 // Include if parent is fully included or specific nested field is included
-                if self.includes(&full_path) || self.fields.is_empty() || matches!(self.preset, Some(FieldPreset::Full)) {
+                if self.includes(&full_path)
+                    || self.fields.is_empty()
+                    || matches!(self.preset, Some(FieldPreset::Full))
+                {
                     Some((k, v))
                 } else {
                     None
@@ -392,7 +393,8 @@ pub fn truncate_to_tokens(
                     }
 
                     if best_count < arr_len {
-                        let truncated_arr: Vec<Value> = arr.iter().take(best_count).cloned().collect();
+                        let truncated_arr: Vec<Value> =
+                            arr.iter().take(best_count).cloned().collect();
                         let remaining = arr_len - best_count;
                         let continuation = format!("{}:{}:{}", array_field, best_count, arr_len);
 

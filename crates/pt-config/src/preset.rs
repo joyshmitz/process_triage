@@ -61,18 +61,12 @@ impl PresetName {
     /// Get a description of the preset.
     pub fn description(&self) -> &'static str {
         match self {
-            PresetName::Developer => {
-                "Aggressive detection, lower thresholds, focus on dev tools"
-            }
+            PresetName::Developer => "Aggressive detection, lower thresholds, focus on dev tools",
             PresetName::Server => {
                 "Conservative detection, strict protection, recommended for production"
             }
-            PresetName::Ci => {
-                "Headless operation, JSON output, specific exit codes for automation"
-            }
-            PresetName::Paranoid => {
-                "Maximum safety, extra confirmation, detailed audit logging"
-            }
+            PresetName::Ci => "Headless operation, JSON output, specific exit codes for automation",
+            PresetName::Paranoid => "Maximum safety, extra confirmation, detailed audit logging",
         }
     }
 }
@@ -147,11 +141,15 @@ fn developer_preset() -> Policy {
     Policy {
         schema_version: "1.0.0".to_string(),
         policy_id: Some("preset:developer".to_string()),
-        description: Some("Developer preset: aggressive detection for dev environments".to_string()),
+        description: Some(
+            "Developer preset: aggressive detection for dev environments".to_string(),
+        ),
         created_at: None,
         updated_at: None,
         inherits: Vec::new(),
-        notes: Some("Optimized for catching stuck test runners, dev servers, and build tools".to_string()),
+        notes: Some(
+            "Optimized for catching stuck test runners, dev servers, and build tools".to_string(),
+        ),
 
         loss_matrix: LossMatrix {
             // Lower penalty for killing useful processes (accept more false positives)
@@ -220,7 +218,7 @@ fn developer_preset() -> Policy {
         },
 
         robot_mode: RobotMode {
-            enabled: false, // Interactive by default
+            enabled: false,      // Interactive by default
             min_posterior: 0.90, // Lower threshold
             min_confidence: Some(ConfidenceLevel::Medium),
             max_blast_radius_mb: 8192.0, // Higher limit
@@ -271,11 +269,15 @@ fn server_preset() -> Policy {
     Policy {
         schema_version: "1.0.0".to_string(),
         policy_id: Some("preset:server".to_string()),
-        description: Some("Server preset: conservative detection for production environments".to_string()),
+        description: Some(
+            "Server preset: conservative detection for production environments".to_string(),
+        ),
         created_at: None,
         updated_at: None,
         inherits: Vec::new(),
-        notes: Some("Recommended for production servers - prioritizes safety over cleanup".to_string()),
+        notes: Some(
+            "Recommended for production servers - prioritizes safety over cleanup".to_string(),
+        ),
 
         loss_matrix: LossMatrix {
             // Very high penalty for killing useful processes
@@ -429,8 +431,8 @@ fn server_preset() -> Policy {
 
         fdr_control: FdrControl {
             enabled: true,
-            method: FdrMethod::By, // Benjamini-Yekutieli (stricter)
-            alpha: 0.01, // Very low FDR tolerance (1%)
+            method: FdrMethod::By,   // Benjamini-Yekutieli (stricter)
+            alpha: 0.01,             // Very low FDR tolerance (1%)
             min_candidates: Some(3), // Require multiple candidates
             lfdr_null: Vec::new(),
             alpha_investing: Some(AlphaInvesting {
@@ -486,7 +488,10 @@ fn ci_preset() -> Policy {
         created_at: None,
         updated_at: None,
         inherits: Vec::new(),
-        notes: Some("Designed for CI/CD automation - no interactive prompts, specific exit codes".to_string()),
+        notes: Some(
+            "Designed for CI/CD automation - no interactive prompts, specific exit codes"
+                .to_string(),
+        ),
 
         loss_matrix: LossMatrix {
             // Conservative - CI should not break builds
@@ -579,10 +584,7 @@ fn ci_preset() -> Policy {
             max_kills: 10,
             require_known_signature: false,
             require_policy_snapshot: None,
-            allow_categories: vec![
-                "test_runner".to_string(),
-                "build_tool".to_string(),
-            ],
+            allow_categories: vec!["test_runner".to_string(), "build_tool".to_string()],
             exclude_categories: vec!["ci_runner".to_string()],
             require_human_for_supervised: false, // Fully automated
         },
@@ -802,14 +804,12 @@ fn paranoid_preset() -> Policy {
                     notes: Some("PipeWire".to_string()),
                 },
             ],
-            force_review_patterns: vec![
-                PatternEntry {
-                    pattern: ".*".to_string(), // Force review for ALL processes
-                    kind: PatternKind::Regex,
-                    case_insensitive: true,
-                    notes: Some("Force review all".to_string()),
-                },
-            ],
+            force_review_patterns: vec![PatternEntry {
+                pattern: ".*".to_string(), // Force review for ALL processes
+                kind: PatternKind::Regex,
+                case_insensitive: true,
+                notes: Some("Force review all".to_string()),
+            }],
             protected_users: vec!["root".to_string()],
             protected_groups: Vec::new(),
             protected_categories: vec![
@@ -831,11 +831,11 @@ fn paranoid_preset() -> Policy {
         },
 
         robot_mode: RobotMode {
-            enabled: false, // Robot mode OFF
+            enabled: false,       // Robot mode OFF
             min_posterior: 0.999, // Extremely high confidence required
             min_confidence: Some(ConfidenceLevel::High),
             max_blast_radius_mb: 512.0, // Very conservative
-            max_kills: 1, // Only one at a time
+            max_kills: 1,               // Only one at a time
             require_known_signature: true,
             require_policy_snapshot: Some(true),
             allow_categories: Vec::new(),
@@ -850,8 +850,8 @@ fn paranoid_preset() -> Policy {
 
         fdr_control: FdrControl {
             enabled: true,
-            method: FdrMethod::By, // Strictest method
-            alpha: 0.001, // Extremely low FDR tolerance (0.1%)
+            method: FdrMethod::By,   // Strictest method
+            alpha: 0.001,            // Extremely low FDR tolerance (0.1%)
             min_candidates: Some(5), // Require many candidates before acting
             lfdr_null: Vec::new(),
             alpha_investing: Some(AlphaInvesting {
@@ -886,7 +886,7 @@ fn paranoid_preset() -> Policy {
 
         decision_time_bound: DecisionTimeBound {
             enabled: true,
-            min_seconds: 300, // Wait at least 5 minutes
+            min_seconds: 300,  // Wait at least 5 minutes
             max_seconds: 1800, // Wait up to 30 minutes
             voi_decay_half_life_seconds: 600,
             voi_floor: 0.05,
@@ -938,7 +938,10 @@ mod tests {
 
     #[test]
     fn test_preset_name_parsing() {
-        assert_eq!(PresetName::from_str("developer"), Some(PresetName::Developer));
+        assert_eq!(
+            PresetName::from_str("developer"),
+            Some(PresetName::Developer)
+        );
         assert_eq!(PresetName::from_str("dev"), Some(PresetName::Developer));
         assert_eq!(PresetName::from_str("server"), Some(PresetName::Server));
         assert_eq!(PresetName::from_str("prod"), Some(PresetName::Server));

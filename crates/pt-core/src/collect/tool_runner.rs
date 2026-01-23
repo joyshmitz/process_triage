@@ -356,7 +356,7 @@ impl ToolRunner {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .spawn() 
+            .spawn()
         {
             Ok(child) => child,
             Err(e) => {
@@ -381,9 +381,11 @@ impl ToolRunner {
         // Currently it has increased by allocated_ms.
         // So we add (duration_ms - allocated_ms).
         if duration_ms < allocated_ms {
-            self.used_ms.fetch_sub(allocated_ms - duration_ms, Ordering::SeqCst);
+            self.used_ms
+                .fetch_sub(allocated_ms - duration_ms, Ordering::SeqCst);
         } else {
-            self.used_ms.fetch_add(duration_ms - allocated_ms, Ordering::SeqCst);
+            self.used_ms
+                .fetch_add(duration_ms - allocated_ms, Ordering::SeqCst);
         }
 
         info!(
@@ -443,10 +445,12 @@ impl ToolRunner {
 
                     handles
                         .into_iter()
-                        .map(|h| h.join().unwrap_or_else(|_| {
-                            error!("tool execution thread panicked");
-                            Err(ToolError::SpawnFailed("thread panicked".to_string()))
-                        }))
+                        .map(|h| {
+                            h.join().unwrap_or_else(|_| {
+                                error!("tool execution thread panicked");
+                                Err(ToolError::SpawnFailed("thread panicked".to_string()))
+                            })
+                        })
                         .collect::<Vec<_>>()
                 })
             })

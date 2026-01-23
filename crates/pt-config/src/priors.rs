@@ -437,8 +437,7 @@ impl Default for Priors {
     fn default() -> Self {
         // Parse the embedded default priors JSON
         // This should never fail since the JSON is embedded at compile time
-        Self::parse_json(DEFAULT_PRIORS_JSON)
-            .expect("Embedded default priors JSON is invalid")
+        Self::parse_json(DEFAULT_PRIORS_JSON).expect("Embedded default priors JSON is invalid")
     }
 }
 
