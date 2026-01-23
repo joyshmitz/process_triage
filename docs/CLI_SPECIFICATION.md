@@ -217,20 +217,21 @@ pt-core agent plan [OPTIONS]
 | `--signatures <path>` | Load additional signatures |
 | `--community-signatures` | Include community signatures |
 | `--min-age <seconds>` | Minimum process age filter |
+| `--min-posterior <N>` | Minimum posterior probability threshold (default: 0.7). Alias: `--threshold` |
 | `--limit <N>` | Limit candidate count in output |
 | `--only kill\|review\|all` | Filter by recommendation category |
 | `--format <format>` | Output format |
 
-**Differential Mode:**
+**Differential Mode:** *(Coming in v1.2 - flags are parsed but produce a warning)*
 
 | Option | Description |
 |--------|-------------|
 | `--since <session-id>` | Compare against prior session |
 | `--since-time <ts\|dur>` | Compare against time (e.g., `2h`) |
 
-Differential output includes: `new`, `worsened`, `resolved`, `persistent`
+Differential output will include: `new`, `worsened`, `resolved`, `persistent`
 
-**Goal-Oriented Mode:**
+**Goal-Oriented Mode:** *(Coming in v1.2 - flags are parsed but produce a warning)*
 
 | Option | Description |
 |--------|-------------|
@@ -239,11 +240,13 @@ Differential output includes: `new`, `worsened`, `resolved`, `persistent`
 | `--goal "free port <port>"` | Target port recovery |
 | `--goal "free <N> processes"` | Reduce process count |
 
-**Predictive Mode:**
+**Predictive Mode:** *(Coming in v1.2 - flags are parsed but produce a warning)*
 
 | Option | Description |
 |--------|-------------|
 | `--include-predictions` | Add trajectory analysis |
+
+> **Note:** When any of the above future flags are used, the plan is still generated normally but includes a `stub_flags` section in the output warning that the flags are parsed but not yet functional.
 
 ---
 
@@ -312,22 +315,28 @@ pt-core agent apply --session <id> [OPTIONS]
 
 ### `pt-core agent sessions`
 
-List sessions.
+List sessions, or show details for a specific session.
 
 ```
 pt-core agent sessions [OPTIONS]
+pt-core agent sessions --session <id> [--detail]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--limit <N>` | Limit results |
+| `--session <id>` | Show details for specific session (consolidates `show`/`status`). Aliases: `--status`, `--show` |
+| `--detail` | Include full session detail (plan contents, actions taken) |
+| `--limit <N>` | Limit results in list mode |
+| `--state <state>` | Filter by session state |
 | `--format json\|md` | Output format |
 | `--cleanup` | Remove old sessions |
-| `--older-than <duration>` | For cleanup: age threshold |
+| `--older-than <duration>` | For cleanup: age threshold (default: 7d) |
 
 ---
 
-### `pt-core agent show`
+### `pt-core agent show` *(Deprecated)*
+
+> **Note**: This command is deprecated. Use `pt-core agent sessions --session <id>` instead.
 
 Show session details.
 
@@ -341,7 +350,9 @@ pt-core agent show --session <id> [OPTIONS]
 
 ---
 
-### `pt-core agent status`
+### `pt-core agent status` *(Deprecated)*
+
+> **Note**: This command is deprecated. Use `pt-core agent sessions --session <id>` instead.
 
 Show session status (applied vs pending actions).
 
@@ -379,8 +390,9 @@ pt-core agent verify --session <id> [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--wait <seconds>` | Wait for outcomes to stabilize |
-| `--check-respawn` | Check for respawned processes |
+| `--session <id>` | Session ID (required) |
+| `--wait <seconds>` | Wait for processes to terminate with timeout (default: 0 = no wait) |
+| `--check-respawn` | Check if killed processes have respawned (matches command signatures) |
 | `--format json\|md` | Output format |
 
 **Action Outcome States:**
@@ -402,32 +414,38 @@ pt-core agent verify --session <id> [OPTIONS]
 Before/after comparison.
 
 ```
-pt-core agent diff --session <id> [OPTIONS]
+pt-core agent diff --base <id> [OPTIONS]
 pt-core agent diff --before <id> --after <id> [OPTIONS]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--session <id>` | Compare before/after for session |
-| `--before <id>` | Explicit before snapshot |
-| `--after <id>` | Explicit after snapshot |
-| `--focus pids\|resources\|goals` | What to emphasize |
+| `--base <id>` | Base session (the "before" snapshot). Aliases: `--session`, `--since`, `--before` |
+| `--compare <id>` | Compare session (the "after" snapshot, default: latest). Aliases: `--vs`, `--after` |
+| `--focus <type>` | Focus output on specific changes: `new`, `removed`, `changed`, `improved`, `persistent`, `all` (default: `all`) |
 | `--format json\|md\|prose` | Output format |
+
+Output includes: `new` (processes appearing), `worsened`, `improved`, `resolved` (processes gone), `persistent` (suspicious across sessions).
 
 ---
 
 ### `pt-core agent export`
 
-Export session bundle.
+Export session bundle. Agent-friendly alias for `pt-core bundle create`.
 
 ```
-pt-core agent export --session <id> --out <path> [OPTIONS]
+pt-core agent export [OPTIONS]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--profile minimal\|safe\|forensic` | Redaction level |
-| `--encrypt` | Encrypt bundle |
+| `--session <id>` | Session to export (default: latest) |
+| `--out <path>` | Output path for bundle |
+| `--profile minimal\|safe\|forensic` | Redaction level (default: safe) |
+| `--include-telemetry` | Include raw telemetry data |
+| `--include-dumps` | Include full process dumps |
+| `--encrypt` | Encrypt bundle with passphrase |
+| `--passphrase <text>` | Passphrase for encryption (or use `PT_BUNDLE_PASSPHRASE`) |
 
 ---
 
@@ -498,9 +516,10 @@ pt-core agent snapshot [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--top <N>` | Processes per category (default: 10) |
-| `--include-env` | Include environment summaries |
-| `--include-network` | Include network connections |
+| `--label <text>` | Label for the snapshot |
+| `--top <N>` | Limit to top N processes by resource usage (CPU+memory) |
+| `--include-env` | Include environment variable keys (redacted values) |
+| `--include-network` | Include network socket counts per process |
 | `--format json\|md\|summary` | Output format |
 
 Returns: system state, process census, resource hogs, anomalies, capabilities, session_id.

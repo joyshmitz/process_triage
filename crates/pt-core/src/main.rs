@@ -452,7 +452,7 @@ enum AgentCommands {
     Snapshot(AgentSnapshotArgs),
 
     /// Dump current capabilities manifest
-    Capabilities,
+    Capabilities(AgentCapabilitiesArgs),
 
     /// List and manage sessions
     Sessions(AgentSessionsArgs),
@@ -478,6 +478,40 @@ enum AgentCommands {
 
     /// Initialize pt for installed coding agents
     Init(AgentInitArgs),
+
+    /// Export session bundle (alias for bundle create)
+    Export(AgentExportArgs),
+}
+
+#[derive(Args, Debug)]
+struct AgentExportArgs {
+    /// Session ID to export (default: latest)
+    #[arg(long)]
+    session: Option<String>,
+
+    /// Output path for the bundle
+    #[arg(short, long)]
+    out: Option<String>,
+
+    /// Export profile: minimal, safe (default), forensic
+    #[arg(long, default_value = "safe")]
+    profile: String,
+
+    /// Include raw telemetry data
+    #[arg(long)]
+    include_telemetry: bool,
+
+    /// Include full process dumps
+    #[arg(long)]
+    include_dumps: bool,
+
+    /// Encrypt the bundle with a passphrase
+    #[arg(long)]
+    encrypt: bool,
+
+    /// Passphrase for bundle encryption (or use PT_BUNDLE_PASSPHRASE)
+    #[arg(long)]
+    passphrase: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -520,9 +554,9 @@ struct AgentPlanArgs {
     #[arg(long, default_value = "20")]
     max_candidates: u32,
 
-    /// Minimum posterior threshold
-    #[arg(long, default_value = "0.7")]
-    threshold: f64,
+    /// Minimum posterior probability threshold for candidate selection
+    #[arg(long = "min-posterior", visible_alias = "threshold", default_value = "0.7")]
+    min_posterior: f64,
 
     /// Filter by recommendation (kill, review, all)
     #[arg(long, default_value = "all")]
@@ -547,6 +581,26 @@ struct AgentPlanArgs {
     /// Limit inference to a random sample of N processes (for testing)
     #[arg(long)]
     sample_size: Option<usize>,
+
+    // === Future flags (stub implementation for API surface discovery) ===
+    // These are parsed but not yet functional. Using them will generate a warning.
+    // Full implementation is tracked in separate beads.
+
+    /// Compare against prior session for differential analysis (coming in v1.2)
+    #[arg(long, help = "Compare against prior session (coming in v1.2)")]
+    since: Option<String>,
+
+    /// Compare against time for temporal differential analysis (coming in v1.2)
+    #[arg(long, help = "Compare against time, e.g. '2h' or ISO timestamp (coming in v1.2)")]
+    since_time: Option<String>,
+
+    /// Resource recovery goal for goal-oriented optimization (coming in v1.2)
+    #[arg(long, help = "Resource recovery goal, e.g. 'free 4GB RAM' (coming in v1.2)")]
+    goal: Option<String>,
+
+    /// Include trajectory prediction analysis in output (coming in v1.2)
+    #[arg(long, help = "Add trajectory analysis to output (coming in v1.2)")]
+    include_predictions: bool,
 }
 
 #[derive(Args, Debug)]
@@ -665,17 +719,29 @@ struct AgentVerifyArgs {
     /// Session ID (required)
     #[arg(long)]
     session: String,
+
+    /// Wait for process termination with timeout in seconds (default: 0 = no wait)
+    #[arg(long, default_value = "0")]
+    wait: u64,
+
+    /// Check if killed processes have respawned
+    #[arg(long)]
+    check_respawn: bool,
 }
 
 #[derive(Args, Debug)]
 struct AgentDiffArgs {
-    /// Base session ID
-    #[arg(long, alias = "session", alias = "since")]
+    /// Base session ID (the "before" snapshot)
+    #[arg(long, alias = "session", alias = "since", alias = "before")]
     base: String,
 
-    /// Compare session ID (default: current)
-    #[arg(long, alias = "vs")]
+    /// Compare session ID (the "after" snapshot, default: current)
+    #[arg(long, alias = "vs", alias = "after")]
     compare: Option<String>,
+
+    /// Focus diff output on specific changes: new, removed, changed, resources, all (default: all)
+    #[arg(long, default_value = "all")]
+    focus: String,
 }
 
 #[derive(Args, Debug)]
@@ -683,15 +749,38 @@ struct AgentSnapshotArgs {
     /// Label for the snapshot
     #[arg(long)]
     label: Option<String>,
+
+    /// Limit to top N processes by resource usage (CPU+memory)
+    #[arg(long)]
+    top: Option<usize>,
+
+    /// Include environment variables in snapshot (redacted by default)
+    #[arg(long)]
+    include_env: bool,
+
+    /// Include network connection information
+    #[arg(long)]
+    include_network: bool,
+}
+
+#[derive(Args, Debug)]
+struct AgentCapabilitiesArgs {
+    /// Check if a specific action type is supported (e.g., "sigterm", "sigkill", "strace")
+    #[arg(long)]
+    check_action: Option<String>,
 }
 
 #[derive(Args, Debug)]
 struct AgentSessionsArgs {
-    /// Show status for a specific session
-    #[arg(long)]
-    status: Option<String>,
+    /// Show details for a specific session (consolidates show/status)
+    #[arg(long, alias = "status", alias = "show")]
+    session: Option<String>,
 
-    /// Maximum sessions to return (default: 10)
+    /// Include full session detail (plan contents, actions taken)
+    #[arg(long)]
+    detail: bool,
+
+    /// Maximum sessions to return in list mode (default: 10)
     #[arg(long, default_value = "10")]
     limit: u32,
 
@@ -2042,9 +2131,9 @@ fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
         #[cfg(feature = "report")]
         AgentCommands::Report(args) => run_agent_report(global, args),
         AgentCommands::Init(args) => run_agent_init(global, args),
-        AgentCommands::Capabilities => {
-            output_capabilities(global);
-            ExitCode::Clean
+        AgentCommands::Export(args) => run_agent_export(global, args),
+        AgentCommands::Capabilities(args) => {
+            run_agent_capabilities(global, args)
         }
     }
 }
@@ -2780,6 +2869,91 @@ fn output_stub_with_session(
     }
 }
 
+fn run_agent_capabilities(global: &GlobalOpts, args: &AgentCapabilitiesArgs) -> ExitCode {
+    // If --check-action is specified, just check that specific action
+    if let Some(action) = &args.check_action {
+        let caps = get_capabilities();
+        let (supported, reason) = match action.to_lowercase().as_str() {
+            "sigterm" | "terminate" | "term" => (true, "SIGTERM always available"),
+            "sigkill" | "kill" => (true, "SIGKILL always available"),
+            "sigstop" | "stop" => (true, "SIGSTOP always available"),
+            "sigcont" | "cont" | "continue" => (true, "SIGCONT always available"),
+            "strace" => (
+                caps.tools.strace.available && caps.tools.strace.works,
+                if caps.tools.strace.available { "strace available" } else { "strace not installed" },
+            ),
+            "perf" => (
+                caps.tools.perf.available && caps.tools.perf.works,
+                if caps.tools.perf.available { "perf available" } else { "perf not installed" },
+            ),
+            "lsof" => (
+                caps.tools.lsof.available && caps.tools.lsof.works,
+                if caps.tools.lsof.available { "lsof available" } else { "lsof not installed" },
+            ),
+            "nice" | "renice" => (
+                caps.tools.renice.available,
+                if caps.tools.renice.available { "renice available" } else { "renice not installed" },
+            ),
+            "ionice" => (
+                caps.tools.ionice.available,
+                if caps.tools.ionice.available { "ionice available" } else { "ionice not installed" },
+            ),
+            "cgroup" | "cgroups" => (
+                caps.data_sources.cgroup_v2,
+                if caps.data_sources.cgroup_v2 { "cgroups v2 available" } else { "cgroups v2 not available" },
+            ),
+            "docker" => (
+                caps.tools.docker.available,
+                if caps.tools.docker.available { "docker available" } else { "docker not installed" },
+            ),
+            "podman" => (
+                caps.tools.podman.available,
+                if caps.tools.podman.available { "podman available" } else { "podman not installed" },
+            ),
+            "sudo" => (
+                caps.permissions.can_sudo,
+                if caps.permissions.can_sudo { "sudo available" } else { "cannot sudo" },
+            ),
+            "root" => (
+                caps.permissions.is_root,
+                if caps.permissions.is_root { "running as root" } else { "not running as root" },
+            ),
+            _ => (false, "unknown action type"),
+        };
+
+        match global.format {
+            OutputFormat::Json => {
+                println!("{}", serde_json::json!({
+                    "action": action,
+                    "supported": supported,
+                    "reason": reason,
+                }));
+            }
+            OutputFormat::Summary => {
+                if supported {
+                    println!("[capabilities] {}: supported", action);
+                } else {
+                    println!("[capabilities] {}: not supported ({})", action, reason);
+                }
+            }
+            OutputFormat::Exitcode => {}
+            _ => {
+                if supported {
+                    println!("Action '{}' is supported: {}", action, reason);
+                } else {
+                    println!("Action '{}' is NOT supported: {}", action, reason);
+                }
+            }
+        }
+
+        return if supported { ExitCode::Clean } else { ExitCode::CapabilityError };
+    }
+
+    // Otherwise, output full capabilities
+    output_capabilities(global);
+    ExitCode::Clean
+}
+
 fn output_capabilities(global: &GlobalOpts) {
     let session_id = SessionId::new();
 
@@ -3164,6 +3338,117 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
     let host_id = pt_core::logging::get_host_id();
     let timestamp = chrono::Utc::now();
 
+    // Collect process list if --top, --include-env, or --include-network is specified
+    let process_snapshot = if args.top.is_some() || args.include_env || args.include_network {
+        let scan_options = QuickScanOptions {
+            pids: vec![],
+            include_kernel_threads: false,
+            timeout: global.timeout.map(std::time::Duration::from_secs),
+            progress: None,
+        };
+        match quick_scan(&scan_options) {
+            Ok(result) => {
+                let mut processes: Vec<_> = result.processes.into_iter().collect();
+
+                // Sort by resource usage (CPU + normalized memory)
+                processes.sort_by(|a, b| {
+                    let a_score = a.cpu_percent + (a.rss_bytes as f64 / 1_073_741_824.0); // GB
+                    let b_score = b.cpu_percent + (b.rss_bytes as f64 / 1_073_741_824.0);
+                    b_score.partial_cmp(&a_score).unwrap_or(std::cmp::Ordering::Equal)
+                });
+
+                // Limit to top N if specified
+                if let Some(top_n) = args.top {
+                    processes.truncate(top_n);
+                }
+
+                // Build process summaries for output
+                let summaries: Vec<serde_json::Value> = processes
+                    .iter()
+                    .map(|p| {
+                        let mut obj = serde_json::json!({
+                            "pid": p.pid.0,
+                            "ppid": p.ppid.0,
+                            "user": &p.user,
+                            "comm": &p.comm,
+                            "cmd": &p.cmd,
+                            "cpu_percent": p.cpu_percent,
+                            "rss_mb": p.rss_bytes / 1_048_576,
+                            "vsz_mb": p.vsz_bytes / 1_048_576,
+                            "state": format!("{:?}", p.state),
+                            "elapsed_secs": p.elapsed.as_secs(),
+                        });
+
+                        // Add environment info placeholder (redacted keys only)
+                        if args.include_env {
+                            // Read env from /proc/<pid>/environ and extract key names only
+                            let env_path = format!("/proc/{}/environ", p.pid.0);
+                            if let Ok(content) = std::fs::read(&env_path) {
+                                let keys: Vec<String> = content
+                                    .split(|&b| b == 0)
+                                    .filter_map(|entry| {
+                                        std::str::from_utf8(entry)
+                                            .ok()
+                                            .and_then(|s| s.split('=').next())
+                                            .map(|k| k.to_string())
+                                    })
+                                    .filter(|k| !k.is_empty())
+                                    .collect();
+                                obj.as_object_mut().unwrap().insert(
+                                    "env_keys".to_string(),
+                                    serde_json::json!(keys),
+                                );
+                            }
+                        }
+
+                        // Add network connections placeholder
+                        if args.include_network {
+                            // Count file descriptors that look like sockets
+                            let fd_path = format!("/proc/{}/fd", p.pid.0);
+                            let socket_count = std::fs::read_dir(&fd_path)
+                                .map(|entries| {
+                                    entries
+                                        .filter_map(|e| e.ok())
+                                        .filter(|e| {
+                                            e.path()
+                                                .read_link()
+                                                .map(|target| {
+                                                    target
+                                                        .to_string_lossy()
+                                                        .starts_with("socket:")
+                                                })
+                                                .unwrap_or(false)
+                                        })
+                                        .count()
+                                })
+                                .unwrap_or(0);
+                            obj.as_object_mut().unwrap().insert(
+                                "socket_count".to_string(),
+                                serde_json::json!(socket_count),
+                            );
+                        }
+
+                        obj
+                    })
+                    .collect();
+
+                Some(serde_json::json!({
+                    "count": summaries.len(),
+                    "top_n": args.top,
+                    "include_env": args.include_env,
+                    "include_network": args.include_network,
+                    "processes": summaries,
+                }))
+            }
+            Err(e) => {
+                eprintln!("agent snapshot: warning: process scan failed: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Build capabilities summary for output
     let capabilities_summary = serde_json::json!({
         "tools": {
@@ -3183,7 +3468,7 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
 
     match global.format {
         OutputFormat::Json => {
-            let output = serde_json::json!({
+            let mut output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
                 "host_id": host_id,
@@ -3195,6 +3480,12 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                 "system_state": system_state,
                 "capabilities": capabilities_summary,
             });
+            if let Some(procs) = &process_snapshot {
+                output.as_object_mut().unwrap().insert(
+                    "process_snapshot".to_string(),
+                    procs.clone(),
+                );
+            }
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
         OutputFormat::Summary => {
@@ -3259,6 +3550,31 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                 let mem = psi.get("memory").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let io = psi.get("io").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 println!("  PSI: cpu={:.2}%, mem={:.2}%, io={:.2}%", cpu, mem, io);
+            }
+
+            // Display process snapshot if collected
+            if let Some(snapshot) = &process_snapshot {
+                println!();
+                println!("## Process Snapshot");
+                let count = snapshot.get("count").and_then(|v| v.as_u64()).unwrap_or(0);
+                let top_n = snapshot.get("top_n").and_then(|v| v.as_u64());
+                if let Some(n) = top_n {
+                    println!("  Top {} processes by resource usage:", n);
+                } else {
+                    println!("  {} processes:", count);
+                }
+                if let Some(procs) = snapshot.get("processes").and_then(|v| v.as_array()) {
+                    for p in procs.iter().take(10) {
+                        let pid = p.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let comm = p.get("comm").and_then(|v| v.as_str()).unwrap_or("?");
+                        let cpu = p.get("cpu_percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                        let rss = p.get("rss_mb").and_then(|v| v.as_u64()).unwrap_or(0);
+                        println!("    {:>7} {:<20} {:>5.1}% CPU {:>6}MB", pid, comm, cpu, rss);
+                    }
+                    if procs.len() > 10 {
+                        println!("    ... and {} more (use --format json for full list)", procs.len() - 10);
+                    }
+                }
             }
         }
     }
@@ -3495,7 +3811,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         }
 
         // Apply threshold filter
-        if max_posterior < args.threshold {
+        if max_posterior < args.min_posterior {
             continue;
         }
 
@@ -3627,7 +3943,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         "candidates_returned": candidates.len(),   // After truncation to max_candidates
         "kill_recommendations": kill_candidates.len(),
         "review_recommendations": review_candidates.len(),
-        "threshold_used": args.threshold,
+        "threshold_used": args.min_posterior,
         "filter_used": args.only,
     });
 
@@ -3647,8 +3963,37 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         })).collect::<Vec<_>>(),
     });
 
+    // Check for stub flags usage (future features parsed but not yet functional)
+    let mut stub_flags_used: Vec<&str> = Vec::new();
+    if args.since.is_some() {
+        stub_flags_used.push("--since");
+    }
+    if args.since_time.is_some() {
+        stub_flags_used.push("--since-time");
+    }
+    if args.goal.is_some() {
+        stub_flags_used.push("--goal");
+    }
+    if args.include_predictions {
+        stub_flags_used.push("--include-predictions");
+    }
+
+    // Build stub_flags section if any future flags were used
+    let stub_flags_section = if !stub_flags_used.is_empty() {
+        Some(serde_json::json!({
+            "warning": "feature_not_implemented",
+            "message": "Some flags are parsed but not yet functional",
+            "flags_used": stub_flags_used,
+            "flags_ignored": stub_flags_used,
+            "workaround": "Use pt agent diff for manual comparison; goal-oriented mode coming in v1.2",
+            "planned_release": "v1.2"
+        }))
+    } else {
+        None
+    };
+
     // Build complete plan output
-    let plan_output = serde_json::json!({
+    let mut plan_output = serde_json::json!({
         "schema_version": SCHEMA_VERSION,
         "session_id": session_id.0,
         "generated_at": chrono::Utc::now().to_rfc3339(),
@@ -3656,18 +4001,27 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         "command": "agent plan",
         "args": {
             "max_candidates": args.max_candidates,
-            "threshold": args.threshold,
+            "min_posterior": args.min_posterior,
             "only": args.only,
             "yes": args.yes,
             "dry_run": global.dry_run,
             "robot": global.robot,
             "shadow": global.shadow,
+            "since": args.since,
+            "since_time": args.since_time,
+            "goal": args.goal,
+            "include_predictions": args.include_predictions,
         },
         "summary": summary,
         "candidates": candidates,
         "recommended": recommended,
         "session_created": created,
     });
+
+    // Add stub_flags section if any future flags were used
+    if let Some(stub_flags) = stub_flags_section {
+        plan_output["stub_flags"] = stub_flags;
+    }
 
     // Write plan to session
     let decision_dir = handle.dir.join("decision");
@@ -3697,6 +4051,14 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
                 .with_session_id(session_id.to_string())
                 .with_detail("plan_path", plan_path.display().to_string())
                 .with_detail("count", candidates.len()),
+        );
+    }
+
+    // Warn about stub flags on stderr (for all formats, machine-parseable too)
+    if !stub_flags_used.is_empty() {
+        eprintln!(
+            "warning: flags {} are parsed but not yet functional (coming in v1.2)",
+            stub_flags_used.join(", ")
         );
     }
 
@@ -4502,6 +4864,33 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
 
     let requested_at = chrono::Utc::now();
 
+    // Wait for process termination if --wait is specified
+    if args.wait > 0 {
+        let wait_duration = std::time::Duration::from_secs(args.wait);
+        let start = std::time::Instant::now();
+        let target_pids: Vec<u32> = plan
+            .candidates
+            .iter()
+            .filter(|c| c.recommended_action == "terminate" || c.recommended_action == "kill")
+            .map(|c| c.pid)
+            .collect();
+
+        while start.elapsed() < wait_duration {
+            // Check if all target processes have terminated
+            let still_running: Vec<u32> = target_pids
+                .iter()
+                .filter(|pid| std::path::Path::new(&format!("/proc/{}", pid)).exists())
+                .copied()
+                .collect();
+
+            if still_running.is_empty() {
+                break;
+            }
+
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
+    }
+
     let scan_options = QuickScanOptions {
         pids: vec![],
         include_kernel_threads: false,
@@ -4555,6 +4944,36 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
         .count();
     let failed_count = total.saturating_sub(verified_count);
 
+    // Check for respawned processes if --check-respawn is set
+    let respawned_count = if args.check_respawn {
+        // Get command signatures of killed processes
+        let killed_commands: Vec<&str> = plan
+            .candidates
+            .iter()
+            .filter(|c| c.recommended_action == "terminate" || c.recommended_action == "kill")
+            .map(|c| {
+                // Prefer cmd_full, fall back to cmd_short
+                if !c.cmd_full.is_empty() {
+                    c.cmd_full.as_str()
+                } else {
+                    c.cmd_short.as_str()
+                }
+            })
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        // Count current processes that match killed command patterns
+        scan_result
+            .processes
+            .iter()
+            .filter(|p| {
+                killed_commands.iter().any(|kc| p.cmd.contains(kc))
+            })
+            .count()
+    } else {
+        0
+    };
+
     let exit_code = match report.verification.overall_status.as_str() {
         "success" => ExitCode::Clean,
         "partial_success" => ExitCode::PartialFail,
@@ -4564,7 +4983,22 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
 
     match global.format {
         OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&report).unwrap());
+            // Extend report with respawn info if checked
+            let mut output = serde_json::to_value(&report).unwrap_or_default();
+            if args.check_respawn {
+                if let Some(obj) = output.as_object_mut() {
+                    obj.insert("respawn_check".to_string(), serde_json::json!({
+                        "enabled": true,
+                        "respawned_count": respawned_count,
+                        "warning": if respawned_count > 0 {
+                            Some(format!("{} processes may have respawned", respawned_count))
+                        } else {
+                            None
+                        }
+                    }));
+                }
+            }
+            println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
         OutputFormat::Summary => {
             let freed = report
@@ -4572,9 +5006,14 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
                 .as_ref()
                 .map(|s| s.memory_freed_mb)
                 .unwrap_or(0.0);
+            let respawn_info = if args.check_respawn && respawned_count > 0 {
+                format!(", {} respawned!", respawned_count)
+            } else {
+                String::new()
+            };
             println!(
-                "[{}] agent verify: {} verified, {} failed (freed {} MB)",
-                sid, verified_count, failed_count, freed
+                "[{}] agent verify: {} verified, {} failed (freed {} MB){}",
+                sid, verified_count, failed_count, freed, respawn_info
             );
         }
         OutputFormat::Exitcode => {}
@@ -4595,6 +5034,12 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
                     summary.memory_freed_mb, summary.expected_mb
                 );
             }
+            if args.check_respawn {
+                println!("- Respawn check: {} processes detected", respawned_count);
+                if respawned_count > 0 {
+                    println!("  ⚠ Warning: Some killed processes may have respawned");
+                }
+            }
             if let Some(recommendations) = &report.recommendations {
                 if !recommendations.is_empty() {
                     println!("\n## Recommendations\n");
@@ -4605,6 +5050,13 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
             }
         }
     }
+
+    // If respawned processes were detected, indicate partial failure
+    let exit_code = if args.check_respawn && respawned_count > 0 {
+        ExitCode::PartialFail
+    } else {
+        exit_code
+    };
 
     exit_code
 }
@@ -4878,6 +5330,23 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
         .and_then(|v| v.as_str())
         .unwrap_or("");
 
+    // Apply focus filter
+    let focus = args.focus.to_lowercase();
+    let (show_new, show_worsened, show_improved, show_resolved, show_persistent) = match focus.as_str() {
+        "new" => (true, false, false, false, false),
+        "removed" | "resolved" => (false, false, false, true, false),
+        "changed" | "worsened" => (false, true, true, false, false),
+        "improved" => (false, false, true, false, false),
+        "persistent" => (false, false, false, false, true),
+        "resources" | "all" | _ => (true, true, true, true, true),
+    };
+
+    let filtered_new = if show_new { new_list.clone() } else { vec![] };
+    let filtered_worsened = if show_worsened { worsened.clone() } else { vec![] };
+    let filtered_improved = if show_improved { improved.clone() } else { vec![] };
+    let filtered_resolved = if show_resolved { resolved.clone() } else { vec![] };
+    let filtered_persistent = if show_persistent { persistent.clone() } else { vec![] };
+
     let output = serde_json::json!({
         "comparison": {
             "prior_session": base.0,
@@ -4885,12 +5354,13 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             "prior_timestamp": base_ts,
             "current_timestamp": compare_ts,
         },
+        "focus": args.focus,
         "delta": {
-            "new": new_list,
-            "worsened": worsened,
-            "improved": improved,
-            "resolved": resolved,
-            "persistent": persistent,
+            "new": filtered_new,
+            "worsened": filtered_worsened,
+            "improved": filtered_improved,
+            "resolved": filtered_resolved,
+            "persistent": filtered_persistent,
         },
         "summary": {
             "prior_candidates": base_candidates.len(),
@@ -4900,6 +5370,7 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             "improved_count": improved.len(),
             "resolved_count": resolved.len(),
             "persistent_count": persistent.len(),
+            "filtered": focus != "all",
         },
     });
 
@@ -4908,15 +5379,17 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             println!("{}", global.process_output(output.clone()));
         }
         OutputFormat::Summary => {
+            let focus_note = if focus != "all" { format!(" (focus: {})", focus) } else { String::new() };
             println!(
-                "[{} → {}] agent diff: +{} new, {} worsened, {} improved, {} resolved, {} persistent",
+                "[{} → {}] agent diff: +{} new, {} worsened, {} improved, {} resolved, {} persistent{}",
                 base.0,
                 compare_id.0,
                 new_list.len(),
                 worsened.len(),
                 improved.len(),
                 resolved.len(),
-                persistent.len()
+                persistent.len(),
+                focus_note
             );
         }
         OutputFormat::Exitcode => {}
@@ -4924,6 +5397,9 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             println!("# pt-core agent diff\n");
             println!("Base: {}", base.0);
             println!("Compare: {}\n", compare_id.0);
+            if focus != "all" {
+                println!("Focus: {}\n", focus);
+            }
             println!("## Summary\n");
             println!(
                 "- New: {} | Worsened: {} | Improved: {} | Resolved: {} | Persistent: {}",
@@ -5468,6 +5944,20 @@ fn run_agent_import_priors(global: &GlobalOpts, args: &AgentImportPriorsArgs) ->
     }
 
     ExitCode::Clean
+}
+
+/// Agent export: alias for bundle create with agent-friendly defaults
+fn run_agent_export(global: &GlobalOpts, args: &AgentExportArgs) -> ExitCode {
+    run_bundle_create(
+        global,
+        &args.session,
+        &args.out,
+        &args.profile,
+        args.include_telemetry,
+        args.include_dumps,
+        args.encrypt,
+        &args.passphrase,
+    )
 }
 
 fn run_agent_init(global: &GlobalOpts, args: &AgentInitArgs) -> ExitCode {
@@ -6191,9 +6681,9 @@ fn run_agent_sessions(global: &GlobalOpts, args: &AgentSessionsArgs) -> ExitCode
 
     let host_id = pt_core::logging::get_host_id();
 
-    // Handle single session status query
-    if let Some(session_id_str) = &args.status {
-        return run_agent_session_status(global, &store, session_id_str, &host_id);
+    // Handle single session detail query (consolidates show/status)
+    if let Some(session_id_str) = &args.session {
+        return run_agent_session_status(global, &store, session_id_str, &host_id, args.detail);
     }
 
     // Handle cleanup mode
@@ -6210,6 +6700,7 @@ fn run_agent_session_status(
     store: &SessionStore,
     session_id_str: &str,
     host_id: &str,
+    include_detail: bool,
 ) -> ExitCode {
     let session_id = match SessionId::parse(session_id_str) {
         Some(sid) => sid,
@@ -6268,9 +6759,39 @@ fn run_agent_session_status(
 
     let pending_actions = total_actions.saturating_sub(completed_actions);
 
+    // Load plan details if --detail flag is set
+    let plan_detail = if include_detail {
+        let plan_path = handle.dir.join("decision").join("plan.json");
+        std::fs::read_to_string(&plan_path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+    } else {
+        None
+    };
+
+    // Load action outcomes if --detail flag is set
+    let outcomes_detail = if include_detail {
+        let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
+        if outcomes_path.exists() {
+            std::fs::read_to_string(&outcomes_path)
+                .ok()
+                .map(|content| {
+                    content
+                        .lines()
+                        .filter(|l| !l.trim().is_empty())
+                        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                        .collect::<Vec<_>>()
+                })
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
     match global.format {
         OutputFormat::Json => {
-            let output = serde_json::json!({
+            let mut output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": manifest.session_id,
                 "generated_at": chrono::Utc::now().to_rfc3339(),
@@ -6303,8 +6824,17 @@ fn run_agent_session_status(
                 "state_history": manifest.state_history,
                 "error": manifest.error,
                 "status": "ok",
-                "command": format!("pt agent sessions --status {}", manifest.session_id),
+                "command": format!("pt agent sessions --session {}", manifest.session_id),
             });
+            // Add detail if requested
+            if include_detail {
+                if let Some(plan) = &plan_detail {
+                    output.as_object_mut().unwrap().insert("plan".to_string(), plan.clone());
+                }
+                if let Some(outcomes) = &outcomes_detail {
+                    output.as_object_mut().unwrap().insert("outcomes".to_string(), serde_json::json!(outcomes));
+                }
+            }
             println!("{}", serde_json::to_string_pretty(&output).unwrap());
         }
         OutputFormat::Summary => {
@@ -6349,6 +6879,39 @@ fn run_agent_session_status(
                 println!();
                 println!("## Error");
                 println!("{}", error);
+            }
+
+            // Print detail if requested
+            if include_detail {
+                if let Some(plan) = &plan_detail {
+                    println!();
+                    println!("## Plan Detail");
+                    if let Some(candidates) = plan.get("candidates").and_then(|c| c.as_array()) {
+                        println!("  Candidates: {}", candidates.len());
+                        for (i, c) in candidates.iter().take(5).enumerate() {
+                            let pid = c.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let cmd = c.get("cmd_short").and_then(|v| v.as_str()).unwrap_or("?");
+                            let action = c.get("recommended_action").and_then(|v| v.as_str()).unwrap_or("?");
+                            println!("    {}. PID {} ({}) -> {}", i + 1, pid, cmd, action);
+                        }
+                        if candidates.len() > 5 {
+                            println!("    ... and {} more", candidates.len() - 5);
+                        }
+                    }
+                }
+                if let Some(outcomes) = &outcomes_detail {
+                    println!();
+                    println!("## Action Outcomes");
+                    for (i, o) in outcomes.iter().take(5).enumerate() {
+                        let pid = o.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let success = o.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let status = if success { "✓" } else { "✗" };
+                        println!("    {}. PID {} {}", i + 1, pid, status);
+                    }
+                    if outcomes.len() > 5 {
+                        println!("    ... and {} more", outcomes.len() - 5);
+                    }
+                }
             }
         }
     }

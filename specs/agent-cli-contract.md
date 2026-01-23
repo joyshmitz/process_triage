@@ -1031,9 +1031,51 @@ When a gate blocks execution:
 
 ---
 
-## 12. References
+## 12. API Harmonization (v1.1.0)
+
+The following changes were made to unify and streamline the agent CLI interface:
+
+### 12.1 Command Consolidations
+
+| Deprecated | Replacement | Notes |
+|------------|-------------|-------|
+| `agent show` | `agent sessions --session <id>` | Use `--show` alias if preferred |
+| `agent status` | `agent sessions --session <id>` | Use `--status` alias if preferred |
+
+### 12.2 New Option Aliases
+
+| Command | New Alias | Original | Purpose |
+|---------|-----------|----------|---------|
+| `agent plan` | `--min-posterior` | `--threshold` | Clearer naming for threshold |
+| `agent diff` | `--before` | `--base` | More intuitive for comparison |
+| `agent diff` | `--after` | `--compare` | More intuitive for comparison |
+| `agent sessions` | `--session` | `--status` | Consolidated detail view |
+
+### 12.3 New Options
+
+| Command | Option | Description |
+|---------|--------|-------------|
+| `agent verify` | `--wait <secs>` | Wait for process termination |
+| `agent verify` | `--check-respawn` | Detect respawned processes |
+| `agent snapshot` | `--top <N>` | Limit to top N processes by resources |
+| `agent snapshot` | `--include-env` | Include env variable keys |
+| `agent snapshot` | `--include-network` | Include socket counts |
+| `agent capabilities` | `--check-action <action>` | Check single action availability |
+| `agent diff` | `--focus <type>` | Filter diff output (new/removed/changed/all) |
+| `agent sessions` | `--detail` | Include plan contents and outcomes |
+| `agent export` | `--include-telemetry` | Include raw telemetry |
+| `agent export` | `--include-dumps` | Include process dumps |
+
+### 12.4 Backward Compatibility
+
+All deprecated commands and aliases remain functional. Existing scripts will continue to work. Deprecation warnings are logged but not displayed by default.
+
+---
+
+## 13. References
 
 - PLAN §3.5: Agent/Robot CLI Contract
 - Bead: process_triage-3mi (CLI Surface)
 - Bead: process_triage-o8m (Target Identity)
 - Bead: process_triage-bg5 (Policy Schema)
+- Epic: bd-v5ba (Agent API Harmonization)
