@@ -568,7 +568,18 @@ fn is_kernel_thread(record: &ProcessRecord) -> bool {
         return false;
     }
 
-    ppid == 0 || ppid == 2
+    if ppid == 0 {
+        return true;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if ppid == 2 {
+            return true;
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
