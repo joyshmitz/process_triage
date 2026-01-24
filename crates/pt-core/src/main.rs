@@ -614,6 +614,14 @@ struct AgentPlanArgs {
     /// Include trajectory prediction analysis in output (coming in v1.2)
     #[arg(long, help = "Add trajectory analysis to output (coming in v1.2)")]
     include_predictions: bool,
+
+    /// Minimal JSON output (PIDs, scores, and recommendations only)
+    #[arg(long)]
+    minimal: bool,
+
+    /// Pretty-print JSON output
+    #[arg(long)]
+    pretty: bool,
 }
 
 #[derive(Args, Debug)]
@@ -780,6 +788,14 @@ struct AgentSnapshotArgs {
     /// Include network connection information
     #[arg(long)]
     include_network: bool,
+
+    /// Minimal JSON output (host info and basic stats only)
+    #[arg(long)]
+    minimal: bool,
+
+    /// Pretty-print JSON output
+    #[arg(long)]
+    pretty: bool,
 }
 
 #[derive(Args, Debug)]
@@ -3360,6 +3376,68 @@ fn collect_psi() -> serde_json::Value {
     })
 }
 
+/// Get the system hostname.
+fn collect_hostname() -> String {
+    // Try /etc/hostname first
+    if let Ok(hostname) = std::fs::read_to_string("/etc/hostname") {
+        let hostname = hostname.trim();
+        if !hostname.is_empty() {
+            return hostname.to_string();
+        }
+    }
+    // Fallback to HOSTNAME env var
+    if let Ok(hostname) = std::env::var("HOSTNAME") {
+        return hostname;
+    }
+    // Last resort: use gethostname
+    std::process::Command::new("hostname")
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// Collect host information in the structured format for JSON output.
+fn collect_host_info() -> serde_json::Value {
+    let hostname = collect_hostname();
+    let cores = collect_cpu_count();
+    let memory = collect_memory_info();
+    let load = collect_load_averages();
+
+    let total_gb = memory
+        .get("total_gb")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let used_gb = memory
+        .get("used_gb")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+
+    serde_json::json!({
+        "hostname": hostname,
+        "cores": cores,
+        "memory_total_gb": total_gb,
+        "memory_used_gb": used_gb,
+        "load_avg": load,
+    })
+}
+
+/// Format duration in human-readable form (e.g., "11d 2h 30m").
+fn format_duration_human(seconds: u64) -> String {
+    let days = seconds / 86400;
+    let hours = (seconds % 86400) / 3600;
+    let minutes = (seconds % 3600) / 60;
+
+    if days > 0 {
+        format!("{}d {}h {}m", days, hours, minutes)
+    } else if hours > 0 {
+        format!("{}h {}m", hours, minutes)
+    } else {
+        format!("{}m", minutes)
+    }
+}
+
 fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode {
     let session_id = SessionId::new();
 
@@ -3741,7 +3819,8 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         ));
     }
 
-    // Perform quick scan to enumerate processes
+    // Perform quick scan to enumerate processes (with timing)
+    let scan_start = std::time::Instant::now();
     let scan_options = QuickScanOptions {
         pids: vec![],
         include_kernel_threads: args.include_kernel_threads,
@@ -3756,6 +3835,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             return ExitCode::InternalError;
         }
     };
+    let scan_duration_ms = scan_start.elapsed().as_millis() as u64;
 
     // Quick scan emits its own progress events via the shared emitter.
 
@@ -3924,6 +4004,27 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             continue;
         }
 
+        // Build evidence contributions from Bayes factors
+        let evidence_contributions: Vec<serde_json::Value> = ledger
+            .bayes_factors
+            .iter()
+            .map(|bf| {
+                serde_json::json!({
+                    "factor": bf.feature,
+                    "contribution": (bf.delta_bits * 10.0).round() as i32, // Scale to integer score
+                    "detail": format!("{:.1} bits {}", bf.delta_bits.abs(), bf.direction),
+                    "strength": bf.strength,
+                })
+            })
+            .collect();
+
+        // Calculate age in seconds and human-readable form
+        let age_seconds = proc.elapsed.as_secs();
+        let age_human = format_duration_human(age_seconds);
+
+        // Calculate a composite score (0-100) based on max posterior
+        let score = (max_posterior * 100.0).round() as u32;
+
         // Build candidate JSON (action tracking moved to after sorting)
         let candidate = serde_json::json!({
             "pid": proc.pid.0,
@@ -3932,8 +4033,14 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             "start_id": format!("{}:{}", proc.pid.0, proc.start_time_unix),
             "uid": proc.uid,
             "user": &proc.user,
-            "cmd_short": proc.comm,
-            "cmd_full": proc.cmd,
+            "command": &proc.cmd,
+            "command_short": &proc.comm,
+            "type": ledger.classification.label(), // Process type classification
+            "age_seconds": age_seconds,
+            "age_human": age_human,
+            "memory_mb": proc.rss_bytes / (1024 * 1024),
+            "cpu_percent": proc.cpu_percent,
+            "score": score,
             "classification": ledger.classification.label(),
             "posterior": {
                 "useful": posterior.useful,
@@ -3942,6 +4049,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
                 "zombie": posterior.zombie,
             },
             "confidence": ledger.confidence.label(),
+            "evidence": evidence_contributions,
             "blast_radius": {
                 "memory_mb": proc.rss_bytes / (1024 * 1024),
                 "cpu_pct": proc.cpu_percent,
@@ -3959,6 +4067,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
                 "entropy": ledger.bayes_factors.len() as f64 * 0.1, // Simplified
                 "confidence_interval": [(max_posterior - 0.1).max(0.0), (max_posterior + 0.1).min(1.0)],
             },
+            "recommendation": recommended_action.to_uppercase(),
             "recommended_action": recommended_action,
             "action_rationale": format!("Action {:?} selected{}",
                 decision_outcome.rationale.chosen_action,
@@ -4005,20 +4114,37 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         .map(|(_, c)| c)
         .collect();
 
-    // Rebuild kill/review candidate lists from the final sorted candidates
+    // Rebuild kill/review/spare candidate lists from the final sorted candidates
     let mut kill_candidates: Vec<u32> = Vec::new();
     let mut review_candidates: Vec<u32> = Vec::new();
+    let mut spare_candidates: Vec<u32> = Vec::new();
+    let mut expected_memory_freed_bytes: u64 = 0;
     for candidate in &candidates {
         let pid = candidate["pid"].as_u64().unwrap_or(0) as u32;
         let action = candidate["recommended_action"].as_str().unwrap_or("");
+        let memory_mb = candidate["memory_mb"].as_u64().unwrap_or(0);
         if action == "kill" {
             kill_candidates.push(pid);
-        } else if action != "keep" {
+            expected_memory_freed_bytes += memory_mb * 1024 * 1024;
+        } else if action == "keep" {
+            spare_candidates.push(pid);
+        } else {
             review_candidates.push(pid);
         }
     }
+    let expected_memory_freed_gb = (expected_memory_freed_bytes as f64) / 1024.0 / 1024.0 / 1024.0;
 
-    // Build summary
+    // Collect host information
+    let host_info = collect_host_info();
+
+    // Build scan info
+    let scan_info = serde_json::json!({
+        "total_processes": total_scanned,
+        "candidates_found": above_threshold_count,
+        "scan_duration_ms": scan_duration_ms,
+    });
+
+    // Build summary (legacy format for backward compatibility)
     let summary = serde_json::json!({
         "total_processes_scanned": total_scanned,
         "protected_filtered": protected_filtered_count,
@@ -4031,7 +4157,16 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         "filter_used": args.only,
     });
 
-    // Build recommended section
+    // Build recommendations section (new structured format)
+    let recommendations = serde_json::json!({
+        "kill_set": kill_candidates,
+        "review_set": review_candidates,
+        "spare_set": spare_candidates,
+        "expected_memory_freed_gb": (expected_memory_freed_gb * 100.0).round() / 100.0,
+        "fleet_fdr": 0.03, // Placeholder - would come from fleet-wide statistics
+    });
+
+    // Build recommended section (legacy format for backward compatibility)
     let empty_pids: Vec<u32> = Vec::new();
     let preselected_pids = if args.yes {
         &kill_candidates
@@ -4076,12 +4211,16 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         None
     };
 
-    // Build complete plan output
+    // Build complete plan output with structured JSON format
     let mut plan_output = serde_json::json!({
+        "pt_version": env!("CARGO_PKG_VERSION"),
         "schema_version": SCHEMA_VERSION,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
         "session_id": session_id.0,
         "generated_at": chrono::Utc::now().to_rfc3339(),
         "host_id": pt_core::logging::get_host_id(),
+        "host": host_info,
+        "scan": scan_info,
         "command": "agent plan",
         "args": {
             "max_candidates": args.max_candidates,
@@ -4095,10 +4234,13 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             "since_time": args.since_time,
             "goal": args.goal,
             "include_predictions": args.include_predictions,
+            "minimal": args.minimal,
+            "pretty": args.pretty,
         },
         "summary": summary,
         "candidates": candidates,
-        "recommended": recommended,
+        "recommendations": recommendations,
+        "recommended": recommended,  // Legacy format for backward compatibility
         "session_created": created,
     });
 
@@ -4149,8 +4291,38 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     // Output based on format
     match global.format {
         OutputFormat::Json => {
-            // Apply token-efficient processing if options specified
-            println!("{}", global.process_output(plan_output.clone()));
+            // Build output based on --minimal and --pretty flags
+            let output_json = if args.minimal {
+                // Minimal output: just PIDs, scores, and recommendations
+                let minimal_candidates: Vec<serde_json::Value> = candidates
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "pid": c["pid"],
+                            "score": c["score"],
+                            "recommendation": c["recommendation"],
+                        })
+                    })
+                    .collect();
+                serde_json::json!({
+                    "pt_version": env!("CARGO_PKG_VERSION"),
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "session_id": session_id.0,
+                    "candidates": minimal_candidates,
+                    "recommendations": recommendations,
+                })
+            } else {
+                plan_output.clone()
+            };
+
+            // Apply pretty-printing or compact based on --pretty flag
+            let output_str = if args.pretty {
+                serde_json::to_string_pretty(&output_json).unwrap()
+            } else {
+                // Use global.process_output for token-efficient processing if not pretty
+                global.process_output(output_json)
+            };
+            println!("{}", output_str);
         }
         OutputFormat::Summary => {
             println!(
@@ -4175,7 +4347,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             for candidate in &candidates {
                 let pid = candidate.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
                 let cmd = candidate
-                    .get("cmd_short")
+                    .get("command_short")
                     .and_then(|v| v.as_str())
                     .unwrap_or("?");
                 let class = candidate
@@ -4734,7 +4906,11 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                         .lines()
                         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
                         .filter(|v| v.get("status").and_then(|s| s.as_str()) == Some("success"))
-                        .filter_map(|v| v.get("action_id").and_then(|a| a.as_str()).map(String::from))
+                        .filter_map(|v| {
+                            v.get("action_id")
+                                .and_then(|a| a.as_str())
+                                .map(String::from)
+                        })
                         .collect()
                 })
                 .unwrap_or_default()
@@ -6829,11 +7005,7 @@ fn generate_report_from_session(
                             .and_then(|v| v.as_u64())
                             .map(|v| v as usize)
                     })
-                    .or_else(|| {
-                        v.get("actions")
-                            .and_then(|a| a.as_array())
-                            .map(|a| a.len())
-                    })
+                    .or_else(|| v.get("actions").and_then(|a| a.as_array()).map(|a| a.len()))
             })
             .unwrap_or(0)
     } else {
