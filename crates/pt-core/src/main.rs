@@ -35,7 +35,7 @@ use pt_core::supervision::{
     AppSupervisorType, ContainerActionType, ContainerSupervisionAnalyzer,
 };
 use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -719,6 +719,10 @@ struct AgentApplyArgs {
     /// Abort if unknown error/condition
     #[arg(long)]
     abort_on_unknown: bool,
+
+    /// Resume interrupted apply (skip already completed actions)
+    #[arg(long)]
+    resume: bool,
 }
 
 fn config_options(global: &GlobalOpts) -> ConfigOptions {
@@ -4719,8 +4723,32 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         }
     };
 
+    // Load completed action IDs for --resume mode
+    let completed_action_ids: std::collections::HashSet<String> = if args.resume {
+        let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
+        if outcomes_path.exists() {
+            std::fs::read_to_string(&outcomes_path)
+                .ok()
+                .map(|content| {
+                    content
+                        .lines()
+                        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                        .filter(|v| v.get("status").and_then(|s| s.as_str()) == Some("success"))
+                        .filter_map(|v| v.get("action_id").and_then(|a| a.as_str()).map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            std::collections::HashSet::new()
+        }
+    } else {
+        std::collections::HashSet::new()
+    };
+
     // Determine which actions to apply
-    let target_pids: Vec<u32> = if args.recommended {
+    let use_recommended =
+        args.recommended || (args.resume && args.pids.is_empty() && args.targets.is_empty());
+    let target_pids: Vec<u32> = if use_recommended {
         plan.actions
             .iter()
             .filter(|a| !a.blocked)
@@ -4743,10 +4771,12 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         return ExitCode::Clean;
     }
 
+    // Filter out completed actions using earlier declaration for --resume mode
     let actions_to_apply: Vec<_> = plan
         .actions
         .iter()
         .filter(|a| target_pids.contains(&a.target.pid.0))
+        .filter(|a| !completed_action_ids.contains(&a.action_id))
         .collect();
     if actions_to_apply.is_empty() {
         output_apply_nothing(global, &sid);
@@ -4787,10 +4817,23 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     let mut failed = 0usize;
     let mut skipped = 0usize;
     let mut blocked_by_constraints = 0usize;
+    let mut resumed_skipped = 0usize;
 
     // Handle dry-run/shadow mode or execute
     if global.dry_run || global.shadow {
         for action in &actions_to_apply {
+            // Skip already completed actions in resume mode
+            if completed_action_ids.contains(&action.action_id) {
+                resumed_skipped += 1;
+                outcomes.push(serde_json::json!({
+                    "action_id": action.action_id,
+                    "pid": action.target.pid.0,
+                    "status": "already_completed",
+                    "resume": true
+                }));
+                continue;
+            }
+
             let candidate = RobotCandidate {
                 posterior: action.rationale.posterior_odds_abandoned_vs_useful,
                 memory_mb: None,
@@ -4816,6 +4859,18 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
             let signal_runner = SignalActionRunner::new(SignalConfig::default());
 
             for action in &actions_to_apply {
+                // Skip already completed actions in resume mode
+                if completed_action_ids.contains(&action.action_id) {
+                    resumed_skipped += 1;
+                    outcomes.push(serde_json::json!({
+                        "action_id": action.action_id,
+                        "pid": action.target.pid.0,
+                        "status": "already_completed",
+                        "resume": true
+                    }));
+                    continue;
+                }
+
                 let start = std::time::Instant::now();
                 let candidate = RobotCandidate {
                     posterior: action.rationale.posterior_odds_abandoned_vs_useful,
@@ -4875,6 +4930,17 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         #[cfg(not(target_os = "linux"))]
         {
             for action in &actions_to_apply {
+                // Skip already completed actions in resume mode
+                if completed_action_ids.contains(&action.action_id) {
+                    resumed_skipped += 1;
+                    outcomes.push(serde_json::json!({
+                        "action_id": action.action_id,
+                        "pid": action.target.pid.0,
+                        "status": "already_completed",
+                        "resume": true
+                    }));
+                    continue;
+                }
                 skipped += 1;
                 outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "unsupported_platform"}));
             }
@@ -4905,16 +4971,33 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     let result = serde_json::json!({
         "session_id": sid.0,
         "mode": "robot_apply",
-        "summary": {"attempted": actions_to_apply.len(), "succeeded": succeeded, "failed": failed, "skipped": skipped, "blocked_by_constraints": blocked_by_constraints},
+        "summary": {
+            "attempted": actions_to_apply.len(),
+            "succeeded": succeeded,
+            "failed": failed,
+            "skipped": skipped,
+            "blocked_by_constraints": blocked_by_constraints,
+            "resumed_skipped": resumed_skipped
+        },
         "outcomes": outcomes,
-        "constraints_summary": constraints_summary
+        "constraints_summary": constraints_summary,
+        "resumed": args.resume
     });
     match global.format {
         OutputFormat::Json => println!("{}", global.process_output(result)),
-        OutputFormat::Summary => println!(
-            "[{}] apply: {} ok, {} fail, {} skip, {} blocked",
-            sid, succeeded, failed, skipped, blocked_by_constraints
-        ),
+        OutputFormat::Summary => {
+            if resumed_skipped > 0 {
+                println!(
+                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} already done (resumed)",
+                    sid, succeeded, failed, skipped, blocked_by_constraints, resumed_skipped
+                );
+            } else {
+                println!(
+                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked",
+                    sid, succeeded, failed, skipped, blocked_by_constraints
+                );
+            }
+        }
         _ => println!(
             "# apply\nSession: {}\nSucceeded: {}\nFailed: {}",
             sid, succeeded, failed
@@ -6730,7 +6813,28 @@ fn generate_report_from_session(
         std::fs::read_to_string(&plan_path)
             .ok()
             .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-            .and_then(|v| v.get("candidates")?.as_array().map(|a| a.len()))
+            .and_then(|v| {
+                v.get("candidates")
+                    .and_then(|c| c.as_array())
+                    .map(|a| a.len())
+                    .or_else(|| {
+                        v.get("summary")
+                            .and_then(|s| s.get("candidates_returned"))
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as usize)
+                    })
+                    .or_else(|| {
+                        v.get("gates_summary")
+                            .and_then(|g| g.get("total_candidates"))
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as usize)
+                    })
+                    .or_else(|| {
+                        v.get("actions")
+                            .and_then(|a| a.as_array())
+                            .map(|a| a.len())
+                    })
+            })
             .unwrap_or(0)
     } else {
         0
@@ -6901,35 +7005,57 @@ fn run_agent_session_status(
             | SessionState::Cancelled
     );
 
-    // Count progress from action outcomes
+    // Count progress from action outcomes and plan metadata.
     let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
-    let (completed_actions, total_actions) = if outcomes_path.exists() {
+    let plan_path = handle.dir.join("decision").join("plan.json");
+    let plan_value = std::fs::read_to_string(&plan_path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok());
+
+    let completed_actions = if outcomes_path.exists() {
         let content = std::fs::read_to_string(&outcomes_path).unwrap_or_default();
-        let completed = content.lines().filter(|l| !l.trim().is_empty()).count();
-        // Try to get total from plan
-        let plan_path = handle.dir.join("decision").join("plan.json");
-        let total = std::fs::read_to_string(&plan_path)
-            .ok()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-            .and_then(|v| {
-                v.get("candidates")
-                    .and_then(|c| c.as_array())
-                    .map(|a| a.len())
-            })
-            .unwrap_or(completed);
-        (completed, total)
+        content.lines().filter(|l| !l.trim().is_empty()).count()
     } else {
-        (0, 0)
+        0
+    };
+
+    let plan_total = plan_value
+        .as_ref()
+        .and_then(|v| {
+            v.get("actions")
+                .and_then(|a| a.as_array())
+                .map(|a| a.len())
+                .or_else(|| {
+                    v.get("recommended")
+                        .and_then(|r| r.get("actions"))
+                        .and_then(|a| a.as_array())
+                        .map(|a| a.len())
+                })
+                .or_else(|| {
+                    v.get("summary")
+                        .and_then(|s| s.get("kill_recommendations"))
+                        .and_then(|k| k.as_u64())
+                        .map(|k| k as usize)
+                })
+                .or_else(|| {
+                    v.get("candidates")
+                        .and_then(|c| c.as_array())
+                        .map(|a| a.len())
+                })
+        })
+        .unwrap_or(0);
+
+    let total_actions = if plan_total == 0 && completed_actions > 0 {
+        completed_actions
+    } else {
+        plan_total
     };
 
     let pending_actions = total_actions.saturating_sub(completed_actions);
 
     // Load plan details if --detail flag is set
     let plan_detail = if include_detail {
-        let plan_path = handle.dir.join("decision").join("plan.json");
-        std::fs::read_to_string(&plan_path)
-            .ok()
-            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+        plan_value.clone()
     } else {
         None
     };
@@ -6980,7 +7106,7 @@ fn run_agent_session_status(
                 },
                 "resumable": resumable,
                 "resume_command": if resumable && matches!(manifest.state, SessionState::Planned | SessionState::Executing) {
-                    Some(format!("pt agent apply --session {}", manifest.session_id))
+                    Some(format!("pt agent apply --session {} --resume", manifest.session_id))
                 } else {
                     None
                 },
@@ -7040,7 +7166,7 @@ fn run_agent_session_status(
                 )
             {
                 println!(
-                    "Resume with: pt agent apply --session {}",
+                    "Resume with: pt agent apply --session {} --resume",
                     manifest.session_id
                 );
             }
