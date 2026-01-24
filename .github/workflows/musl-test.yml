@@ -72,6 +72,8 @@ jobs:
 
       - name: Build release binary (native)
         if: "!matrix.use_cross"
+        env:
+          RUSTFLAGS: "-C target-feature=+crt-static"
         run: |
           cargo build --release -p pt-core --target ${{ matrix.target }}
 
