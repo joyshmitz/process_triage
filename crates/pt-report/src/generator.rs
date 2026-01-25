@@ -215,8 +215,9 @@ impl ReportGenerator {
             }
         }
 
-        // Serialize data for JavaScript
+        // Serialize data for JavaScript (escape to keep script tag safe)
         let data_json = serde_json::to_string(data).unwrap_or_else(|_| "{}".to_string());
+        let data_json = json_script_escape(&data_json);
 
         format!(
             r##"<!DOCTYPE html>
@@ -962,6 +963,21 @@ fn html_escape(s: &str) -> String {
         .replace('\'', "&#x27;")
 }
 
+fn json_script_escape(s: &str) -> String {
+    let mut escaped = String::with_capacity(s.len());
+    for ch in s.chars() {
+        match ch {
+            '<' => escaped.push_str("\\u003c"),
+            '>' => escaped.push_str("\\u003e"),
+            '&' => escaped.push_str("\\u0026"),
+            '\u{2028}' => escaped.push_str("\\u2028"),
+            '\u{2029}' => escaped.push_str("\\u2029"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -977,6 +993,15 @@ mod tests {
         assert_eq!(html_escape("<script>"), "&lt;script&gt;");
         assert_eq!(html_escape("a & b"), "a &amp; b");
         assert_eq!(html_escape(r#""quoted""#), "&quot;quoted&quot;");
+    }
+
+    #[test]
+    fn test_json_script_escape() {
+        let input = r#"<script>alert("x")</script>"#;
+        let escaped = json_script_escape(input);
+        assert!(escaped.contains("\\u003cscript\\u003e"));
+        assert!(escaped.contains("\\u003c/script\\u003e"));
+        assert!(!escaped.contains("<script>"));
     }
 
     #[test]
