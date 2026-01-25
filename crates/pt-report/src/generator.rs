@@ -177,9 +177,10 @@ impl ReportGenerator {
         let mut cdn_scripts = String::new();
 
         if let Some(lib) = libs.get("tailwindcss") {
+            let url = lib.url(cdn_base, "tailwindcss");
             cdn_styles.push_str(&format!(
-                r#"<script src="{}/tailwindcss@{}/dist/tailwind.min.js"></script>"#,
-                cdn_base, lib.version
+                r#"<link rel="stylesheet" href="{}" integrity="{}" crossorigin="anonymous">"#,
+                url, lib.sri
             ));
         }
 
@@ -464,7 +465,7 @@ impl ReportGenerator {
             tab_buttons = self.generate_tab_buttons(data),
             tab_contents = self.generate_tab_contents(data),
             cdn_scripts = cdn_scripts,
-            data_json = html_escape(&data_json),
+            data_json = data_json,
         )
     }
 
