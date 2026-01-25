@@ -5,7 +5,7 @@ edition = "2021"
 description = "Process Triage core inference and decision engine"
 license = "MIT"
 repository = "https://github.com/Dicklesworthstone/process_triage"
-rust-version = "1.75"
+rust-version = "1.88"
 readme = "README.md"
 
 [lib]
@@ -31,6 +31,7 @@ regex = "1"
 sha2 = "0.10"
 hex = "0.4"
 rand = "0.9"
+toon_rust = { workspace = true }
 
 # ECDSA signature verification for release binaries
 p256 = { version = "0.13", features = ["ecdsa"] }

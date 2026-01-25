@@ -4,6 +4,7 @@
 //! for managing user-defined process signatures.
 
 use crate::exit_codes::ExitCode;
+use crate::output::encode_toon_value;
 use crate::supervision::pattern_persistence::{AllPatternStats, DisabledPatterns};
 use crate::supervision::signature::ProcessMatchContext;
 use crate::supervision::{
@@ -16,6 +17,13 @@ use std::collections::HashMap;
 
 /// Bundle path for exported user signatures.
 pub const BUNDLE_SIGNATURES_PATH: &str = "signatures/user_signatures.json";
+
+fn format_signature_output(format: &OutputFormat, value: serde_json::Value) -> String {
+    match format {
+        OutputFormat::Toon => encode_toon_value(&value),
+        _ => serde_json::to_string_pretty(&value).unwrap_or_default(),
+    }
+}
 
 /// Arguments for the signature command
 #[derive(Args, Debug)]
@@ -316,7 +324,7 @@ fn run_signature_list(
     });
 
     match format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -325,7 +333,7 @@ fn run_signature_list(
                 "signatures": all_sigs,
                 "count": all_sigs.len(),
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_signature_output(format, output));
         }
         _ => {
             println!("# Signatures ({} total)", all_sigs.len());
@@ -371,8 +379,8 @@ fn run_signature_show(format: &OutputFormat, name: &str) -> ExitCode {
                 }
             });
             match format {
-                OutputFormat::Json => {
-                    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                OutputFormat::Json | OutputFormat::Toon => {
+                    println!("{}", format_signature_output(format, output));
                 }
                 _ => {
                     println!("# Signature: {} (builtin)", name);
@@ -410,8 +418,8 @@ fn run_signature_show(format: &OutputFormat, name: &str) -> ExitCode {
                     }
                 });
                 match format {
-                    OutputFormat::Json => {
-                        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                    OutputFormat::Json | OutputFormat::Toon => {
+                        println!("{}", format_signature_output(format, output));
                     }
                     _ => {
                         println!("# Signature: {} (user)", name);
@@ -514,7 +522,7 @@ fn run_signature_add(
     }
 
     match format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -524,7 +532,7 @@ fn run_signature_add(
                 "name": name,
                 "path": user_signatures_path().display().to_string(),
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_signature_output(format, output));
         }
         _ => {
             println!("Added signature '{}' to user signatures", name);
@@ -568,7 +576,7 @@ fn run_signature_remove(format: &OutputFormat, name: &str, force: bool) -> ExitC
     }
 
     match format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -577,7 +585,7 @@ fn run_signature_remove(format: &OutputFormat, name: &str, force: bool) -> ExitC
                 "status": "success",
                 "name": name,
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_signature_output(format, output));
         }
         _ => {
             println!("Removed signature '{}'", name);
@@ -631,7 +639,7 @@ fn run_signature_test(
         .collect();
 
     match format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -642,7 +650,7 @@ fn run_signature_test(
                 "matches": matches_json,
                 "count": matches.len(),
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_signature_output(format, output));
         }
         _ => {
             println!("# Testing signature match for: {}", process_name);
@@ -675,7 +683,7 @@ fn run_signature_validate(format: &OutputFormat) -> ExitCode {
 
     if !path.exists() {
         match format {
-            OutputFormat::Json => {
+            OutputFormat::Json | OutputFormat::Toon => {
                 let output = serde_json::json!({
                     "schema_version": SCHEMA_VERSION,
                     "session_id": session_id.0,
@@ -684,7 +692,7 @@ fn run_signature_validate(format: &OutputFormat) -> ExitCode {
                     "status": "no_file",
                     "message": "No user signatures file found",
                 });
-                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                println!("{}", format_signature_output(format, output));
             }
             _ => {
                 println!("No user signatures file found at: {}", path.display());
@@ -697,7 +705,7 @@ fn run_signature_validate(format: &OutputFormat) -> ExitCode {
         Ok(content) => match serde_json::from_str::<SignatureSchema>(&content) {
             Ok(schema) => {
                 match format {
-                    OutputFormat::Json => {
+                    OutputFormat::Json | OutputFormat::Toon => {
                         let output = serde_json::json!({
                             "schema_version": SCHEMA_VERSION,
                             "session_id": session_id.0,
@@ -707,7 +715,7 @@ fn run_signature_validate(format: &OutputFormat) -> ExitCode {
                             "path": path.display().to_string(),
                             "signature_count": schema.signatures.len(),
                         });
-                        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                        println!("{}", format_signature_output(format, output));
                     }
                     _ => {
                         println!("User signatures file is valid");
@@ -719,7 +727,7 @@ fn run_signature_validate(format: &OutputFormat) -> ExitCode {
             }
             Err(e) => {
                 match format {
-                    OutputFormat::Json => {
+                    OutputFormat::Json | OutputFormat::Toon => {
                         let output = serde_json::json!({
                             "schema_version": SCHEMA_VERSION,
                             "session_id": session_id.0,
@@ -728,7 +736,7 @@ fn run_signature_validate(format: &OutputFormat) -> ExitCode {
                             "status": "invalid",
                             "error": e.to_string(),
                         });
-                        println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                        println!("{}", format_signature_output(format, output));
                     }
                     _ => {
                         eprintln!("Invalid user signatures file: {}", e);
@@ -785,7 +793,7 @@ fn run_signature_export(format: &OutputFormat, output_path: &str, user_only: boo
     }
 
     match format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -795,7 +803,7 @@ fn run_signature_export(format: &OutputFormat, output_path: &str, user_only: boo
                 "path": output_path,
                 "signature_count": export_schema.signatures.len(),
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_signature_output(format, output));
         }
         _ => {
             println!(
@@ -827,7 +835,7 @@ fn run_signature_disable(format: &OutputFormat, name: &str, reason: Option<&str>
 
     if !found {
         match format {
-            OutputFormat::Json => {
+            OutputFormat::Json | OutputFormat::Toon => {
                 let output = serde_json::json!({
                     "schema_version": SCHEMA_VERSION,
                     "session_id": session_id.0,
@@ -836,7 +844,7 @@ fn run_signature_disable(format: &OutputFormat, name: &str, reason: Option<&str>
                     "status": "error",
                     "error": format!("Signature '{}' not found", name),
                 });
-                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                println!("{}", format_signature_output(format, output));
             }
             _ => eprintln!("Error: Signature '{}' not found", name),
         }
@@ -860,7 +868,7 @@ fn run_signature_disable(format: &OutputFormat, name: &str, reason: Option<&str>
     // Check if already disabled
     if disabled.is_disabled(name) {
         match format {
-            OutputFormat::Json => {
+            OutputFormat::Json | OutputFormat::Toon => {
                 let output = serde_json::json!({
                     "schema_version": SCHEMA_VERSION,
                     "session_id": session_id.0,
@@ -869,7 +877,7 @@ fn run_signature_disable(format: &OutputFormat, name: &str, reason: Option<&str>
                     "status": "already_disabled",
                     "name": name,
                 });
-                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                println!("{}", format_signature_output(format, output));
             }
             _ => println!("Signature '{}' is already disabled", name),
         }
@@ -886,7 +894,7 @@ fn run_signature_disable(format: &OutputFormat, name: &str, reason: Option<&str>
     }
 
     match format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -896,7 +904,7 @@ fn run_signature_disable(format: &OutputFormat, name: &str, reason: Option<&str>
                 "name": name,
                 "reason": reason,
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_signature_output(format, output));
         }
         _ => {
             println!("Disabled signature '{}'", name);
@@ -929,7 +937,7 @@ fn run_signature_enable(format: &OutputFormat, name: &str) -> ExitCode {
     // Check if it's actually disabled
     if !disabled.is_disabled(name) {
         match format {
-            OutputFormat::Json => {
+            OutputFormat::Json | OutputFormat::Toon => {
                 let output = serde_json::json!({
                     "schema_version": SCHEMA_VERSION,
                     "session_id": session_id.0,
@@ -939,7 +947,7 @@ fn run_signature_enable(format: &OutputFormat, name: &str) -> ExitCode {
                     "name": name,
                     "message": format!("Signature '{}' is not disabled", name),
                 });
-                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                println!("{}", format_signature_output(format, output));
             }
             _ => println!("Signature '{}' is not disabled", name),
         }
@@ -956,7 +964,7 @@ fn run_signature_enable(format: &OutputFormat, name: &str) -> ExitCode {
     }
 
     match format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -965,7 +973,7 @@ fn run_signature_enable(format: &OutputFormat, name: &str) -> ExitCode {
                 "status": "success",
                 "name": name,
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_signature_output(format, output));
         }
         _ => {
             println!("Enabled signature '{}'", name);
@@ -1026,7 +1034,7 @@ fn run_signature_stats(format: &OutputFormat, min_matches: u32, sort_by: &str) -
     }
 
     match format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let stats_json: Vec<serde_json::Value> = stat_entries
                 .iter()
                 .map(|(name, s)| {
@@ -1055,7 +1063,7 @@ fn run_signature_stats(format: &OutputFormat, min_matches: u32, sort_by: &str) -
                 "stats": stats_json,
                 "count": stat_entries.len(),
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_signature_output(format, output));
         }
         _ => {
             if stat_entries.is_empty() {

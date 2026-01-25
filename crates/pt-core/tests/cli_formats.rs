@@ -28,6 +28,14 @@ mod format_option {
     }
 
     #[test]
+    fn toon_format_accepted() {
+        pt_core()
+            .args(["--format", "toon", "--help"])
+            .assert()
+            .success();
+    }
+
+    #[test]
     fn short_format_flag_accepted() {
         pt_core().args(["-f", "json", "--help"]).assert().success();
     }

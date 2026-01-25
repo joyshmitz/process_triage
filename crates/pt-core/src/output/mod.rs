@@ -6,6 +6,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
+use toon_rust::encode;
+use toon_rust::options::{EncodeOptions, KeyFoldingMode};
 
 /// Field selection specification for filtering output fields.
 #[derive(Debug, Clone, Default)]
@@ -523,10 +525,24 @@ pub struct ProcessedOutput {
     pub remaining_count: Option<usize>,
 }
 
+/// Encode a JSON value into TOON with safe key folding.
+pub fn encode_toon_value(value: &Value) -> String {
+    let options = EncodeOptions {
+        indent: None,
+        delimiter: None,
+        key_folding: Some(KeyFoldingMode::Safe),
+        flatten_depth: None,
+        replacer: None,
+    };
+
+    encode(value.clone().into(), Some(options))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use toon_rust::try_decode;
 
     #[test]
     fn test_field_selector_presets() {
@@ -599,6 +615,21 @@ mod tests {
     }
 
     #[test]
+    fn test_encode_toon_roundtrip() {
+        let input = json!({
+            "pid": 1234,
+            "classification": "abandoned",
+            "confidence": 0.87,
+            "tags": ["orphan", "stale"],
+            "metrics": { "cpu": 0.12, "mem": 32 }
+        });
+
+        let encoded = encode_toon_value(&input);
+        let decoded = try_decode(&encoded, None).expect("decode TOON");
+        assert_eq!(decoded, input);
+    }
+
+    #[test]
     fn test_token_estimation() {
         let estimator = TokenEstimator::new();
 
@@ -652,4 +683,6 @@ mod tests {
         assert!(output.json.get("cmd").is_none());
         assert!(output.token_count > 0);
     }
+
+    // Note: round-trip coverage is handled by test_encode_toon_roundtrip.
 }

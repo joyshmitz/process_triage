@@ -15,7 +15,8 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/Dicklesworthstone/process_triage"
-rust-version = "1.75"
+rust-version = "1.88"
+## NOTE: Raised to satisfy `toon_rust` (edition 2024 + vergen-gix MSRV) dependency for TOON output support.
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -24,6 +25,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "1"
 clap = { version = "4", features = ["derive", "env", "string"] }
+toon_rust = { path = "../toon_rust" }
 
 # Release profile optimized for size (used for musl builds)
 [profile.release]

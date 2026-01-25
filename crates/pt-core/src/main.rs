@@ -7,7 +7,7 @@
 //! - Agent/robot mode for automated operation
 //! - Telemetry and reporting
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueSource};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
 use pt_core::capabilities::{get_capabilities, ToolCapability};
 use pt_core::collect::protected::ProtectedFilter;
@@ -21,7 +21,7 @@ use pt_core::events::{
 };
 use pt_core::exit_codes::ExitCode;
 use pt_core::inference::signature_fast_path::{try_signature_fast_path, FastPathConfig};
-use pt_core::output::{CompactConfig, FieldSelector, TokenEfficientOutput};
+use pt_core::output::{encode_toon_value, CompactConfig, FieldSelector, TokenEfficientOutput};
 use pt_core::session::{
     ListSessionsOptions, SessionContext, SessionHandle, SessionManifest, SessionMode, SessionState,
     SessionStore,
@@ -64,7 +64,13 @@ struct GlobalOpts {
     config: Option<String>,
 
     /// Output format
-    #[arg(long, short = 'f', global = true, default_value = "json")]
+    #[arg(
+        long,
+        short = 'f',
+        global = true,
+        default_value = "json",
+        env = "PT_OUTPUT_FORMAT"
+    )]
     format: OutputFormat,
 
     /// Increase verbosity (-v, -vv, -vvv)
@@ -188,6 +194,58 @@ impl GlobalOpts {
         }
 
         result.output_string
+    }
+
+    /// Process JSON value through token-efficient output pipeline and return JSON value.
+    fn process_output_value(&self, value: serde_json::Value) -> serde_json::Value {
+        // If no token-efficient options specified, return input unchanged
+        if self.fields.is_none()
+            && !self.compact
+            && self.max_tokens.is_none()
+            && !self.estimate_tokens
+        {
+            return value;
+        }
+
+        let processor = self.build_output_processor();
+        let result = processor.process(value);
+
+        // If estimate_tokens is set, return token estimate metadata only
+        if self.estimate_tokens {
+            return serde_json::json!({
+                "estimated_tokens": result.token_count,
+                "truncated": result.truncated,
+                "continuation_token": result.continuation_token,
+                "remaining_count": result.remaining_count,
+            });
+        }
+
+        // If truncated, wrap output with metadata
+        if result.truncated {
+            return serde_json::json!({
+                "data": result.json,
+                "_meta": {
+                    "truncated": true,
+                    "continuation_token": result.continuation_token,
+                    "remaining_count": result.remaining_count,
+                    "token_count": result.token_count,
+                }
+            });
+        }
+
+        result.json
+    }
+}
+
+/// Format structured output for JSON/TOON modes, preserving token-efficient options.
+fn format_structured_output(global: &GlobalOpts, value: serde_json::Value) -> String {
+    match global.format {
+        OutputFormat::Json => global.process_output(value),
+        OutputFormat::Toon => {
+            let processed = global.process_output_value(value);
+            encode_toon_value(&processed)
+        }
+        _ => global.process_output(value),
     }
 }
 
@@ -1115,7 +1173,10 @@ use pt_core::logging::{
 // ============================================================================
 
 fn main() {
-    let cli = Cli::parse();
+    let matches = Cli::command().get_matches();
+    let mut cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    let format_source = matches.value_source("format");
+    cli.global.format = resolve_output_format(cli.global.format, format_source);
 
     // Initialize logging
     let log_level = if cli.global.quiet {
@@ -1133,7 +1194,10 @@ fn main() {
     // Actually, keeping stderr human-readable is usually better for CLI users even if stdout is JSON.
     // Let's stick to Human for CLI use unless specifically requested otherwise.
     // But wait, if I'm an agent parsing JSON stdout, I might want JSONL stderr too.
-    let log_format = if matches!(cli.global.format, OutputFormat::Json | OutputFormat::Jsonl) {
+    let log_format = if matches!(
+        cli.global.format,
+        OutputFormat::Json | OutputFormat::Jsonl | OutputFormat::Toon
+    ) {
         LogFormat::Jsonl
     } else {
         LogFormat::Human
@@ -1186,6 +1250,28 @@ fn main() {
     std::process::exit(exit_code.as_i32());
 }
 
+fn resolve_output_format(current: OutputFormat, source: Option<ValueSource>) -> OutputFormat {
+    match source {
+        Some(ValueSource::CommandLine) | Some(ValueSource::EnvVariable) => current,
+        _ => {
+            if let Ok(value) = std::env::var("TOON_DEFAULT_FORMAT") {
+                if let Some(parsed) = parse_output_format(&value) {
+                    return parsed;
+                }
+            }
+            current
+        }
+    }
+}
+
+fn parse_output_format(value: &str) -> Option<OutputFormat> {
+    match value.trim().to_lowercase().as_str() {
+        "json" => Some(OutputFormat::Json),
+        "toon" => Some(OutputFormat::Toon),
+        _ => None,
+    }
+}
+
 // ============================================================================
 // Command implementations (stubs)
 // ============================================================================
@@ -1204,7 +1290,7 @@ use pt_core::inference::{compute_posterior, CpuEvidence, Evidence, EvidenceLedge
 
 fn progress_emitter(global: &GlobalOpts) -> Option<Arc<dyn ProgressEmitter>> {
     match global.format {
-        OutputFormat::Json | OutputFormat::Jsonl => {
+        OutputFormat::Json | OutputFormat::Jsonl | OutputFormat::Toon => {
             Some(Arc::new(JsonlWriter::new(std::io::stderr())))
         }
         _ => None,
@@ -1304,7 +1390,7 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
             );
 
             match global.format {
-                OutputFormat::Json => {
+                OutputFormat::Json | OutputFormat::Toon => {
                     // Enrich with schema version and session ID
                     let session_id = SessionId::new();
                     let output = serde_json::json!({
@@ -1314,7 +1400,7 @@ fn run_scan(global: &GlobalOpts, args: &ScanArgs) -> ExitCode {
                         "scan": result
                     });
                     // Apply token-efficient processing if options specified
-                    println!("{}", global.process_output(output));
+                    println!("{}", format_structured_output(global, output));
                 }
                 OutputFormat::Summary => {
                     println!(
@@ -2110,8 +2196,8 @@ fn run_check(global: &GlobalOpts, args: &CheckArgs) -> ExitCode {
     });
 
     match global.format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, response));
         }
         OutputFormat::Summary => {
             let status = if all_ok { "OK" } else { "FAILED" };
@@ -2273,8 +2359,8 @@ fn run_config_show(global: &GlobalOpts, file_filter: Option<&str>) -> ExitCode {
     };
 
     match global.format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, response));
         }
         OutputFormat::Summary => {
             let priors_src = snapshot
@@ -2381,8 +2467,8 @@ fn run_config_validate(global: &GlobalOpts, path: Option<&String>) -> ExitCode {
             });
 
             match global.format {
-                OutputFormat::Json => {
-                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                OutputFormat::Json | OutputFormat::Toon => {
+                    println!("{}", format_structured_output(global, response));
                 }
                 OutputFormat::Summary => {
                     println!("[{}] config validate: OK", session_id);
@@ -2436,8 +2522,8 @@ fn output_config_error(global: &GlobalOpts, error: &ConfigError) -> ExitCode {
     });
 
     match global.format {
-        OutputFormat::Json => {
-            eprintln!("{}", serde_json::to_string_pretty(&response).unwrap());
+        OutputFormat::Json | OutputFormat::Toon => {
+            eprintln!("{}", format_structured_output(global, response));
         }
         OutputFormat::Summary => {
             eprintln!("[{}] config error: {}", session_id, error);
@@ -2459,7 +2545,7 @@ fn run_config_list_presets(global: &GlobalOpts) -> ExitCode {
     let presets = list_presets();
 
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let response = serde_json::json!({
                 "session_id": session_id.to_string(),
                 "presets": presets.iter().map(|p| {
@@ -2469,7 +2555,7 @@ fn run_config_list_presets(global: &GlobalOpts) -> ExitCode {
                     })
                 }).collect::<Vec<_>>(),
             });
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            println!("{}", format_structured_output(global, response));
         }
         OutputFormat::Summary => {
             println!("[{}] {} presets available", session_id, presets.len());
@@ -2506,8 +2592,8 @@ fn run_config_show_preset(global: &GlobalOpts, preset_name: &str) -> ExitCode {
                 "error": format!("Unknown preset: {}. Available: developer, server, ci, paranoid", preset_name),
             });
             match global.format {
-                OutputFormat::Json => {
-                    eprintln!("{}", serde_json::to_string_pretty(&response).unwrap());
+                OutputFormat::Json | OutputFormat::Toon => {
+                    eprintln!("{}", format_structured_output(global, response));
                 }
                 _ => {
                     eprintln!("Error: Unknown preset '{}'. Available presets: developer, server, ci, paranoid", preset_name);
@@ -2520,13 +2606,13 @@ fn run_config_show_preset(global: &GlobalOpts, preset_name: &str) -> ExitCode {
     let policy = get_preset(preset_name);
 
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let response = serde_json::json!({
                 "session_id": session_id.to_string(),
                 "preset": preset_name.to_string(),
                 "policy": policy,
             });
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            println!("{}", format_structured_output(global, response));
         }
         OutputFormat::Summary => {
             println!("[{}] preset {}", session_id, preset_name);
@@ -2558,8 +2644,8 @@ fn run_config_diff_preset(global: &GlobalOpts, preset_name: &str) -> ExitCode {
                 "error": format!("Unknown preset: {}. Available: developer, server, ci, paranoid", preset_name),
             });
             match global.format {
-                OutputFormat::Json => {
-                    eprintln!("{}", serde_json::to_string_pretty(&response).unwrap());
+                OutputFormat::Json | OutputFormat::Toon => {
+                    eprintln!("{}", format_structured_output(global, response));
                 }
                 _ => {
                     eprintln!("Error: Unknown preset '{}'. Available presets: developer, server, ci, paranoid", preset_name);
@@ -2594,14 +2680,14 @@ fn run_config_diff_preset(global: &GlobalOpts, preset_name: &str) -> ExitCode {
     find_json_differences("", &current_json, &preset_json, &mut differences);
 
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let response = serde_json::json!({
                 "session_id": session_id.to_string(),
                 "preset": preset_name_parsed.to_string(),
                 "differences_count": differences.len(),
                 "differences": differences,
             });
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+            println!("{}", format_structured_output(global, response));
         }
         OutputFormat::Summary => {
             println!(
@@ -2700,8 +2786,8 @@ fn run_config_export_preset(
                 "error": format!("Unknown preset: {}. Available: developer, server, ci, paranoid", preset_name),
             });
             match global.format {
-                OutputFormat::Json => {
-                    eprintln!("{}", serde_json::to_string_pretty(&response).unwrap());
+                OutputFormat::Json | OutputFormat::Toon => {
+                    eprintln!("{}", format_structured_output(global, response));
                 }
                 _ => {
                     eprintln!("Error: Unknown preset '{}'. Available presets: developer, server, ci, paranoid", preset_name);
@@ -2726,14 +2812,14 @@ fn run_config_export_preset(
     match std::fs::write(&output_path, &json_content) {
         Ok(()) => {
             match global.format {
-                OutputFormat::Json => {
+                OutputFormat::Json | OutputFormat::Toon => {
                     let response = serde_json::json!({
                         "session_id": session_id.to_string(),
                         "preset": preset_name_parsed.to_string(),
                         "output_path": output_path.display().to_string(),
                         "status": "exported",
                     });
-                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                    println!("{}", format_structured_output(global, response));
                 }
                 OutputFormat::Summary => {
                     println!(
@@ -2756,12 +2842,12 @@ fn run_config_export_preset(
         }
         Err(e) => {
             match global.format {
-                OutputFormat::Json => {
+                OutputFormat::Json | OutputFormat::Toon => {
                     let response = serde_json::json!({
                         "session_id": session_id.to_string(),
                         "error": format!("Failed to write to {}: {}", output_path.display(), e),
                     });
-                    eprintln!("{}", serde_json::to_string_pretty(&response).unwrap());
+                    eprintln!("{}", format_structured_output(global, response));
                 }
                 _ => {
                     eprintln!("Error: Failed to write to {}: {}", output_path.display(), e);
@@ -2801,7 +2887,15 @@ fn run_schema(global: &GlobalOpts, args: &SchemaArgs) -> ExitCode {
     // List available types
     if args.list {
         match global.format {
-            OutputFormat::Json | OutputFormat::Jsonl => {
+            OutputFormat::Json | OutputFormat::Toon => {
+                let types: Vec<_> = available_schemas()
+                    .into_iter()
+                    .map(|(name, desc)| serde_json::json!({"name": name, "description": desc}))
+                    .collect();
+                let types_value = serde_json::Value::Array(types);
+                println!("{}", format_structured_output(global, types_value));
+            }
+            OutputFormat::Jsonl => {
                 let types: Vec<_> = available_schemas()
                     .into_iter()
                     .map(|(name, desc)| serde_json::json!({"name": name, "description": desc}))
@@ -2823,8 +2917,9 @@ fn run_schema(global: &GlobalOpts, args: &SchemaArgs) -> ExitCode {
     if args.all {
         let schemas = generate_all_schemas();
         match global.format {
-            OutputFormat::Json => {
-                println!("{}", serde_json::to_string_pretty(&schemas).unwrap());
+            OutputFormat::Json | OutputFormat::Toon => {
+                let schemas_value = serde_json::to_value(&schemas).unwrap_or_default();
+                println!("{}", format_structured_output(global, schemas_value));
             }
             OutputFormat::Jsonl => {
                 for (name, schema) in schemas {
@@ -2871,8 +2966,8 @@ fn print_version(global: &GlobalOpts) {
     });
 
     match global.format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&version_info).unwrap());
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, version_info));
         }
         OutputFormat::Exitcode => {}
         _ => {
@@ -2895,7 +2990,7 @@ fn output_stub_with_session(
     message: &str,
 ) {
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -2904,7 +2999,7 @@ fn output_stub_with_session(
                 "status": "stub",
                 "message": message
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_structured_output(global, output));
         }
         OutputFormat::Summary => {
             println!("[{}] {}: {}", session_id, command, message);
@@ -3013,15 +3108,13 @@ fn run_agent_capabilities(global: &GlobalOpts, args: &AgentCapabilitiesArgs) -> 
         };
 
         match global.format {
-            OutputFormat::Json => {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "action": action,
-                        "supported": supported,
-                        "reason": reason,
-                    })
-                );
+            OutputFormat::Json | OutputFormat::Toon => {
+                let output = serde_json::json!({
+                    "action": action,
+                    "supported": supported,
+                    "reason": reason,
+                });
+                println!("{}", format_structured_output(global, output));
             }
             OutputFormat::Summary => {
                 if supported {
@@ -3155,11 +3248,8 @@ fn output_capabilities(global: &GlobalOpts) {
     });
 
     match global.format {
-        OutputFormat::Json => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&capabilities_json).unwrap()
-            );
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, capabilities_json));
         }
         OutputFormat::Exitcode => {}
         _ => {
@@ -3626,7 +3716,7 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
     });
 
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let mut output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": session_id.0,
@@ -3645,7 +3735,7 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
                     .unwrap()
                     .insert("process_snapshot".to_string(), procs.clone());
             }
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_structured_output(global, output));
         }
         OutputFormat::Summary => {
             let mem = system_state
@@ -4290,7 +4380,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
 
     // Output based on format
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             // Build output based on --minimal and --pretty flags
             let output_json = if args.minimal {
                 // Minimal output: just PIDs, scores, and recommendations
@@ -4323,6 +4413,36 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
                 global.process_output(output_json)
             };
             println!("{}", output_str);
+        }
+        OutputFormat::Toon => {
+            let output_json = if args.minimal {
+                let minimal_candidates: Vec<serde_json::Value> = candidates
+                    .iter()
+                    .map(|c| {
+                        serde_json::json!({
+                            "pid": c["pid"],
+                            "score": c["score"],
+                            "recommendation": c["recommendation"],
+                        })
+                    })
+                    .collect();
+                serde_json::json!({
+                    "pt_version": env!("CARGO_PKG_VERSION"),
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "session_id": session_id.0,
+                    "candidates": minimal_candidates,
+                    "recommendations": recommendations,
+                })
+            } else {
+                plan_output.clone()
+            };
+
+            let output_value = if args.pretty {
+                output_json
+            } else {
+                global.process_output_value(output_json)
+            };
+            println!("{}", encode_toon_value(&output_value));
         }
         OutputFormat::Summary => {
             println!(
@@ -4483,8 +4603,8 @@ fn run_agent_explain(global: &GlobalOpts, args: &AgentExplainArgs) -> ExitCode {
     }
 
     match global.format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, output));
         }
         OutputFormat::Summary => {
             for expl in &explanations {
@@ -5160,7 +5280,9 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         "resumed": args.resume
     });
     match global.format {
-        OutputFormat::Json => println!("{}", global.process_output(result)),
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, result));
+        }
         OutputFormat::Summary => {
             if resumed_skipped > 0 {
                 println!(
@@ -5192,7 +5314,9 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
 fn output_apply_nothing(global: &GlobalOpts, sid: &SessionId) {
     let result = serde_json::json!({"session_id": sid.0, "mode": "robot_apply", "note": "nothing_to_do", "summary": {"attempted": 0}});
     match global.format {
-        OutputFormat::Json => println!("{}", global.process_output(result)),
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, result));
+        }
         _ => println!("[{}] apply: nothing to do", sid),
     }
 }
@@ -5367,7 +5491,7 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
     };
 
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             // Extend report with respawn info if checked
             let mut output = serde_json::to_value(&report).unwrap_or_default();
             if args.check_respawn {
@@ -5386,7 +5510,7 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
                     );
                 }
             }
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_structured_output(global, output));
         }
         OutputFormat::Summary => {
             let freed = report
@@ -5785,8 +5909,8 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
     });
 
     match global.format {
-        OutputFormat::Json => {
-            println!("{}", global.process_output(output.clone()));
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, output.clone()));
         }
         OutputFormat::Summary => {
             let focus_note = if focus != "all" {
@@ -5945,8 +6069,8 @@ fn run_agent_list_priors(global: &GlobalOpts, args: &AgentListPriorsArgs) -> Exi
     }
 
     match global.format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, response));
         }
         OutputFormat::Jsonl => {
             // Compact single-line JSON for streaming/JSONL consumers
@@ -6101,14 +6225,17 @@ fn run_agent_export_priors(global: &GlobalOpts, args: &AgentExportPriorsArgs) ->
         return ExitCode::IoError;
     }
 
+    let response = serde_json::json!({
+        "exported": true,
+        "path": out_path.display().to_string(),
+        "host_id": host_id,
+        "host_profile": args.host_profile,
+    });
     match global.format {
-        OutputFormat::Json | OutputFormat::Jsonl => {
-            let response = serde_json::json!({
-                "exported": true,
-                "path": out_path.display().to_string(),
-                "host_id": host_id,
-                "host_profile": args.host_profile,
-            });
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, response));
+        }
+        OutputFormat::Jsonl => {
             println!("{}", serde_json::to_string_pretty(&response).unwrap());
         }
         _ => {
@@ -6321,20 +6448,23 @@ fn run_agent_import_priors(global: &GlobalOpts, args: &AgentImportPriorsArgs) ->
     }
 
     // Output result
+    let response = serde_json::json!({
+        "imported": true,
+        "mode": mode,
+        "source": input_path.display().to_string(),
+        "target": priors_path.display().to_string(),
+        "class_priors": {
+            "useful": final_priors.classes.useful.prior_prob,
+            "useful_bad": final_priors.classes.useful_bad.prior_prob,
+            "abandoned": final_priors.classes.abandoned.prior_prob,
+            "zombie": final_priors.classes.zombie.prior_prob,
+        }
+    });
     match global.format {
-        OutputFormat::Json | OutputFormat::Jsonl => {
-            let response = serde_json::json!({
-                "imported": true,
-                "mode": mode,
-                "source": input_path.display().to_string(),
-                "target": priors_path.display().to_string(),
-                "class_priors": {
-                    "useful": final_priors.classes.useful.prior_prob,
-                    "useful_bad": final_priors.classes.useful_bad.prior_prob,
-                    "abandoned": final_priors.classes.abandoned.prior_prob,
-                    "zombie": final_priors.classes.zombie.prior_prob,
-                }
-            });
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, response));
+        }
+        OutputFormat::Jsonl => {
             println!("{}", serde_json::to_string_pretty(&response).unwrap());
         }
         _ => {
@@ -6404,13 +6534,16 @@ fn run_agent_init(global: &GlobalOpts, args: &AgentInitArgs) -> ExitCode {
             ExitCode::Clean
         }
         Err(pt_core::agent_init::AgentInitError::NoAgentsFound) => {
+            let response = serde_json::json!({
+                "error": "no_agents_found",
+                "message": "No supported coding agents found. Install Claude Code, Codex, Copilot, Cursor, or Windsurf first.",
+                "supported_agents": ["claude-code", "codex", "copilot", "cursor", "windsurf"]
+            });
             match global.format {
-                OutputFormat::Json | OutputFormat::Jsonl => {
-                    let response = serde_json::json!({
-                        "error": "no_agents_found",
-                        "message": "No supported coding agents found. Install Claude Code, Codex, Copilot, Cursor, or Windsurf first.",
-                        "supported_agents": ["claude-code", "codex", "copilot", "cursor", "windsurf"]
-                    });
+                OutputFormat::Json | OutputFormat::Toon => {
+                    println!("{}", format_structured_output(global, response));
+                }
+                OutputFormat::Jsonl => {
                     println!("{}", serde_json::to_string_pretty(&response).unwrap());
                 }
                 _ => {
@@ -6438,7 +6571,11 @@ fn run_agent_init(global: &GlobalOpts, args: &AgentInitArgs) -> ExitCode {
 
 fn output_agent_init_result(global: &GlobalOpts, result: &pt_core::agent_init::InitResult) {
     match global.format {
-        OutputFormat::Json | OutputFormat::Jsonl => {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let value = serde_json::to_value(result).unwrap_or_else(|_| serde_json::json!({}));
+            println!("{}", format_structured_output(global, value));
+        }
+        OutputFormat::Jsonl => {
             println!("{}", serde_json::to_string_pretty(result).unwrap());
         }
         _ => {
@@ -6520,13 +6657,13 @@ fn run_agent_inbox(global: &GlobalOpts, args: &AgentInboxArgs) -> ExitCode {
         match store.acknowledge(item_id) {
             Ok(item) => {
                 match global.format {
-                    OutputFormat::Json => {
+                    OutputFormat::Json | OutputFormat::Toon => {
                         let response = serde_json::json!({
                             "acknowledged": true,
                             "item_id": item.id,
                             "acknowledged_at": item.acknowledged_at,
                         });
-                        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                        println!("{}", format_structured_output(global, response));
                     }
                     _ => {
                         println!("Acknowledged: {}", item.id);
@@ -6546,12 +6683,12 @@ fn run_agent_inbox(global: &GlobalOpts, args: &AgentInboxArgs) -> ExitCode {
         match store.clear_all() {
             Ok(count) => {
                 match global.format {
-                    OutputFormat::Json => {
+                    OutputFormat::Json | OutputFormat::Toon => {
                         let response = serde_json::json!({
                             "cleared": count,
                             "clear_type": "all",
                         });
-                        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                        println!("{}", format_structured_output(global, response));
                     }
                     _ => {
                         println!("Cleared {} items", count);
@@ -6571,12 +6708,12 @@ fn run_agent_inbox(global: &GlobalOpts, args: &AgentInboxArgs) -> ExitCode {
         match store.clear_acknowledged() {
             Ok(count) => {
                 match global.format {
-                    OutputFormat::Json => {
+                    OutputFormat::Json | OutputFormat::Toon => {
                         let response = serde_json::json!({
                             "cleared": count,
                             "clear_type": "acknowledged",
                         });
-                        println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                        println!("{}", format_structured_output(global, response));
                     }
                     _ => {
                         println!("Cleared {} acknowledged items", count);
@@ -6607,8 +6744,9 @@ fn run_agent_inbox(global: &GlobalOpts, args: &AgentInboxArgs) -> ExitCode {
     let response = InboxResponse::new(items.clone());
 
     match global.format {
-        OutputFormat::Json => {
-            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+        OutputFormat::Json | OutputFormat::Toon => {
+            let response_value = serde_json::to_value(&response).unwrap_or_default();
+            println!("{}", format_structured_output(global, response_value));
         }
         OutputFormat::Jsonl => {
             // One item per line
@@ -6868,14 +7006,14 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
             if let Some(ref out_path) = args.out {
                 match std::fs::write(out_path, &html) {
                     Ok(_) => match global.format {
-                        OutputFormat::Json => {
+                        OutputFormat::Json | OutputFormat::Toon => {
                             let response = serde_json::json!({
                                 "status": "success",
                                 "output_path": out_path,
                                 "size_bytes": html.len(),
                                 "format": "html",
                             });
-                            println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                            println!("{}", format_structured_output(global, response));
                         }
                         _ => {
                             println!("Report written to: {}", out_path);
@@ -6895,13 +7033,13 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
             // Generate Slack-friendly summary
             let summary = generate_slack_summary(&args.prose_style);
             match global.format {
-                OutputFormat::Json => {
+                OutputFormat::Json | OutputFormat::Toon => {
                     let response = serde_json::json!({
                         "format": "slack",
                         "prose_style": args.prose_style,
                         "content": summary,
                     });
-                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                    println!("{}", format_structured_output(global, response));
                 }
                 _ => {
                     println!("{}", summary);
@@ -6912,13 +7050,13 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
             // Generate prose summary
             let summary = generate_prose_summary(&args.prose_style);
             match global.format {
-                OutputFormat::Json => {
+                OutputFormat::Json | OutputFormat::Toon => {
                     let response = serde_json::json!({
                         "format": "prose",
                         "prose_style": args.prose_style,
                         "content": summary,
                     });
-                    println!("{}", serde_json::to_string_pretty(&response).unwrap());
+                    println!("{}", format_structured_output(global, response));
                 }
                 _ => {
                     println!("{}", summary);
@@ -7251,7 +7389,7 @@ fn run_agent_session_status(
     };
 
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let mut output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "session_id": manifest.session_id,
@@ -7302,7 +7440,7 @@ fn run_agent_session_status(
                         .insert("outcomes".to_string(), serde_json::json!(outcomes));
                 }
             }
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_structured_output(global, output));
         }
         OutputFormat::Summary => {
             let status_char = if resumable { "⏸" } else { "✓" };
@@ -7415,7 +7553,7 @@ fn run_agent_sessions_cleanup(
     };
 
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "generated_at": chrono::Utc::now().to_rfc3339(),
@@ -7428,7 +7566,7 @@ fn run_agent_sessions_cleanup(
                 "status": if result.errors.is_empty() { "ok" } else { "partial" },
                 "command": format!("pt agent sessions --cleanup --older-than {}", older_than_str),
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_structured_output(global, output));
         }
         OutputFormat::Summary => {
             println!(
@@ -7502,7 +7640,7 @@ fn run_agent_sessions_list(
     };
 
     match global.format {
-        OutputFormat::Json => {
+        OutputFormat::Json | OutputFormat::Toon => {
             let output = serde_json::json!({
                 "schema_version": SCHEMA_VERSION,
                 "generated_at": chrono::Utc::now().to_rfc3339(),
@@ -7521,7 +7659,7 @@ fn run_agent_sessions_list(
                 "status": "ok",
                 "command": "pt agent sessions",
             });
-            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+            println!("{}", format_structured_output(global, output));
         }
         OutputFormat::Summary => {
             if sessions.is_empty() {
@@ -7587,12 +7725,12 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
         Ok(p) => p,
         Err(e) => {
             match global.format {
-                OutputFormat::Json => {
+                OutputFormat::Json | OutputFormat::Toon => {
                     let error = serde_json::json!({
                         "error": format!("Could not determine current binary path: {}", e),
                         "suggestion": "Ensure pt-core is installed properly"
                     });
-                    eprintln!("{}", serde_json::to_string_pretty(&error).unwrap());
+                    eprintln!("{}", format_structured_output(global, error));
                 }
                 _ => {
                     eprintln!("Error: Could not determine current binary path: {}", e);
@@ -7610,11 +7748,11 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                 Ok(b) => b,
                 Err(e) => {
                     match global.format {
-                        OutputFormat::Json => {
+                        OutputFormat::Json | OutputFormat::Toon => {
                             let error = serde_json::json!({
                                 "error": format!("Failed to list backups: {}", e)
                             });
-                            eprintln!("{}", serde_json::to_string_pretty(&error).unwrap());
+                            eprintln!("{}", format_structured_output(global, error));
                         }
                         _ => {
                             eprintln!("Error: Failed to list backups: {}", e);
@@ -7625,7 +7763,7 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
             };
 
             match global.format {
-                OutputFormat::Json => {
+                OutputFormat::Json | OutputFormat::Toon => {
                     let backup_list: Vec<_> = backups
                         .iter()
                         .map(|b| {
@@ -7643,7 +7781,7 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                         "backups": backup_list,
                         "count": backups.len()
                     });
-                    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                    println!("{}", format_structured_output(global, output));
                 }
                 OutputFormat::Summary => {
                     if backups.is_empty() {
@@ -7689,7 +7827,7 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
             match backup {
                 Some(b) => {
                     match global.format {
-                        OutputFormat::Json => {
+                        OutputFormat::Json | OutputFormat::Toon => {
                             let output = serde_json::json!({
                                 "schema_version": SCHEMA_VERSION,
                                 "version": b.metadata.version,
@@ -7700,7 +7838,7 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                                 "backup_path": b.binary_path.display().to_string(),
                                 "metadata_path": b.metadata_path.display().to_string()
                             });
-                            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                            println!("{}", format_structured_output(global, output));
                         }
                         _ => {
                             println!("# Backup: {}\n", b.metadata.version);
@@ -7716,11 +7854,11 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                 }
                 None => {
                     match global.format {
-                        OutputFormat::Json => {
+                        OutputFormat::Json | OutputFormat::Toon => {
                             let error = serde_json::json!({
                                 "error": format!("No backup found for version: {}", target)
                             });
-                            eprintln!("{}", serde_json::to_string_pretty(&error).unwrap());
+                            eprintln!("{}", format_structured_output(global, error));
                         }
                         _ => {
                             eprintln!("Error: No backup found for version: {}", target);
@@ -7743,14 +7881,14 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                 Some(b) => {
                     let is_valid = manager.backup_manager().verify_backup(b).unwrap_or(false);
                     match global.format {
-                        OutputFormat::Json => {
+                        OutputFormat::Json | OutputFormat::Toon => {
                             let output = serde_json::json!({
                                 "schema_version": SCHEMA_VERSION,
                                 "version": b.metadata.version,
                                 "valid": is_valid,
                                 "expected_checksum": b.metadata.checksum
                             });
-                            println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                            println!("{}", format_structured_output(global, output));
                         }
                         _ => {
                             if is_valid {
@@ -7774,11 +7912,11 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                 }
                 None => {
                     match global.format {
-                        OutputFormat::Json => {
+                        OutputFormat::Json | OutputFormat::Toon => {
                             let error = serde_json::json!({
                                 "error": "No backup available to verify"
                             });
-                            eprintln!("{}", serde_json::to_string_pretty(&error).unwrap());
+                            eprintln!("{}", format_structured_output(global, error));
                         }
                         _ => {
                             eprintln!("Error: No backup available to verify");
@@ -7799,14 +7937,14 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                 Ok(rollback_result) => {
                     if rollback_result.success {
                         match global.format {
-                            OutputFormat::Json => {
+                            OutputFormat::Json | OutputFormat::Toon => {
                                 let output = serde_json::json!({
                                     "schema_version": SCHEMA_VERSION,
                                     "status": "success",
                                     "restored_version": rollback_result.restored_version,
                                     "restored_path": rollback_result.restored_path.map(|p| p.display().to_string())
                                 });
-                                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                                println!("{}", format_structured_output(global, output));
                             }
                             _ => {
                                 println!(
@@ -7820,12 +7958,12 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                         ExitCode::Clean
                     } else {
                         match global.format {
-                            OutputFormat::Json => {
+                            OutputFormat::Json | OutputFormat::Toon => {
                                 let error = serde_json::json!({
                                     "status": "failed",
                                     "error": rollback_result.error
                                 });
-                                eprintln!("{}", serde_json::to_string_pretty(&error).unwrap());
+                                eprintln!("{}", format_structured_output(global, error));
                             }
                             _ => {
                                 eprintln!(
@@ -7841,12 +7979,12 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
                 }
                 Err(e) => {
                     match global.format {
-                        OutputFormat::Json => {
+                        OutputFormat::Json | OutputFormat::Toon => {
                             let error = serde_json::json!({
                                 "status": "error",
                                 "error": format!("{}", e)
                             });
-                            eprintln!("{}", serde_json::to_string_pretty(&error).unwrap());
+                            eprintln!("{}", format_structured_output(global, error));
                         }
                         _ => {
                             eprintln!("Rollback error: {}", e);
@@ -7871,14 +8009,14 @@ fn run_update(global: &GlobalOpts, args: &UpdateArgs) -> ExitCode {
             let after_backups = backup_manager.list_backups().unwrap_or_default();
 
             match global.format {
-                OutputFormat::Json => {
+                OutputFormat::Json | OutputFormat::Toon => {
                     let output = serde_json::json!({
                         "schema_version": SCHEMA_VERSION,
                         "status": "success",
                         "kept": *keep,
                         "remaining": after_backups.len()
                     });
-                    println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                    println!("{}", format_structured_output(global, output));
                 }
                 _ => {
                     println!("Pruned backups. Keeping {} most recent.", keep);

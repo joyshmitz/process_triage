@@ -609,6 +609,7 @@ mod output_format {
     #[test]
     fn all_formats_display() {
         assert_eq!(format!("{}", OutputFormat::Json), "json");
+        assert_eq!(format!("{}", OutputFormat::Toon), "toon");
         assert_eq!(format!("{}", OutputFormat::Md), "md");
         assert_eq!(format!("{}", OutputFormat::Jsonl), "jsonl");
         assert_eq!(format!("{}", OutputFormat::Summary), "summary");
@@ -624,6 +625,9 @@ mod output_format {
         let json = serde_json::to_string(&OutputFormat::Json).unwrap();
         assert_eq!(json, "\"json\"");
 
+        let toon = serde_json::to_string(&OutputFormat::Toon).unwrap();
+        assert_eq!(toon, "\"toon\"");
+
         let md = serde_json::to_string(&OutputFormat::Md).unwrap();
         assert_eq!(md, "\"md\"");
     }
@@ -633,6 +637,9 @@ mod output_format {
     fn output_format_deserializes() {
         let json: OutputFormat = serde_json::from_str("\"json\"").unwrap();
         assert_eq!(json, OutputFormat::Json);
+
+        let toon: OutputFormat = serde_json::from_str("\"toon\"").unwrap();
+        assert_eq!(toon, OutputFormat::Toon);
 
         let jsonl: OutputFormat = serde_json::from_str("\"jsonl\"").unwrap();
         assert_eq!(jsonl, OutputFormat::Jsonl);

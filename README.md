@@ -173,6 +173,8 @@ For full transparency, use the deep scan with JSON output:
 pt deep
 # Or for agent/scripted use with detailed output:
 pt robot plan --deep --format json
+# Token-optimized structured output:
+pt robot plan --deep --format toon
 ```
 
 The JSON output includes the evidence behind each decision:
@@ -481,8 +483,16 @@ ls -la ~/.local/bin/pt-core
 
 ```bash
 pt agent plan --format json      # Generate actionable plan
+pt agent plan --format toon      # Token-optimized plan output
 pt agent apply --session <id>    # Execute plan
 pt agent verify --session <id>   # Confirm outcomes
+```
+
+You can also set a default format via env vars:
+
+```bash
+PT_OUTPUT_FORMAT=toon pt agent plan
+TOON_DEFAULT_FORMAT=toon pt agent plan
 ```
 
 See [docs/AGENT_INTEGRATION_GUIDE.md](docs/AGENT_INTEGRATION_GUIDE.md) for:

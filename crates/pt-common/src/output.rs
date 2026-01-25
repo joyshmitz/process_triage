@@ -11,6 +11,9 @@ pub enum OutputFormat {
     #[default]
     Json,
 
+    /// Token-Optimized Object Notation (TOON)
+    Toon,
+
     /// Human-readable Markdown
     Md,
 
@@ -37,6 +40,7 @@ impl std::fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             OutputFormat::Json => write!(f, "json"),
+            OutputFormat::Toon => write!(f, "toon"),
             OutputFormat::Md => write!(f, "md"),
             OutputFormat::Jsonl => write!(f, "jsonl"),
             OutputFormat::Summary => write!(f, "summary"),
