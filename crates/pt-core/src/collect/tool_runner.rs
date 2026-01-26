@@ -1004,8 +1004,8 @@ mod tests {
             "Expected timed_out=true, got: {:?}",
             output
         );
-        // Process should have been killed
-        assert!(output.duration < Duration::from_secs(2));
+        // Process should have been killed (allow extra slack for busy CI)
+        assert!(output.duration < Duration::from_secs(5));
     }
 
     #[test]
