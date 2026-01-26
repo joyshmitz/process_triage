@@ -7,9 +7,9 @@
 //! - Agent/robot mode for automated operation
 //! - Telemetry and reporting
 
-use clap::{Args, CommandFactory, Parser, Subcommand};
 use clap::parser::ValueSource;
 use clap::FromArgMatches;
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
 use pt_core::capabilities::{get_capabilities, ToolCapability};
 use pt_core::collect::protected::ProtectedFilter;

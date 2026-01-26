@@ -25,7 +25,7 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 thiserror = "2"
 clap = { version = "4", features = ["derive", "env", "string"] }
-toon_rust = { path = "../toon_rust" }
+toon_rust = { git = "https://github.com/Dicklesworthstone/toon_rust.git" }
 
 # Release profile optimized for size (used for musl builds)
 [profile.release]

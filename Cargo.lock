@@ -4667,6 +4667,7 @@ checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
 [[package]]
 name = "toon_rust"
 version = "0.1.1"
+source = "git+https://github.com/Dicklesworthstone/toon_rust.git#788589d7b11a8bf2c88e364befe63d87eb890eba"
 dependencies = [
  "anyhow",
  "chrono",
