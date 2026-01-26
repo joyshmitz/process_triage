@@ -682,6 +682,14 @@ struct AgentPlanArgs {
     /// Pretty-print JSON output
     #[arg(long)]
     pretty: bool,
+
+    /// Brief output: minimal fields + single-line rationale per candidate
+    #[arg(long, conflicts_with = "narrative")]
+    brief: bool,
+
+    /// Narrative output: human-readable prose summary
+    #[arg(long, conflicts_with = "brief")]
+    narrative: bool,
 }
 
 #[derive(Args, Debug)]
@@ -4328,6 +4336,8 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             "include_predictions": args.include_predictions,
             "minimal": args.minimal,
             "pretty": args.pretty,
+            "brief": args.brief,
+            "narrative": args.narrative,
         },
         "summary": summary,
         "candidates": candidates,

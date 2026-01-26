@@ -11,7 +11,8 @@
 //! primitives. This module intentionally avoids any TUI assumptions.
 
 use chrono::{DateTime, Duration, Utc};
-use pt_common::{schema::SCHEMA_VERSION, SessionId};
+use pt_common::{schema::SCHEMA_VERSION, ProcessId, SessionId, StartId};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -34,6 +35,10 @@ const LOGS_DIR: &str = "logs";
 const EXPORTS_DIR: &str = "exports";
 
 const SCAN_PROBES_DIR: &str = "scan/probes";
+const SNAPSHOT_FILE: &str = "scan/snapshot.json";
+
+/// Schema version for session snapshots.
+pub const SNAPSHOT_SCHEMA_VERSION: &str = "1.0.0";
 
 #[derive(Debug, Error)]
 pub enum SessionError {
@@ -80,6 +85,99 @@ pub enum SessionMode {
     DaemonAlert,
     ScanOnly,
     Export,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotConfigFile {
+    pub path: Option<String>,
+    pub hash: Option<String>,
+    pub schema_version: String,
+    pub using_defaults: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotConfig {
+    pub config_dir: String,
+    pub priors: SnapshotConfigFile,
+    pub policy: SnapshotConfigFile,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotScanSummary {
+    pub total_processes: u64,
+    pub protected_filtered: u64,
+    pub candidates_evaluated: u64,
+    pub scan_duration_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotHost {
+    pub hostname: String,
+    pub cores: u32,
+    pub memory_total_gb: f64,
+    pub memory_used_gb: f64,
+    pub load_avg: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotProcess {
+    pub pid: ProcessId,
+    pub ppid: ProcessId,
+    pub uid: u32,
+    pub start_id: StartId,
+    pub comm: String,
+    pub cmd: String,
+    pub state: crate::collect::ProcessState,
+    pub start_time_unix: i64,
+    pub elapsed_secs: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotInventory {
+    pub total: u64,
+    pub sampled: bool,
+    pub sample_size: Option<u32>,
+    pub records: Vec<SnapshotProcess>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotInferenceCandidate {
+    pub pid: ProcessId,
+    pub score: u32,
+    pub classification: String,
+    pub recommended_action: String,
+    pub posterior: crate::inference::ClassScores,
+    pub confidence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotInferenceSummary {
+    pub candidate_count: usize,
+    pub candidates: Vec<SnapshotInferenceCandidate>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SnapshotPlanRef {
+    pub path: String,
+    pub candidates: usize,
+    pub kill_recommendations: usize,
+    pub review_recommendations: usize,
+    pub spare_recommendations: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct SessionSnapshot {
+    pub schema_version: String,
+    pub session_id: String,
+    pub generated_at: String,
+    pub host_id: String,
+    pub pt_version: String,
+    pub host: SnapshotHost,
+    pub config: SnapshotConfig,
+    pub scan: SnapshotScanSummary,
+    pub inventory: SnapshotInventory,
+    pub inference: SnapshotInferenceSummary,
+    pub plan: SnapshotPlanRef,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -462,6 +560,10 @@ impl SessionHandle {
         self.dir.join(CAPABILITIES_FILE)
     }
 
+    pub fn snapshot_path(&self) -> PathBuf {
+        self.dir.join(SNAPSHOT_FILE)
+    }
+
     pub fn read_manifest(&self) -> Result<SessionManifest, SessionError> {
         let path = self.manifest_path();
         let content = std::fs::read_to_string(&path).map_err(|e| SessionError::Io {
@@ -486,6 +588,10 @@ impl SessionHandle {
             Err(_) => serde_json::json!({ "raw": raw_json }),
         };
         write_json_pretty(&self.capabilities_path(), &value)
+    }
+
+    pub fn write_snapshot(&self, snapshot: &SessionSnapshot) -> Result<(), SessionError> {
+        write_json_pretty_atomic(&self.snapshot_path(), snapshot)
     }
 
     pub fn update_state(&self, new_state: SessionState) -> Result<SessionManifest, SessionError> {
@@ -575,4 +681,39 @@ fn write_json_pretty<T: Serialize>(path: &Path, value: &T) -> Result<(), Session
         path: path.to_path_buf(),
         source: e,
     })
+}
+
+fn write_json_pretty_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), SessionError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| SessionError::Io {
+            path: parent.to_path_buf(),
+            source: e,
+        })?;
+    }
+    let content = serde_json::to_vec_pretty(value).map_err(|e| SessionError::Json {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("snapshot.json");
+    let tmp_path = path.with_file_name(format!("{}.tmp.{}", file_name, std::process::id()));
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(&tmp_path).map_err(|e| SessionError::Io {
+            path: tmp_path.clone(),
+            source: e,
+        })?;
+        file.write_all(&content).map_err(|e| SessionError::Io {
+            path: tmp_path.clone(),
+            source: e,
+        })?;
+        let _ = file.sync_all();
+    }
+    std::fs::rename(&tmp_path, path).map_err(|e| SessionError::Io {
+        path: path.to_path_buf(),
+        source: e,
+    })?;
+    Ok(())
 }

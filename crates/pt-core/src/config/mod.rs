@@ -22,6 +22,8 @@ pub use pt_config::preset::{get_preset, list_presets, PresetError, PresetInfo, P
 
 use std::path::PathBuf;
 use thiserror::Error;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// Schema version for configuration files.
 pub const CONFIG_SCHEMA_VERSION: &str = "1.0.0";
@@ -96,7 +98,7 @@ impl ResolvedConfig {
 }
 
 /// Config snapshot for session artifacts/telemetry.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ConfigSnapshot {
     pub priors_path: Option<PathBuf>,
     pub priors_hash: Option<String>,
