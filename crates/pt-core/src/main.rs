@@ -4390,11 +4390,58 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         );
     }
 
+    // Handle --narrative flag (outputs prose regardless of format)
+    if args.narrative {
+        let narrative = generate_narrative_summary(
+            &session_id,
+            &candidates,
+            &kill_candidates,
+            &review_candidates,
+            total_scanned,
+            expected_memory_freed_gb,
+        );
+        println!("{}", narrative);
+        if let Some(ref e) = emitter {
+            e.emit(ProgressEvent::new(
+                pt_core::events::event_names::SESSION_ENDED,
+                Phase::Session,
+            ));
+        }
+        return if candidates.is_empty() {
+            ExitCode::Clean
+        } else {
+            ExitCode::PlanReady
+        };
+    }
+
     // Output based on format
     match global.format {
-        OutputFormat::Json | OutputFormat::Toon => {
-            // Build output based on --minimal and --pretty flags
-            let output_json = if args.minimal {
+        OutputFormat::Json => {
+            // Build output based on --minimal, --brief, and --pretty flags
+            let output_json = if args.brief {
+                // Brief output: minimal fields + single-line rationale
+                let brief_candidates: Vec<serde_json::Value> = candidates
+                    .iter()
+                    .map(|c| {
+                        let rationale = generate_single_line_rationale(c);
+                        serde_json::json!({
+                            "pid": c["pid"],
+                            "cmd": c["command_short"],
+                            "score": c["score"],
+                            "rec": c["recommendation"],
+                            "why": rationale,
+                        })
+                    })
+                    .collect();
+                serde_json::json!({
+                    "v": env!("CARGO_PKG_VERSION"),
+                    "sid": session_id.0,
+                    "n": candidates.len(),
+                    "kill": kill_candidates.len(),
+                    "review": review_candidates.len(),
+                    "c": brief_candidates,
+                })
+            } else if args.minimal {
                 // Minimal output: just PIDs, scores, and recommendations
                 let minimal_candidates: Vec<serde_json::Value> = candidates
                     .iter()
@@ -4427,7 +4474,30 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             println!("{}", output_str);
         }
         OutputFormat::Toon => {
-            let output_json = if args.minimal {
+            let output_json = if args.brief {
+                // Brief output for TOON: minimal fields + single-line rationale
+                let brief_candidates: Vec<serde_json::Value> = candidates
+                    .iter()
+                    .map(|c| {
+                        let rationale = generate_single_line_rationale(c);
+                        serde_json::json!({
+                            "p": c["pid"],
+                            "c": c["command_short"],
+                            "s": c["score"],
+                            "r": c["recommendation"],
+                            "w": rationale,
+                        })
+                    })
+                    .collect();
+                serde_json::json!({
+                    "v": env!("CARGO_PKG_VERSION"),
+                    "i": session_id.0,
+                    "n": candidates.len(),
+                    "k": kill_candidates.len(),
+                    "r": review_candidates.len(),
+                    "c": brief_candidates,
+                })
+            } else if args.minimal {
                 let minimal_candidates: Vec<serde_json::Value> = candidates
                     .iter()
                     .map(|c| {
