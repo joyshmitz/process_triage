@@ -10,6 +10,7 @@ pub mod dro;
 pub mod enforcer;
 pub mod escalation;
 pub mod goal_optimizer;
+pub mod goal_parser;
 pub mod expected_loss;
 pub mod fdr_selection;
 pub mod fleet_fdr;
