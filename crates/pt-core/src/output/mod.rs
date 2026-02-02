@@ -3,6 +3,7 @@
 //! This module provides field selection, compact formats, and token estimation
 //! for optimizing output for AI agents with limited context windows.
 
+pub mod predictions;
 pub mod progressive;
 
 use serde::{Deserialize, Serialize};
