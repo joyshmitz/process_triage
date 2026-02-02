@@ -7,6 +7,8 @@
 
 use super::{
     bias::{analyze_bias, BiasAnalysis},
+    bounds::{false_kill_credible_bounds, CredibleBounds},
+    pac_bayes::{pac_bayes_error_bounds, PacBayesSummary},
     curve::CalibrationCurve,
     metrics::{compute_metrics, CalibrationMetrics},
     CalibrationData, CalibrationError, CalibrationQuality,
@@ -24,6 +26,10 @@ pub struct CalibrationReport {
     pub curve: CalibrationCurve,
     /// Bias analysis results.
     pub bias: BiasAnalysis,
+    /// Credible bounds on false-kill rate (shadow mode safety artifact).
+    pub credible_bounds: Option<CredibleBounds>,
+    /// PAC-Bayes bounds on false-kill rate (shadow mode safety artifact).
+    pub pac_bayes: Option<PacBayesSummary>,
     /// Summary text.
     pub summary: String,
 }
@@ -40,12 +46,19 @@ impl CalibrationReport {
         let bias = analyze_bias(data)?;
         let quality = CalibrationQuality::from_metrics(metrics.ece, metrics.brier_score);
         let summary = generate_summary(&metrics, &bias, quality);
+        let deltas = [0.05, 0.01];
+        let credible_bounds = false_kill_credible_bounds(data, threshold, 1.0, 1.0, &deltas);
+        let pac_bayes = credible_bounds
+            .as_ref()
+            .and_then(|b| pac_bayes_error_bounds(b.errors, b.trials, 0.0, &deltas));
 
         Ok(CalibrationReport {
             quality,
             metrics,
             curve,
             bias,
+            credible_bounds,
+            pac_bayes,
             summary,
         })
     }
@@ -115,6 +128,71 @@ impl CalibrationReport {
             self.metrics.negative_count,
             100.0 * self.metrics.negative_count as f64 / self.metrics.sample_count as f64
         ));
+        output.push('\n');
+
+        // Credible bounds (false-kill rate)
+        output.push_str("─── False-Kill Credible Bounds ───────────────────────────\n");
+        if let Some(bounds) = &self.credible_bounds {
+            output.push_str(&format!(
+                "  Trials (kill recs): {}\n",
+                bounds.trials
+            ));
+            output.push_str(&format!(
+                "  Errors (false kills): {}\n",
+                bounds.errors
+            ));
+            output.push_str(&format!("  Threshold: {:.2}\n", bounds.threshold));
+            output.push_str(&format!(
+                "  Prior Beta(a,b):     ({:.2}, {:.2})\n",
+                bounds.prior_alpha, bounds.prior_beta
+            ));
+            output.push_str(&format!(
+                "  Posterior Beta(a,b): ({:.2}, {:.2})\n",
+                bounds.posterior_alpha, bounds.posterior_beta
+            ));
+            output.push_str(&format!(
+                "  Observed error rate: {:.4}\n",
+                bounds.observed_rate
+            ));
+            output.push_str(&format!(
+                "  Posterior mean:      {:.4}\n",
+                bounds.posterior_mean
+            ));
+            for bound in &bounds.bounds {
+                output.push_str(&format!(
+                    "  Upper bound (1-δ={:.2}): {:.4}\n",
+                    1.0 - bound.delta,
+                    bound.upper
+                ));
+            }
+            output.push_str(&format!(
+                "  Definition: {} | {}\n",
+                bounds.trial_definition, bounds.error_definition
+            ));
+        } else {
+            output.push_str("  No kill recommendations; bounds unavailable.\n");
+        }
+        output.push('\n');
+
+        // PAC-Bayes bounds
+        output.push_str("─── PAC-Bayes Bounds ───────────────────────────────────────\n");
+        if let Some(pac) = &self.pac_bayes {
+            output.push_str(&format!(
+                "  Trials: {}  Errors: {}  Empirical: {:.4}\n",
+                pac.trials, pac.errors, pac.empirical_error
+            ));
+            output.push_str(&format!("  KL(Q||P): {:.4}\n", pac.kl_qp));
+            for bound in &pac.bounds {
+                output.push_str(&format!(
+                    "  Upper bound (1-δ={:.2}): {:.4}\n",
+                    1.0 - bound.delta,
+                    bound.upper_bound
+                ));
+            }
+            output.push_str(&format!("  Assumptions: {}\n", pac.assumptions));
+        } else {
+            output.push_str("  No trials; PAC-Bayes bounds unavailable.\n");
+        }
         output.push('\n');
 
         // Calibration curve

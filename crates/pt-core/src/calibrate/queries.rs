@@ -273,6 +273,35 @@ ORDER BY brier DESC, n DESC;
     )
 }
 
+/// Generate a DuckDB query for false-kill counts at a given threshold.
+pub fn false_kill_counts_query(parquet_path: &str, threshold: f64) -> String {
+    format!(
+        r#"
+-- False-Kill Counts (for Bayesian credible bounds)
+WITH matches AS (
+    SELECT
+        predicted_prob_abandoned,
+        actual_abandoned
+    FROM read_parquet('{parquet_path}')
+    WHERE outcome_available = true
+),
+counts AS (
+    SELECT
+        SUM(CASE WHEN predicted_prob_abandoned >= {threshold} THEN 1 ELSE 0 END) as trials,
+        SUM(CASE WHEN predicted_prob_abandoned >= {threshold} AND NOT actual_abandoned THEN 1 ELSE 0 END) as errors
+    FROM matches
+)
+SELECT
+    trials,
+    errors,
+    CASE WHEN trials > 0 THEN ROUND(errors::DOUBLE / trials, 6) ELSE NULL END as observed_error_rate
+FROM counts;
+"#,
+        parquet_path = parquet_path,
+        threshold = threshold
+    )
+}
+
 /// Generate all calibration queries as a single SQL file.
 pub fn all_calibration_queries(parquet_path: &str) -> String {
     let mut output = String::new();
@@ -302,7 +331,11 @@ pub fn all_calibration_queries(parquet_path: &str) -> String {
     output.push_str(&threshold_analysis_query(parquet_path));
     output.push_str("\n\n");
 
-    output.push_str("-- Section 6: Problematic Signatures\n");
+    output.push_str("-- Section 6: False-Kill Counts (threshold=0.5)\n");
+    output.push_str(&false_kill_counts_query(parquet_path, 0.5));
+    output.push_str("\n\n");
+
+    output.push_str("-- Section 7: Problematic Signatures\n");
     output.push_str(&problematic_signatures_query(parquet_path, 10));
 
     output
@@ -344,6 +377,14 @@ mod tests {
     }
 
     #[test]
+    fn test_false_kill_counts_query() {
+        let query = false_kill_counts_query("test.parquet", 0.5);
+        assert!(query.contains("trials"));
+        assert!(query.contains("errors"));
+        assert!(query.contains("0.5"));
+    }
+
+    #[test]
     fn test_problematic_signatures_query() {
         let query = problematic_signatures_query("test.parquet", 20);
         assert!(query.contains("false_positives"));
@@ -355,7 +396,7 @@ mod tests {
     fn test_all_queries_combined() {
         let combined = all_calibration_queries("data.parquet");
         assert!(combined.contains("Section 1"));
-        assert!(combined.contains("Section 6"));
+        assert!(combined.contains("Section 7"));
         assert!(combined.contains("data.parquet"));
     }
 }

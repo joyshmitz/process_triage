@@ -30,12 +30,16 @@ pub mod curve;
 pub mod bias;
 pub mod report;
 pub mod queries;
+pub mod bounds;
+pub mod pac_bayes;
 
 pub use metrics::*;
 pub use curve::*;
 pub use bias::*;
 pub use report::*;
 pub use queries::*;
+pub use bounds::*;
+pub use pac_bayes::*;
 
 use serde::{Deserialize, Serialize};
 
