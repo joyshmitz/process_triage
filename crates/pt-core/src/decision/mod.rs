@@ -17,6 +17,7 @@ pub mod fleet_pattern;
 pub mod fleet_registry;
 pub mod load_aware;
 pub mod martingale_gates;
+pub mod mem_pressure;
 pub mod myopic_policy;
 pub mod rate_limit;
 pub mod respawn_loop;
