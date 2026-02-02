@@ -11,6 +11,7 @@ pub mod copula;
 pub mod ctw;
 pub mod evt;
 pub mod explain;
+pub mod flip_conditions;
 pub mod galaxy_brain;
 pub mod ledger_display;
 pub mod graph_smoothing;
