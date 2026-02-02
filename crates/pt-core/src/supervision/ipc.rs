@@ -214,7 +214,7 @@ impl IpcDatabase {
         self.add(IpcPattern::abstract_socket(
             "dbus",
             SupervisorCategory::Other,
-            "@/tmp/dbus-",
+            "/tmp/dbus-",
             0.50,
         ));
     }
@@ -485,6 +485,14 @@ mod tests {
         let result = IpcResult::not_supervised();
         assert!(!result.is_supervised);
         assert!(result.supervisor_name.is_none());
+    }
+
+    #[test]
+    fn test_ipc_database_find_matches_abstract_dbus() {
+        let db = IpcDatabase::with_defaults();
+        let matches = db.find_matches("@/tmp/dbus-session-12345");
+        assert!(!matches.is_empty());
+        assert_eq!(matches[0].supervisor_name, "dbus");
     }
 
     #[cfg(target_os = "linux")]
