@@ -13,6 +13,7 @@ pub mod goal_contribution;
 pub mod goal_optimizer;
 pub mod goal_plan;
 pub mod goal_parser;
+pub mod goal_progress;
 pub mod expected_loss;
 pub mod fdr_selection;
 pub mod fleet_fdr;
