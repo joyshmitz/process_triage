@@ -12,6 +12,7 @@ pub mod ctw;
 pub mod evt;
 pub mod explain;
 pub mod galaxy_brain;
+pub mod ledger_display;
 pub mod graph_smoothing;
 pub mod hawkes;
 pub mod hazard;
