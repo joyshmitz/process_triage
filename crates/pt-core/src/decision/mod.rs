@@ -11,6 +11,7 @@ pub mod enforcer;
 pub mod escalation;
 pub mod goal_contribution;
 pub mod goal_optimizer;
+pub mod goal_plan;
 pub mod goal_parser;
 pub mod expected_loss;
 pub mod fdr_selection;
