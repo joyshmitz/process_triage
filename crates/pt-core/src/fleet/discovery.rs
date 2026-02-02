@@ -92,7 +92,7 @@ fn default_use_srv() -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DiscoveryConfigFormat {
+pub(crate) enum DiscoveryConfigFormat {
     Toml,
     Yaml,
     Json,
@@ -117,7 +117,10 @@ impl FleetDiscoveryConfig {
         Self::parse_str(&content, format)
     }
 
-    pub fn parse_str(content: &str, format: DiscoveryConfigFormat) -> Result<Self, DiscoveryError> {
+    pub(crate) fn parse_str(
+        content: &str,
+        format: DiscoveryConfigFormat,
+    ) -> Result<Self, DiscoveryError> {
         let config = match format {
             DiscoveryConfigFormat::Toml => toml::from_str(content).map_err(|e| {
                 DiscoveryError::Other(format!("failed to parse toml discovery config: {}", e))
@@ -151,7 +154,7 @@ fn detect_format(path: &Path) -> Result<DiscoveryConfigFormat, DiscoveryError> {
 }
 
 /// Provider registry that aggregates results from configured providers.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct ProviderRegistry {
     providers: Vec<Box<dyn InventoryProvider>>,
 }
@@ -377,7 +380,7 @@ path = "fleet.toml"
             refresh_interval_secs: None,
             stale_while_revalidate_secs: None,
         };
-        let err = ProviderRegistry::from_config(&config).unwrap_err();
+        let err = ProviderRegistry::from_config(&config).err().expect("expected error");
         assert!(err.to_string().contains("no providers"));
     }
 }

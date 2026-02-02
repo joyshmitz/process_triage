@@ -63,6 +63,7 @@ daemon = []         # Dormant monitoring mode
 ui = ["ratatui", "crossterm"]  # Premium TUI experience
 test-utils = []     # Export test utilities for integration tests
 test-tempdir = []   # Enable tempdir helper in test utilities
+fleet-dns = []      # Enable DNS-based fleet discovery (scaffold)
 
 [dev-dependencies]
 assert_cmd = "2"
