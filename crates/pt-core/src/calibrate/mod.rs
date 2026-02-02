@@ -32,6 +32,7 @@ pub mod report;
 pub mod queries;
 pub mod bounds;
 pub mod pac_bayes;
+pub mod tuning;
 pub mod validation;
 
 pub use metrics::*;
