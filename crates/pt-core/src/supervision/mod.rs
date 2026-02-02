@@ -47,6 +47,7 @@ mod app_supervision;
 mod container_supervision;
 mod environ;
 mod ipc;
+pub mod narrative;
 mod nohup;
 mod orphan;
 pub mod pattern_learning;
