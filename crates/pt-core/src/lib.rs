@@ -17,6 +17,7 @@ pub mod capabilities;
 pub mod cli;
 pub mod collect;
 pub mod config;
+pub mod daemon;
 pub mod decision;
 pub mod events;
 pub mod exit_codes;
