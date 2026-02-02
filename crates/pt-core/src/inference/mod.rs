@@ -6,6 +6,7 @@ pub mod beta_stacy;
 pub mod bma;
 pub mod bocpd;
 pub mod compound_poisson;
+pub mod confidence_viz;
 pub mod conformal;
 pub mod copula;
 pub mod ctw;
