@@ -11,6 +11,7 @@ pub mod copula;
 pub mod ctw;
 pub mod evt;
 pub mod explain;
+pub mod galaxy_brain;
 pub mod graph_smoothing;
 pub mod hawkes;
 pub mod hazard;
