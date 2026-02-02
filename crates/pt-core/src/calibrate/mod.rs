@@ -27,6 +27,7 @@
 
 pub mod metrics;
 pub mod curve;
+pub mod baseline;
 pub mod bias;
 pub mod report;
 pub mod queries;
