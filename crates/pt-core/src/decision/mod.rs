@@ -12,6 +12,7 @@ pub mod goal_optimizer;
 pub mod expected_loss;
 pub mod fdr_selection;
 pub mod fleet_fdr;
+pub mod fleet_pattern;
 pub mod load_aware;
 pub mod martingale_gates;
 pub mod myopic_policy;
