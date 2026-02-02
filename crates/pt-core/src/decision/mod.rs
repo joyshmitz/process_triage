@@ -8,6 +8,7 @@ pub mod cvar;
 pub mod dependency_loss;
 pub mod dro;
 pub mod enforcer;
+pub mod escalation;
 pub mod goal_optimizer;
 pub mod expected_loss;
 pub mod fdr_selection;
