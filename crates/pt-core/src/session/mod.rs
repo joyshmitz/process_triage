@@ -19,6 +19,7 @@ pub mod resume;
 #[cfg(test)]
 mod resume_tests;
 pub mod snapshot_persist;
+pub mod verify;
 
 use chrono::{DateTime, Duration, Utc};
 use pt_common::{schema::SCHEMA_VERSION, ProcessId, SessionId, StartId};
