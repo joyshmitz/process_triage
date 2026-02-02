@@ -42,6 +42,7 @@
 //! }
 //! ```
 
+pub mod blast_radius;
 mod ancestry;
 mod app_supervision;
 mod container_supervision;
