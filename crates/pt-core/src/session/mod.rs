@@ -10,6 +10,7 @@
 //! NOTE: Higher-level commands (agent plan/apply/verify, etc.) build on these
 //! primitives. This module intentionally avoids any TUI assumptions.
 
+pub mod compare;
 pub mod diff;
 pub mod resume;
 pub mod snapshot_persist;
