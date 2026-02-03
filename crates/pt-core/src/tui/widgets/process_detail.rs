@@ -180,15 +180,37 @@ impl<'a> Widget for ProcessDetail<'a> {
         let evidence_height = sections[2].height.max(1) as usize;
         let (evidence, action) = match self.view {
             DetailView::Summary => (
-                vec![
-                    Line::from(vec![Span::styled("Evidence", self.label_style())]),
-                    Line::from(vec![Span::styled("• ledger not wired yet", self.value_style())]),
-                    Line::from(vec![Span::styled("• impact + tree pending", self.value_style())]),
-                ],
-                vec![
-                    Line::from(vec![Span::styled("Action", self.label_style())]),
-                    Line::from(vec![Span::styled("• plan details pending", self.value_style())]),
-                ],
+                {
+                    let mut lines = Vec::new();
+                    lines.push(Line::from(vec![Span::styled("Evidence", self.label_style())]));
+                    if let Some(summary) = row.why_summary.as_ref() {
+                        lines.push(Line::from(vec![Span::styled(summary.clone(), self.value_style())]));
+                    } else {
+                        lines.push(Line::from(vec![Span::styled("No evidence summary available", self.value_style())]));
+                    }
+                    for item in &row.top_evidence {
+                        lines.push(Line::from(vec![Span::styled(format!("• {}", item), self.value_style())]));
+                    }
+                    if lines.len() > evidence_height {
+                        lines.truncate(evidence_height);
+                    }
+                    lines
+                },
+                {
+                    let mut lines = Vec::new();
+                    lines.push(Line::from(vec![Span::styled("Action", self.label_style())]));
+                    lines.push(Line::from(vec![
+                        Span::styled("Recommended: ", self.label_style()),
+                        Span::styled(row.classification.clone(), self.value_style()),
+                    ]));
+                    if let Some(confidence) = row.confidence.as_ref() {
+                        lines.push(Line::from(vec![
+                            Span::styled("Confidence: ", self.label_style()),
+                            Span::styled(confidence.clone(), self.value_style()),
+                        ]));
+                    }
+                    lines
+                },
             ),
             DetailView::GalaxyBrain => (
                 {
@@ -280,6 +302,12 @@ mod tests {
             command: "node dev server".to_string(),
             selected: false,
             galaxy_brain: None,
+            why_summary: Some("Classified as abandoned with high confidence.".to_string()),
+            top_evidence: vec![
+                "runtime (2.8 bits toward abandoned)".to_string(),
+                "cpu_idle (1.6 bits toward abandoned)".to_string(),
+            ],
+            confidence: Some("high".to_string()),
         }
     }
 

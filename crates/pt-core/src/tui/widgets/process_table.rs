@@ -59,6 +59,12 @@ pub struct ProcessRow {
     pub selected: bool,
     /// Optional galaxy-brain math trace for drill-down.
     pub galaxy_brain: Option<String>,
+    /// Optional summary explaining the classification.
+    pub why_summary: Option<String>,
+    /// Top evidence lines (human-readable).
+    pub top_evidence: Vec<String>,
+    /// Confidence label for the classification.
+    pub confidence: Option<String>,
 }
 
 /// Process table widget for displaying candidates.
@@ -652,6 +658,9 @@ mod tests {
                 command: "jest --worker".to_string(),
                 selected: false,
                 galaxy_brain: None,
+                why_summary: Some("Classified as abandoned with high confidence.".to_string()),
+                top_evidence: vec!["runtime (2.4 bits toward abandoned)".to_string()],
+                confidence: Some("high".to_string()),
             },
             ProcessRow {
                 pid: 5678,
@@ -662,6 +671,9 @@ mod tests {
                 command: "node dev".to_string(),
                 selected: false,
                 galaxy_brain: None,
+                why_summary: None,
+                top_evidence: Vec::new(),
+                confidence: Some("medium".to_string()),
             },
             ProcessRow {
                 pid: 9012,
@@ -672,6 +684,9 @@ mod tests {
                 command: "cargo build".to_string(),
                 selected: false,
                 galaxy_brain: None,
+                why_summary: None,
+                top_evidence: Vec::new(),
+                confidence: Some("low".to_string()),
             },
         ]
     }

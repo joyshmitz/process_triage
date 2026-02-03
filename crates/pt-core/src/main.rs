@@ -23,6 +23,10 @@ use pt_core::events::{
 };
 use pt_core::exit_codes::ExitCode;
 use pt_core::inference::signature_fast_path::{try_signature_fast_path, FastPathConfig};
+#[cfg(feature = "ui")]
+use pt_core::inference::galaxy_brain::{
+    render as render_galaxy_brain, GalaxyBrainConfig, MathMode, Verbosity,
+};
 use pt_core::output::{encode_toon_value, CompactConfig, FieldSelector, TokenEfficientOutput};
 use pt_core::session::{
     ListSessionsOptions, SessionContext, SessionHandle, SessionManifest, SessionMode, SessionState,
@@ -42,6 +46,10 @@ use pt_core::supervision::{
     AppSupervisorType, ContainerActionType, ContainerSupervisionAnalyzer,
 };
 use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
+#[cfg(feature = "ui")]
+use pt_core::tui::{run_tui, App};
+#[cfg(feature = "ui")]
+use pt_core::tui::widgets::ProcessRow;
 use pt_telemetry::shadow::{Observation, ShadowStorage, ShadowStorageConfig};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -1482,9 +1490,210 @@ fn parse_output_format(value: &str) -> Option<OutputFormat> {
 // Command implementations (stubs)
 // ============================================================================
 
-fn run_interactive(global: &GlobalOpts, _args: &RunArgs) -> ExitCode {
-    output_stub(global, "run", "Interactive triage mode not yet implemented");
-    ExitCode::Clean
+fn run_interactive(global: &GlobalOpts, args: &RunArgs) -> ExitCode {
+    #[cfg(feature = "ui")]
+    {
+        match run_interactive_tui(global, args) {
+            Ok(()) => ExitCode::Clean,
+            Err(err) => {
+                eprintln!("run: {}", err);
+                ExitCode::InternalError
+            }
+        }
+    }
+    #[cfg(not(feature = "ui"))]
+    {
+        output_stub(
+            global,
+            "run",
+            "Interactive mode requires the `ui` feature (build with --features ui)",
+        );
+        ExitCode::PartialFail
+    }
+}
+
+#[cfg(feature = "ui")]
+fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String> {
+    if args.deep {
+        eprintln!("run: deep scan not yet wired into TUI; using quick scan");
+    }
+
+    let store = SessionStore::from_env().map_err(|e| format!("session store error: {}", e))?;
+    let session_id = SessionId::new();
+    let manifest = SessionManifest::new(&session_id, None, SessionMode::Interactive, None);
+    let handle = store
+        .create(&manifest)
+        .map_err(|e| format!("failed to create session: {}", e))?;
+
+    let ctx = SessionContext::new(
+        &session_id,
+        pt_core::logging::get_host_id(),
+        pt_core::logging::generate_run_id(),
+        None,
+    );
+    handle
+        .write_context(&ctx)
+        .map_err(|e| format!("failed to write context.json: {}", e))?;
+
+    let _ = handle.update_state(SessionState::Scanning);
+
+    let config_options = ConfigOptions {
+        config_dir: global.config.as_ref().map(PathBuf::from),
+        ..Default::default()
+    };
+    let config = load_config(&config_options).map_err(|e| format!("load config: {}", e))?;
+    let priors = config.priors.clone();
+    let policy = config.policy.clone();
+
+    let scan_options = QuickScanOptions {
+        pids: vec![],
+        include_kernel_threads: false,
+        timeout: global.timeout.map(std::time::Duration::from_secs),
+        progress: None,
+    };
+    let scan_result = quick_scan(&scan_options).map_err(|e| format!("scan failed: {}", e))?;
+
+    let protected_filter = ProtectedFilter::from_guardrails(&policy.guardrails)
+        .map_err(|e| format!("protected filter error: {}", e))?;
+    let filter_result = protected_filter.filter_scan_result(&scan_result);
+
+    let rows = build_tui_rows(
+        &filter_result.passed,
+        args.min_age,
+        &priors,
+        &policy,
+    );
+
+    let _ = handle.update_state(SessionState::Planned);
+
+    let mut app = App::new();
+    app.process_table.set_rows(rows);
+    app.process_table.select_recommended();
+    app.set_status(format!(
+        "Session {} • {} candidates",
+        session_id.0,
+        app.process_table.rows.len()
+    ));
+
+    run_tui(app).map_err(|e| format!("tui error: {}", e))?;
+
+    let _ = handle.update_state(SessionState::Completed);
+    Ok(())
+}
+
+#[cfg(feature = "ui")]
+fn build_tui_rows(
+    processes: &[ProcessRecord],
+    min_age: Option<u64>,
+    priors: &Priors,
+    policy: &pt_core::config::Policy,
+) -> Vec<ProcessRow> {
+    const MIN_POSTERIOR: f64 = 0.7;
+    const MAX_CANDIDATES: usize = 50;
+
+    let system_state = collect_system_state();
+    let load_adjustment = if policy.load_aware.enabled {
+        let signals = LoadSignals::from_system_state(&system_state, processes.len());
+        compute_load_adjustment(&policy.load_aware, &signals)
+    } else {
+        None
+    };
+
+    let decision_policy = if let Some(adjustment) = &load_adjustment {
+        let mut adjusted = policy.clone();
+        adjusted.loss_matrix = apply_load_to_loss_matrix(&policy.loss_matrix, adjustment);
+        adjusted
+    } else {
+        policy.clone()
+    };
+
+    let feasibility = ActionFeasibility::allow_all();
+    let mut rows = Vec::new();
+
+    for proc in processes {
+        if proc.pid.0 == 0 || proc.pid.0 == 1 {
+            continue;
+        }
+        if let Some(threshold) = min_age {
+            if proc.elapsed.as_secs() < threshold {
+                continue;
+            }
+        }
+
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Fraction {
+                occupancy: (proc.cpu_percent / 100.0).clamp(0.0, 1.0),
+            }),
+            runtime_seconds: Some(proc.elapsed.as_secs_f64()),
+            orphan: Some(proc.is_orphan()),
+            tty: Some(proc.has_tty()),
+            net: None,
+            io_active: None,
+            state_flag: state_to_flag(proc.state),
+            command_category: None,
+        };
+
+        let posterior_result = match compute_posterior(priors, &evidence) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let decision_outcome = match decide_action(
+            &posterior_result.posterior,
+            &decision_policy,
+            &feasibility,
+        ) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+
+        let ledger = EvidenceLedger::from_posterior_result(&posterior_result, Some(proc.pid.0), None);
+        let max_posterior = posterior_result
+            .posterior
+            .useful
+            .max(posterior_result.posterior.useful_bad)
+            .max(posterior_result.posterior.abandoned)
+            .max(posterior_result.posterior.zombie);
+        if max_posterior < MIN_POSTERIOR {
+            continue;
+        }
+
+        let classification = match decision_outcome.optimal_action {
+            Action::Kill => "KILL",
+            Action::Keep => "SPARE",
+            _ => "REVIEW",
+        };
+
+        let score = (max_posterior * 100.0).round() as u32;
+        let runtime = format_duration_human(proc.elapsed.as_secs());
+        let memory = format_memory_human(proc.rss_bytes);
+        let galaxy_brain = render_galaxy_brain(
+            &posterior_result,
+            &ledger,
+            &GalaxyBrainConfig {
+                verbosity: Verbosity::Detail,
+                math_mode: MathMode::Ascii,
+                max_evidence_terms: 8,
+            },
+        );
+
+        rows.push(ProcessRow {
+            pid: proc.pid.0,
+            score,
+            classification: classification.to_string(),
+            runtime,
+            memory,
+            command: proc.cmd.clone(),
+            selected: classification == "KILL",
+            galaxy_brain: Some(galaxy_brain),
+            why_summary: Some(ledger.why_summary.clone()),
+            top_evidence: ledger.top_evidence.clone(),
+            confidence: Some(ledger.confidence.label().to_string()),
+        });
+    }
+
+    rows.sort_by(|a, b| b.score.cmp(&a.score));
+    rows.truncate(MAX_CANDIDATES);
+    rows
 }
 
 use pt_core::collect::{quick_scan, ProcessRecord, QuickScanOptions};
@@ -4600,6 +4809,18 @@ fn format_duration_human(seconds: u64) -> String {
         format!("{}h {}m", hours, minutes)
     } else {
         format!("{}m", minutes)
+    }
+}
+
+#[cfg(feature = "ui")]
+fn format_memory_human(bytes: u64) -> String {
+    let mb = bytes as f64 / 1024.0 / 1024.0;
+    if mb >= 1024.0 {
+        format!("{:.1}GB", mb / 1024.0)
+    } else if mb >= 10.0 {
+        format!("{:.0}MB", mb)
+    } else {
+        format!("{:.1}MB", mb)
     }
 }
 
