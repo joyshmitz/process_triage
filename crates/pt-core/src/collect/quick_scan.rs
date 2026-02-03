@@ -112,11 +112,14 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
     let timeout = options.timeout.unwrap_or(Duration::from_secs(10));
     let finished = Arc::new(AtomicBool::new(false));
     let finished_clone = finished.clone();
+    let timed_out = Arc::new(AtomicBool::new(false));
+    let timed_out_clone = timed_out.clone();
 
     // Spawn watchdog thread
     thread::spawn(move || {
         thread::sleep(timeout);
         if !finished_clone.load(Ordering::Relaxed) {
+            timed_out_clone.store(true, Ordering::Relaxed);
             debug!("Quick scan timed out, killing ps process {}", pid);
             #[cfg(unix)]
             unsafe {
@@ -198,6 +201,15 @@ pub fn quick_scan(options: &QuickScanOptions) -> Result<ScanResult, QuickScanErr
 
     let duration = start.elapsed();
     let process_count = processes.len();
+
+    if timed_out.load(Ordering::Relaxed) {
+        debug!(
+            duration_ms = duration.as_millis(),
+            process_count,
+            "Quick scan timed out"
+        );
+        return Err(QuickScanError::Timeout(timeout));
+    }
 
     debug!(
         process_count = processes.len(),
