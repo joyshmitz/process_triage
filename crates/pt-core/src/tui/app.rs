@@ -76,6 +76,8 @@ pub struct App {
     needs_redraw: bool,
     /// Whether a refresh has been requested.
     refresh_requested: bool,
+    /// Whether an execute action has been requested.
+    execute_requested: bool,
     /// Responsive layout state for tracking breakpoint changes.
     layout_state: LayoutState,
     /// Whether the detail pane is visible.
@@ -107,6 +109,7 @@ impl App {
             status_message: None,
             needs_redraw: true,
             refresh_requested: false,
+            execute_requested: false,
             // Initialize with reasonable defaults; will be updated on first render
             layout_state: LayoutState::new(80, 24),
             detail_visible: true,
@@ -168,6 +171,19 @@ impl App {
     pub fn take_refresh(&mut self) -> bool {
         let requested = self.refresh_requested;
         self.refresh_requested = false;
+        requested
+    }
+
+    /// Request execution of selected actions.
+    pub fn request_execute(&mut self) {
+        self.execute_requested = true;
+        self.needs_redraw = true;
+    }
+
+    /// Check and clear execute request.
+    pub fn take_execute(&mut self) -> bool {
+        let requested = self.execute_requested;
+        self.execute_requested = false;
         requested
     }
 
@@ -442,8 +458,8 @@ impl App {
         match choice {
             ConfirmChoice::Yes => {
                 let count = self.process_table.selected_count();
-                self.set_status(format!("Executing action on {} process(es)...", count));
-                // Actual execution would be triggered here
+                self.set_status(format!("Preparing actions for {} process(es)...", count));
+                self.request_execute();
             }
             ConfirmChoice::No => {
                 self.set_status("Action cancelled");
@@ -726,16 +742,28 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> TuiRes
 /// This is the main entry point for the TUI. It sets up the terminal,
 /// runs the event loop, and restores the terminal on exit.
 pub fn run_tui(mut app: App) -> TuiResult<()> {
-    run_tui_with_refresh(&mut app, |_| Ok(()))
+    run_tui_with_handlers(&mut app, |_| Ok(()), |_| Ok(()))
 }
 
 pub fn run_tui_with_refresh<F>(app: &mut App, mut on_refresh: F) -> TuiResult<()>
 where
     F: FnMut(&mut App) -> TuiResult<()>,
 {
+    run_tui_with_handlers(app, &mut on_refresh, |_| Ok(()))
+}
+
+pub fn run_tui_with_handlers<F, G>(
+    app: &mut App,
+    mut on_refresh: F,
+    mut on_execute: G,
+) -> TuiResult<()>
+where
+    F: FnMut(&mut App) -> TuiResult<()>,
+    G: FnMut(&mut App) -> TuiResult<()>,
+{
     let mut terminal = init_terminal()?;
 
-    let result = run_event_loop(&mut terminal, app, &mut on_refresh);
+    let result = run_event_loop(&mut terminal, app, &mut on_refresh, &mut on_execute);
 
     // Always try to restore terminal, even if loop failed
     let restore_result = restore_terminal(&mut terminal);
@@ -746,13 +774,15 @@ where
 }
 
 /// Main event loop.
-fn run_event_loop<F>(
+fn run_event_loop<F, G>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
     on_refresh: &mut F,
+    on_execute: &mut G,
 ) -> TuiResult<()>
 where
     F: FnMut(&mut App) -> TuiResult<()>,
+    G: FnMut(&mut App) -> TuiResult<()>,
 {
     loop {
         if app.take_redraw() {
@@ -767,6 +797,11 @@ where
 
         if app.take_refresh() {
             on_refresh(app)?;
+            app.request_redraw();
+        }
+
+        if app.take_execute() {
+            on_execute(app)?;
             app.request_redraw();
         }
 

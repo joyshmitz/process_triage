@@ -11,6 +11,8 @@ use clap::parser::ValueSource;
 use clap::FromArgMatches;
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
+#[cfg(feature = "ui")]
+use pt_common::{IdentityQuality, ProcessIdentity};
 use pt_core::capabilities::{get_capabilities, ToolCapability};
 use pt_core::collect::protected::ProtectedFilter;
 #[cfg(target_os = "linux")]
@@ -47,13 +49,19 @@ use pt_core::supervision::{
 };
 use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
 #[cfg(feature = "ui")]
-use pt_core::tui::{run_tui_with_refresh, App};
+use pt_core::tui::{run_tui_with_handlers, App};
+#[cfg(feature = "ui")]
+use pt_core::plan::{generate_plan, DecisionBundle, DecisionCandidate};
 #[cfg(feature = "ui")]
 use pt_core::tui::widgets::ProcessRow;
 use pt_telemetry::shadow::{Observation, ShadowStorage, ShadowStorageConfig};
 use std::collections::{HashMap, HashSet};
+#[cfg(feature = "ui")]
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::fs;
+#[cfg(feature = "ui")]
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -1541,12 +1549,13 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
     let priors = config.priors.clone();
     let policy = config.policy.clone();
 
-    let rows = build_tui_rows_from_live_scan(global, args, &priors, &policy)?;
+    let initial = build_tui_data_from_live_scan(global, args, &priors, &policy)?;
+    let plan_cache = Rc::new(RefCell::new(initial.plan_candidates));
 
     let _ = handle.update_state(SessionState::Planned);
 
     let mut app = App::new();
-    app.process_table.set_rows(rows);
+    app.process_table.set_rows(initial.rows);
     app.process_table.select_recommended();
     app.set_status(format!(
         "Session {} • {} candidates",
@@ -1554,20 +1563,66 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
         app.process_table.rows.len()
     ));
 
-    run_tui_with_refresh(&mut app, |app| {
-        match build_tui_rows_from_live_scan(global, args, &priors, &policy) {
-            Ok(rows) => {
-                let count = rows.len();
-                app.process_table.set_rows(rows);
-                app.process_table.select_recommended();
-                app.set_status(format!("Refreshed • {} candidates", count));
+    let plan_cache_refresh = Rc::clone(&plan_cache);
+    let plan_cache_execute = Rc::clone(&plan_cache);
+    let session_id_for_plan = session_id.clone();
+    let policy_for_plan = policy.clone();
+    let handle_for_plan = handle.clone();
+
+    run_tui_with_handlers(
+        &mut app,
+        |app| {
+            match build_tui_data_from_live_scan(global, args, &priors, &policy) {
+                Ok(output) => {
+                    let count = output.rows.len();
+                    app.process_table.set_rows(output.rows);
+                    app.process_table.select_recommended();
+                    *plan_cache_refresh.borrow_mut() = output.plan_candidates;
+                    app.set_status(format!("Refreshed • {} candidates", count));
+                }
+                Err(err) => {
+                    app.set_status(format!("Refresh failed: {}", err));
+                }
             }
-            Err(err) => {
-                app.set_status(format!("Refresh failed: {}", err));
+            Ok(())
+        },
+        |app| {
+            let selected = app.process_table.get_selected();
+            if selected.is_empty() {
+                app.set_status("No processes selected");
+                return Ok(());
             }
-        }
-        Ok(())
-    })
+            match build_plan_from_selection(
+                &session_id_for_plan,
+                &policy_for_plan,
+                &selected,
+                &plan_cache_execute.borrow(),
+            ) {
+                Ok(plan) => {
+                    if plan.actions.is_empty() {
+                        app.set_status("No actions to apply for selected processes");
+                        return Ok(());
+                    }
+                    match write_plan_to_session(&handle_for_plan, &plan) {
+                        Ok(path) => {
+                            app.set_status(format!(
+                                "Plan saved ({} actions): {}",
+                                plan.actions.len(),
+                                path.display()
+                            ));
+                        }
+                        Err(err) => {
+                            app.set_status(format!("Failed to save plan: {}", err));
+                        }
+                    }
+                }
+                Err(err) => {
+                    app.set_status(format!("Plan build failed: {}", err));
+                }
+            }
+            Ok(())
+        },
+    )
     .map_err(|e| format!("tui error: {}", e))?;
 
     let _ = handle.update_state(SessionState::Completed);
@@ -1575,12 +1630,26 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
 }
 
 #[cfg(feature = "ui")]
-fn build_tui_rows_from_live_scan(
+struct PlanCandidateInput {
+    identity: ProcessIdentity,
+    ppid: Option<u32>,
+    decision: pt_core::decision::DecisionOutcome,
+    process_state: pt_core::collect::ProcessState,
+}
+
+#[cfg(feature = "ui")]
+struct TuiBuildOutput {
+    rows: Vec<ProcessRow>,
+    plan_candidates: HashMap<u32, PlanCandidateInput>,
+}
+
+#[cfg(feature = "ui")]
+fn build_tui_data_from_live_scan(
     global: &GlobalOpts,
     args: &RunArgs,
     priors: &Priors,
     policy: &pt_core::config::Policy,
-) -> Result<Vec<ProcessRow>, String> {
+) -> Result<TuiBuildOutput, String> {
     let scan_options = QuickScanOptions {
         pids: vec![],
         include_kernel_threads: false,
@@ -1606,6 +1675,55 @@ fn build_tui_rows_from_live_scan(
         priors,
         policy,
     ))
+}
+
+#[cfg(feature = "ui")]
+fn build_plan_from_selection(
+    session_id: &SessionId,
+    policy: &pt_core::config::Policy,
+    selected: &[u32],
+    candidates: &HashMap<u32, PlanCandidateInput>,
+) -> Result<Plan, String> {
+    let mut plan_candidates = Vec::new();
+    for pid in selected {
+        let Some(candidate) = candidates.get(pid) else {
+            continue;
+        };
+        plan_candidates.push(DecisionCandidate {
+            identity: candidate.identity.clone(),
+            ppid: candidate.ppid,
+            decision: candidate.decision.clone(),
+            blocked_reasons: Vec::new(),
+            stage_pause_before_kill: false,
+            process_state: Some(candidate.process_state),
+            parent_identity: None,
+            d_state_diagnostics: None,
+        });
+    }
+
+    if plan_candidates.is_empty() {
+        return Err("no valid candidates selected".to_string());
+    }
+
+    let bundle = DecisionBundle {
+        session_id: session_id.clone(),
+        policy: policy.clone(),
+        candidates: plan_candidates,
+        generated_at: Some(chrono::Utc::now().to_rfc3339()),
+    };
+    Ok(generate_plan(&bundle))
+}
+
+#[cfg(feature = "ui")]
+fn write_plan_to_session(handle: &SessionHandle, plan: &Plan) -> Result<PathBuf, String> {
+    let decision_dir = handle.dir.join("decision");
+    if let Err(e) = std::fs::create_dir_all(&decision_dir) {
+        return Err(format!("create decision dir: {}", e));
+    }
+    let plan_path = decision_dir.join("plan.json");
+    let content = serde_json::to_string_pretty(plan).map_err(|e| format!("serialize plan: {}", e))?;
+    std::fs::write(&plan_path, content).map_err(|e| format!("write plan: {}", e))?;
+    Ok(plan_path)
 }
 
 #[cfg(feature = "ui")]
@@ -1681,7 +1799,7 @@ fn build_tui_rows(
     deep_signals: Option<&HashMap<u32, DeepSignals>>,
     priors: &Priors,
     policy: &pt_core::config::Policy,
-) -> Vec<ProcessRow> {
+) -> TuiBuildOutput {
     const MIN_POSTERIOR: f64 = 0.7;
     const MAX_CANDIDATES: usize = 50;
 
@@ -1703,6 +1821,7 @@ fn build_tui_rows(
 
     let feasibility = ActionFeasibility::allow_all();
     let mut rows = Vec::new();
+    let mut plan_candidates = HashMap::new();
 
     for proc in processes {
         if proc.pid.0 == 0 || proc.pid.0 == 1 {
@@ -1771,6 +1890,24 @@ fn build_tui_rows(
             },
         );
 
+        let identity = ProcessIdentity::full(
+            proc.pid.0,
+            proc.start_id.clone(),
+            proc.uid,
+            proc.pgid,
+            proc.sid,
+            IdentityQuality::Full,
+        );
+        plan_candidates.insert(
+            proc.pid.0,
+            PlanCandidateInput {
+                identity,
+                ppid: Some(proc.ppid.0),
+                decision: decision_outcome.clone(),
+                process_state: proc.state,
+            },
+        );
+
         rows.push(ProcessRow {
             pid: proc.pid.0,
             score,
@@ -1788,7 +1925,10 @@ fn build_tui_rows(
 
     rows.sort_by(|a, b| b.score.cmp(&a.score));
     rows.truncate(MAX_CANDIDATES);
-    rows
+    TuiBuildOutput {
+        rows,
+        plan_candidates,
+    }
 }
 
 use pt_core::collect::{quick_scan, ProcessRecord, QuickScanOptions};

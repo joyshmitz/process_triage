@@ -25,7 +25,7 @@ pub mod layout;
 mod theme;
 pub mod widgets;
 
-pub use app::{run_tui, run_tui_with_refresh, App, AppState};
+pub use app::{run_tui, run_tui_with_handlers, run_tui_with_refresh, App, AppState};
 pub use events::{handle_event, AppAction, KeyBindings};
 pub use layout::{
     Breakpoint, DetailAreas, GalaxyBrainAreas, LayoutState, MainAreas, ResponsiveLayout,
