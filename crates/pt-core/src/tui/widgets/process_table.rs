@@ -714,6 +714,20 @@ mod tests {
     }
 
     #[test]
+    fn test_current_row_reflects_filter() {
+        let mut state = ProcessTableState::new();
+        state.set_rows(sample_rows());
+
+        // Default cursor points at first row
+        assert_eq!(state.current_row().unwrap().pid, 1234);
+
+        // Apply filter and confirm current row updates
+        state.set_filter(Some("node".to_string()));
+        let current = state.current_row().unwrap();
+        assert_eq!(current.pid, 5678);
+    }
+
+    #[test]
     fn test_sorting() {
         let mut state = ProcessTableState::new();
         state.set_rows(sample_rows());

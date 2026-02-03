@@ -11,19 +11,14 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::Rect,
-    widgets::{Block, Borders, Paragraph},
-    Frame, Terminal,
-};
+use ratatui::{backend::CrosstermBackend, layout::Rect, widgets::Paragraph, Frame, Terminal};
 
 use super::events::{handle_event, AppAction, KeyBindings};
 use super::layout::{Breakpoint, LayoutState, ResponsiveLayout};
 use super::theme::Theme;
 use super::widgets::{
-    ConfirmChoice, ConfirmDialog, ConfirmDialogState, ProcessTable, ProcessTableState, SearchInput,
-    SearchInputState,
+    ConfirmChoice, ConfirmDialog, ConfirmDialogState, ProcessDetail, ProcessTable,
+    ProcessTableState, SearchInput, SearchInputState,
 };
 use super::{TuiError, TuiResult};
 
@@ -430,34 +425,13 @@ impl App {
 
     /// Render detail pane with current selection.
     fn render_detail_pane(&self, frame: &mut Frame, area: Rect) {
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .title(" Detail ")
-            .border_style(self.theme.style_border());
-
-        let content = if let Some(row) = self.process_table.current_row() {
-            let selected = if self.process_table.selected.contains(&row.pid) {
-                "yes"
-            } else {
-                "no"
-            };
-            format!(
-                "PID: {pid}\nCommand: {cmd}\nClass: {class}\nScore: {score}\nRuntime: {runtime}\nMemory: {memory}\nSelected: {selected}\n\nEvidence:\n- (ledger not wired)\n\nAction:\n- (plan details not wired)\n",
-                pid = row.pid,
-                cmd = row.command,
-                class = row.classification,
-                score = row.score,
-                runtime = row.runtime,
-                memory = row.memory,
-                selected = selected
-            )
-        } else {
-            "No process selected".to_string()
-        };
-
-        let detail = Paragraph::new(content)
-            .block(block)
-            .style(self.theme.style_normal());
+        let row = self.process_table.current_row();
+        let selected = row
+            .map(|r| self.process_table.selected.contains(&r.pid))
+            .unwrap_or(false);
+        let detail = ProcessDetail::new()
+            .theme(&self.theme)
+            .row(row, selected);
 
         frame.render_widget(detail, area);
     }
