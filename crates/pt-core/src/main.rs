@@ -1514,10 +1514,6 @@ fn run_interactive(global: &GlobalOpts, args: &RunArgs) -> ExitCode {
 
 #[cfg(feature = "ui")]
 fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String> {
-    if args.deep {
-        eprintln!("run: deep scan not yet wired into TUI; using quick scan");
-    }
-
     let store = SessionStore::from_env().map_err(|e| format!("session store error: {}", e))?;
     let session_id = SessionId::new();
     let manifest = SessionManifest::new(&session_id, None, SessionMode::Interactive, None);
@@ -1553,6 +1549,12 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
     };
     let scan_result = quick_scan(&scan_options).map_err(|e| format!("scan failed: {}", e))?;
 
+    let deep_signals = if args.deep {
+        collect_deep_signals(&scan_result.processes)
+    } else {
+        None
+    };
+
     let protected_filter = ProtectedFilter::from_guardrails(&policy.guardrails)
         .map_err(|e| format!("protected filter error: {}", e))?;
     let filter_result = protected_filter.filter_scan_result(&scan_result);
@@ -1560,6 +1562,7 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
     let rows = build_tui_rows(
         &filter_result.passed,
         args.min_age,
+        deep_signals.as_ref(),
         &priors,
         &policy,
     );
@@ -1582,9 +1585,76 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
 }
 
 #[cfg(feature = "ui")]
+#[derive(Debug, Clone, Copy)]
+struct DeepSignals {
+    net_active: Option<bool>,
+    io_active: Option<bool>,
+}
+
+#[cfg(feature = "ui")]
+fn collect_deep_signals(processes: &[ProcessRecord]) -> Option<HashMap<u32, DeepSignals>> {
+    #[cfg(target_os = "linux")]
+    {
+        use pt_core::collect::{deep_scan, DeepScanOptions};
+
+        let pids = processes.iter().map(|p| p.pid.0).collect::<Vec<_>>();
+        let options = DeepScanOptions {
+            pids,
+            skip_inaccessible: true,
+            include_environ: false,
+            progress: None,
+        };
+        let result = match deep_scan(&options) {
+            Ok(r) => r,
+            Err(err) => {
+                eprintln!("run: deep scan failed: {}", err);
+                return None;
+            }
+        };
+
+        let mut map = HashMap::new();
+        for record in result.processes {
+            let net_active = record.network.as_ref().map(|info| {
+                let counts = &info.socket_counts;
+                let total = counts.tcp
+                    + counts.tcp6
+                    + counts.udp
+                    + counts.udp6
+                    + counts.unix
+                    + counts.raw;
+                total > 0
+                    || !info.listen_ports.is_empty()
+                    || !info.tcp_connections.is_empty()
+                    || !info.udp_sockets.is_empty()
+                    || !info.unix_sockets.is_empty()
+            });
+            let io_active = record
+                .io
+                .as_ref()
+                .map(|io| io.read_bytes > 0 || io.write_bytes > 0);
+
+            map.insert(
+                record.pid.0,
+                DeepSignals {
+                    net_active,
+                    io_active,
+                },
+            );
+        }
+        Some(map)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        eprintln!("run: deep scan not supported on this platform; using quick scan");
+        None
+    }
+}
+
+#[cfg(feature = "ui")]
 fn build_tui_rows(
     processes: &[ProcessRecord],
     min_age: Option<u64>,
+    deep_signals: Option<&HashMap<u32, DeepSignals>>,
     priors: &Priors,
     policy: &pt_core::config::Policy,
 ) -> Vec<ProcessRow> {
@@ -1620,6 +1690,7 @@ fn build_tui_rows(
             }
         }
 
+        let deep = deep_signals.and_then(|m| m.get(&proc.pid.0).copied());
         let evidence = Evidence {
             cpu: Some(CpuEvidence::Fraction {
                 occupancy: (proc.cpu_percent / 100.0).clamp(0.0, 1.0),
@@ -1627,8 +1698,8 @@ fn build_tui_rows(
             runtime_seconds: Some(proc.elapsed.as_secs_f64()),
             orphan: Some(proc.is_orphan()),
             tty: Some(proc.has_tty()),
-            net: None,
-            io_active: None,
+            net: deep.and_then(|d| d.net_active),
+            io_active: deep.and_then(|d| d.io_active),
             state_flag: state_to_flag(proc.state),
             command_category: None,
         };
