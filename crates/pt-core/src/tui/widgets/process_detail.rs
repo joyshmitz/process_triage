@@ -199,15 +199,30 @@ impl<'a> Widget for ProcessDetail<'a> {
                 {
                     let mut lines = Vec::new();
                     lines.push(Line::from(vec![Span::styled("Action", self.label_style())]));
-                    lines.push(Line::from(vec![
-                        Span::styled("Recommended: ", self.label_style()),
-                        Span::styled(row.classification.clone(), self.value_style()),
-                    ]));
-                    if let Some(confidence) = row.confidence.as_ref() {
+                    if !row.plan_preview.is_empty() {
+                        let first = row.plan_preview.get(0).cloned().unwrap_or_default();
                         lines.push(Line::from(vec![
-                            Span::styled("Confidence: ", self.label_style()),
-                            Span::styled(confidence.clone(), self.value_style()),
+                            Span::styled("Plan: ", self.label_style()),
+                            Span::styled(first, self.value_style()),
                         ]));
+                        if let Some(second) = row.plan_preview.get(1) {
+                            let mut line = second.clone();
+                            if row.plan_preview.len() > 2 {
+                                line.push_str(" …");
+                            }
+                            lines.push(Line::from(vec![Span::styled(line, self.value_style())]));
+                        }
+                    } else {
+                        lines.push(Line::from(vec![
+                            Span::styled("Recommended: ", self.label_style()),
+                            Span::styled(row.classification.clone(), self.value_style()),
+                        ]));
+                        if let Some(confidence) = row.confidence.as_ref() {
+                            lines.push(Line::from(vec![
+                                Span::styled("Confidence: ", self.label_style()),
+                                Span::styled(confidence.clone(), self.value_style()),
+                            ]));
+                        }
                     }
                     lines
                 },
@@ -308,6 +323,7 @@ mod tests {
                 "cpu_idle (1.6 bits toward abandoned)".to_string(),
             ],
             confidence: Some("high".to_string()),
+            plan_preview: Vec::new(),
         }
     }
 

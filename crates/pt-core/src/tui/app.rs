@@ -586,11 +586,25 @@ impl App {
             .borders(Borders::ALL)
             .title(" Actions ")
             .border_style(self.theme.style_border());
+        let mut lines = Vec::new();
+        if let Some(row) = self.process_table.current_row() {
+            if row.plan_preview.is_empty() {
+                lines.push(format!("PID {} • plan not generated", row.pid));
+                lines.push("Press e to generate plan".to_string());
+            } else {
+                lines.push(format!("PID {} • action preview", row.pid));
+                for line in &row.plan_preview {
+                    lines.push(format!("• {}", line));
+                }
+            }
+        } else {
+            lines.push("No process selected".to_string());
+        }
 
-        let content = "Action preview pending";
-        let pane = Paragraph::new(content)
+        let pane = Paragraph::new(lines.join("\n"))
             .block(block)
-            .style(self.theme.style_muted());
+            .style(self.theme.style_muted())
+            .wrap(Wrap { trim: false });
 
         frame.render_widget(pane, area);
     }

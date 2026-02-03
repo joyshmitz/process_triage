@@ -8,9 +8,13 @@ use ratatui::{
     style::{Color, Modifier, Style},
     widgets::{Block, Borders, StatefulWidget, Widget},
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::tui::theme::Theme;
+use crate::{
+    decision::Action,
+    plan::{ActionConfidence, ActionRouting, Plan, PlanAction, PreCheck},
+};
 
 /// Sort column for the process table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -65,6 +69,8 @@ pub struct ProcessRow {
     pub top_evidence: Vec<String>,
     /// Confidence label for the classification.
     pub confidence: Option<String>,
+    /// Preview lines for the planned actions (stage/prechecks/confidence).
+    pub plan_preview: Vec<String>,
 }
 
 /// Process table widget for displaying candidates.
@@ -451,6 +457,28 @@ impl ProcessTableState {
         self.sort();
     }
 
+    /// Apply a generated plan preview to the rows.
+    pub fn apply_plan_preview(&mut self, plan: &Plan) {
+        let mut by_pid: HashMap<u32, Vec<&PlanAction>> = HashMap::new();
+        for action in &plan.actions {
+            by_pid
+                .entry(action.target.pid.0)
+                .or_default()
+                .push(action);
+        }
+        for list in by_pid.values_mut() {
+            list.sort_by_key(|a| a.stage);
+        }
+
+        for row in &mut self.rows {
+            if let Some(actions) = by_pid.get(&row.pid) {
+                row.plan_preview = build_plan_preview(actions);
+            } else {
+                row.plan_preview.clear();
+            }
+        }
+    }
+
     /// Set the filter query.
     pub fn set_filter(&mut self, filter: Option<String>) {
         self.filter = filter;
@@ -643,6 +671,77 @@ impl ProcessTableState {
     }
 }
 
+fn build_plan_preview(actions: &[&PlanAction]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for action in actions {
+        let stage_label = format!("Stage {}", action.stage);
+        let mut summary = format!(
+            "{}: {} ({})",
+            stage_label,
+            action_label(&action.action),
+            confidence_label(action.confidence)
+        );
+        if action.blocked {
+            summary.push_str(" [blocked]");
+        }
+        if action.routing != ActionRouting::Direct {
+            summary.push_str(&format!(" [{}]", routing_label(action.routing)));
+        }
+        lines.push(summary);
+
+        if !action.pre_checks.is_empty() {
+            lines.push(format!(
+                "{} prechecks: {}",
+                stage_label,
+                format_prechecks(&action.pre_checks)
+            ));
+        }
+    }
+    lines
+}
+
+fn action_label(action: &Action) -> String {
+    format!("{:?}", action).to_lowercase()
+}
+
+fn confidence_label(confidence: ActionConfidence) -> &'static str {
+    match confidence {
+        ActionConfidence::Normal => "normal",
+        ActionConfidence::Low => "low",
+        ActionConfidence::VeryLow => "very_low",
+    }
+}
+
+fn routing_label(routing: ActionRouting) -> &'static str {
+    match routing {
+        ActionRouting::Direct => "direct",
+        ActionRouting::ZombieToParent => "zombie_to_parent",
+        ActionRouting::ZombieToSupervisor => "zombie_to_supervisor",
+        ActionRouting::ZombieInvestigateOnly => "zombie_investigate_only",
+        ActionRouting::DStateLowConfidence => "d_state_low_confidence",
+    }
+}
+
+fn format_prechecks(checks: &[PreCheck]) -> String {
+    checks
+        .iter()
+        .map(precheck_label)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn precheck_label(check: &PreCheck) -> &'static str {
+    match check {
+        PreCheck::VerifyIdentity => "verify_identity",
+        PreCheck::CheckNotProtected => "check_not_protected",
+        PreCheck::CheckSessionSafety => "check_session_safety",
+        PreCheck::CheckDataLossGate => "check_data_loss_gate",
+        PreCheck::CheckSupervisor => "check_supervisor",
+        PreCheck::CheckAgentSupervision => "check_agent_supervision",
+        PreCheck::VerifyProcessState => "verify_process_state",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -661,6 +760,7 @@ mod tests {
                 why_summary: Some("Classified as abandoned with high confidence.".to_string()),
                 top_evidence: vec!["runtime (2.4 bits toward abandoned)".to_string()],
                 confidence: Some("high".to_string()),
+                plan_preview: Vec::new(),
             },
             ProcessRow {
                 pid: 5678,
@@ -674,6 +774,7 @@ mod tests {
                 why_summary: None,
                 top_evidence: Vec::new(),
                 confidence: Some("medium".to_string()),
+                plan_preview: Vec::new(),
             },
             ProcessRow {
                 pid: 9012,
@@ -687,6 +788,7 @@ mod tests {
                 why_summary: None,
                 top_evidence: Vec::new(),
                 confidence: Some("low".to_string()),
+                plan_preview: Vec::new(),
             },
         ]
     }

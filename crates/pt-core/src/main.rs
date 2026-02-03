@@ -1603,13 +1603,64 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
                         app.set_status("No actions to apply for selected processes");
                         return Ok(());
                     }
+                    app.process_table.apply_plan_preview(&plan);
+                    app.request_redraw();
                     match write_plan_to_session(&handle_for_plan, &plan) {
                         Ok(path) => {
-                            app.set_status(format!(
-                                "Plan saved ({} actions): {}",
-                                plan.actions.len(),
-                                path.display()
-                            ));
+                            if global.dry_run || global.shadow {
+                                let mode = if global.dry_run { "dry_run" } else { "shadow" };
+                                if let Err(err) = write_outcomes_for_mode(&handle_for_plan, &plan, mode)
+                                {
+                                    app.set_status(format!("Failed to write outcomes: {}", err));
+                                    return Ok(());
+                                }
+                                app.set_status(format!(
+                                    "Plan saved ({} actions, {}): {}",
+                                    plan.actions.len(),
+                                    mode,
+                                    path.display()
+                                ));
+                                return Ok(());
+                            }
+
+                            let _ = handle_for_plan.update_state(SessionState::Executing);
+                            match execute_plan_actions(&handle_for_plan, &policy_for_plan, &plan) {
+                                Ok(result) => {
+                                    if let Err(err) = write_outcomes_from_execution(
+                                        &handle_for_plan,
+                                        &plan,
+                                        &result,
+                                    ) {
+                                        app.set_status(format!(
+                                            "Execution complete but failed to write outcomes: {}",
+                                            err
+                                        ));
+                                        return Ok(());
+                                    }
+                                    let skipped = result
+                                        .outcomes
+                                        .iter()
+                                        .filter(|o| matches!(o.status, pt_core::action::ActionStatus::Skipped))
+                                        .count();
+                                    let final_state = if result.summary.actions_failed > 0 {
+                                        SessionState::Failed
+                                    } else {
+                                        SessionState::Completed
+                                    };
+                                    let _ = handle_for_plan.update_state(final_state);
+                                    app.set_status(format!(
+                                        "Executed {} actions: {} ok, {} failed, {} skipped",
+                                        result.summary.actions_attempted,
+                                        result.summary.actions_succeeded,
+                                        result.summary.actions_failed,
+                                        skipped
+                                    ));
+                                }
+                                Err(err) => {
+                                    let _ = handle_for_plan.update_state(SessionState::Failed);
+                                    app.set_status(format!("Execution failed: {}", err));
+                                }
+                            }
                         }
                         Err(err) => {
                             app.set_status(format!("Failed to save plan: {}", err));
@@ -1625,7 +1676,13 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
     )
     .map_err(|e| format!("tui error: {}", e))?;
 
-    let _ = handle.update_state(SessionState::Completed);
+    if let Ok(manifest) = handle.read_manifest() {
+        if manifest.state != SessionState::Failed {
+            let _ = handle.update_state(SessionState::Completed);
+        }
+    } else {
+        let _ = handle.update_state(SessionState::Completed);
+    }
     Ok(())
 }
 
@@ -1724,6 +1781,148 @@ fn write_plan_to_session(handle: &SessionHandle, plan: &Plan) -> Result<PathBuf,
     let content = serde_json::to_string_pretty(plan).map_err(|e| format!("serialize plan: {}", e))?;
     std::fs::write(&plan_path, content).map_err(|e| format!("write plan: {}", e))?;
     Ok(plan_path)
+}
+
+#[cfg(feature = "ui")]
+fn execute_plan_actions(
+    handle: &SessionHandle,
+    policy: &pt_core::config::Policy,
+    plan: &Plan,
+) -> Result<pt_core::action::ExecutionResult, String> {
+    #[cfg(target_os = "linux")]
+    {
+        use pt_core::action::{
+            ActionExecutor, CompositeActionRunner, LiveIdentityProvider, LivePreCheckConfig,
+            LivePreCheckProvider,
+        };
+        let action_dir = handle.dir.join("action");
+        std::fs::create_dir_all(&action_dir)
+            .map_err(|e| format!("create action dir: {}", e))?;
+        let lock_path = action_dir.join("lock");
+        let runner = CompositeActionRunner::with_defaults();
+        let identity_provider = LiveIdentityProvider::new();
+        let pre_checks = LivePreCheckProvider::new(
+            Some(&policy.guardrails),
+            LivePreCheckConfig::default(),
+        )
+        .unwrap_or_else(|_| LivePreCheckProvider::with_defaults());
+
+        let executor = ActionExecutor::new(&runner, &identity_provider, lock_path)
+            .with_pre_check_provider(&pre_checks);
+        executor
+            .execute_plan(plan)
+            .map_err(|e| format!("execute plan: {}", e))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = policy;
+        let _ = handle;
+        let _ = plan;
+        Err("execution not supported on this platform".to_string())
+    }
+}
+
+#[cfg(feature = "ui")]
+fn write_outcomes_for_mode(
+    handle: &SessionHandle,
+    plan: &Plan,
+    status: &str,
+) -> Result<(), String> {
+    use std::io::Write;
+
+    let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
+    let _ = std::fs::create_dir_all(handle.dir.join("action"));
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&outcomes_path)
+        .map_err(|e| format!("open outcomes: {}", e))?;
+
+    for action in &plan.actions {
+        let entry = serde_json::json!({
+            "action_id": action.action_id,
+            "pid": action.target.pid.0,
+            "status": status,
+        });
+        if let Err(e) = writeln!(file, "{}", entry) {
+            return Err(format!("write outcomes: {}", e));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "ui")]
+fn write_outcomes_from_execution(
+    handle: &SessionHandle,
+    plan: &Plan,
+    result: &pt_core::action::ExecutionResult,
+) -> Result<(), String> {
+    use pt_core::action::ActionStatus;
+    use std::io::Write;
+
+    let mut by_id: HashMap<String, u32> = HashMap::new();
+    for action in &plan.actions {
+        by_id.insert(action.action_id.clone(), action.target.pid.0);
+    }
+
+    let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
+    let _ = std::fs::create_dir_all(handle.dir.join("action"));
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&outcomes_path)
+        .map_err(|e| format!("open outcomes: {}", e))?;
+
+    for outcome in &result.outcomes {
+        let pid = by_id.get(&outcome.action_id).copied().unwrap_or_default();
+        let mut entry = serde_json::json!({
+            "action_id": outcome.action_id,
+            "pid": pid,
+            "status": action_status_label(&outcome.status),
+            "time_ms": outcome.time_ms,
+        });
+        if let ActionStatus::PreCheckBlocked { check, reason } = &outcome.status {
+            if let Some(obj) = entry.as_object_mut() {
+                obj.insert(
+                    "precheck".to_string(),
+                    serde_json::Value::String(precheck_label(check).to_string()),
+                );
+                obj.insert("reason".to_string(), serde_json::Value::String(reason.clone()));
+            }
+        }
+        if let Err(e) = writeln!(file, "{}", entry) {
+            return Err(format!("write outcomes: {}", e));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "ui")]
+fn action_status_label(status: &pt_core::action::ActionStatus) -> &'static str {
+    use pt_core::action::ActionStatus;
+    match status {
+        ActionStatus::Success => "success",
+        ActionStatus::IdentityMismatch => "identity_mismatch",
+        ActionStatus::PermissionDenied => "permission_denied",
+        ActionStatus::Timeout => "timeout",
+        ActionStatus::Failed => "failed",
+        ActionStatus::Skipped => "skipped",
+        ActionStatus::PreCheckBlocked { .. } => "precheck_blocked",
+    }
+}
+
+#[cfg(feature = "ui")]
+fn precheck_label(check: &pt_core::plan::PreCheck) -> &'static str {
+    use pt_core::plan::PreCheck;
+    match check {
+        PreCheck::VerifyIdentity => "verify_identity",
+        PreCheck::CheckNotProtected => "check_not_protected",
+        PreCheck::CheckSessionSafety => "check_session_safety",
+        PreCheck::CheckDataLossGate => "check_data_loss_gate",
+        PreCheck::CheckSupervisor => "check_supervisor",
+        PreCheck::CheckAgentSupervision => "check_agent_supervision",
+        PreCheck::VerifyProcessState => "verify_process_state",
+    }
 }
 
 #[cfg(feature = "ui")]
@@ -1920,6 +2119,7 @@ fn build_tui_rows(
             why_summary: Some(ledger.why_summary.clone()),
             top_evidence: ledger.top_evidence.clone(),
             confidence: Some(ledger.confidence.label().to_string()),
+            plan_preview: Vec::new(),
         });
     }
 
