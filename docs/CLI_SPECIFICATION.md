@@ -637,6 +637,34 @@ pt-core duck [OPTIONS] <query>
 
 ---
 
+### `pt-core shadow`
+
+Manage shadow-mode observation workflows.
+
+```
+pt-core shadow <command> [OPTIONS]
+```
+
+**Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `start` | Start the shadow observation loop |
+| `stop` | Stop the background observer |
+| `status` | Show observer status and storage stats |
+| `export` | Export shadow observations |
+| `report` | Generate validation report from shadow observations |
+
+**Common Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--output <path>` | Write output to file (stdout if omitted) |
+| `--limit <N>` | Limit observations analyzed/exported |
+| `--threshold <0-1>` | Kill threshold used for report metrics |
+
+---
+
 ### `pt-core bundle`
 
 Create `.ptb` session bundle.
