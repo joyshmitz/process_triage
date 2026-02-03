@@ -131,7 +131,7 @@ impl ShadowRecorder {
         };
 
         let mut events = Vec::new();
-        if let Some(event) = build_evidence_event(ledger) {
+        if let Some(event) = build_evidence_event(ledger, &proc.comm) {
             events.push(event);
         }
 
@@ -272,7 +272,7 @@ fn compute_identity_hash(proc: &ProcessRecord) -> String {
     hex::encode(&digest[..8])
 }
 
-fn build_evidence_event(ledger: &EvidenceLedger) -> Option<ProcessEvent> {
+fn build_evidence_event(ledger: &EvidenceLedger, comm: &str) -> Option<ProcessEvent> {
     let top: Vec<_> = ledger
         .bayes_factors
         .iter()
@@ -290,6 +290,7 @@ fn build_evidence_event(ledger: &EvidenceLedger) -> Option<ProcessEvent> {
         return None;
     }
     let details = serde_json::json!({
+        "comm": comm,
         "why_summary": ledger.why_summary,
         "top_evidence": ledger.top_evidence,
         "bayes_factors": top,
