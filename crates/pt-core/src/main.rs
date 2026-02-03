@@ -848,7 +848,7 @@ use pt_core::action::{
     ActionRunner, IdentityProvider, LiveIdentityProvider, SignalActionRunner, SignalConfig,
 };
 use pt_core::decision::{ConstraintChecker, RobotCandidate, RuntimeRobotConstraints};
-use pt_core::plan::Plan;
+use pt_core::plan::{Plan, PlanAction};
 
 #[derive(Args, Debug)]
 struct AgentApplyArgs {
@@ -6344,6 +6344,14 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         }
     };
 
+    let emitter = session_progress_emitter(global, &handle, &sid);
+    if let Some(ref e) = emitter {
+        e.emit(ProgressEvent::new(
+            pt_core::events::event_names::SESSION_STARTED,
+            Phase::Session,
+        ));
+    }
+
     // Load the plan from decision/plan.json
     let plan_path = handle.dir.join("decision").join("plan.json");
     if !plan_path.exists() {
@@ -6413,6 +6421,12 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     };
 
     if target_pids.is_empty() {
+        if let Some(ref e) = emitter {
+            e.emit(ProgressEvent::new(
+                pt_core::events::event_names::SESSION_ENDED,
+                Phase::Session,
+            ));
+        }
         output_apply_nothing(global, &sid);
         return ExitCode::Clean;
     }
@@ -6425,9 +6439,40 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         .filter(|a| !completed_action_ids.contains(&a.action_id))
         .collect();
     if actions_to_apply.is_empty() {
+        if let Some(ref e) = emitter {
+            e.emit(ProgressEvent::new(
+                pt_core::events::event_names::SESSION_ENDED,
+                Phase::Session,
+            ));
+        }
         output_apply_nothing(global, &sid);
         return ExitCode::Clean;
     }
+
+    let total_actions = actions_to_apply.len() as u64;
+    let mut action_index = 0u64;
+    let emit_action_event = |event_name: &str,
+                             index: u64,
+                             elapsed_ms: Option<u64>,
+                             action: &PlanAction,
+                             status: &str,
+                             extra: &[(&str, serde_json::Value)]| {
+        if let Some(ref e) = emitter {
+            let mut event = ProgressEvent::new(event_name, Phase::Apply)
+                .with_progress(index, Some(total_actions))
+                .with_detail("action_id", &action.action_id)
+                .with_detail("pid", action.target.pid.0)
+                .with_detail("action", format!("{:?}", action.action))
+                .with_detail("status", status);
+            if let Some(ms) = elapsed_ms {
+                event = event.with_elapsed_ms(ms);
+            }
+            for (key, value) in extra {
+                event = event.with_detail(*key, value);
+            }
+            e.emit(event);
+        }
+    };
 
     // Check --yes requirement
     if !args.yes && !global.dry_run && !global.shadow {
@@ -6468,6 +6513,16 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     // Handle dry-run/shadow mode or execute
     if global.dry_run || global.shadow {
         for action in &actions_to_apply {
+            action_index = action_index.saturating_add(1);
+            emit_action_event(
+                pt_core::events::event_names::ACTION_STARTED,
+                action_index,
+                None,
+                action,
+                "started",
+                &[("mode", serde_json::json!(if global.dry_run { "dry_run" } else { "shadow" }))],
+            );
+
             // Skip already completed actions in resume mode
             if completed_action_ids.contains(&action.action_id) {
                 resumed_skipped += 1;
@@ -6477,6 +6532,14 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                     "status": "already_completed",
                     "resume": true
                 }));
+                emit_action_event(
+                    pt_core::events::event_names::ACTION_COMPLETE,
+                    action_index,
+                    None,
+                    action,
+                    "already_completed",
+                    &[("resume", serde_json::json!(true))],
+                );
                 continue;
             }
 
@@ -6493,9 +6556,25 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
             if !check.allowed {
                 blocked_by_constraints += 1;
                 outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "blocked_by_constraints"}));
+                emit_action_event(
+                    pt_core::events::event_names::ACTION_COMPLETE,
+                    action_index,
+                    None,
+                    action,
+                    "blocked_by_constraints",
+                    &[],
+                );
             } else {
                 skipped += 1;
                 outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": if global.dry_run { "dry_run" } else { "shadow" }}));
+                emit_action_event(
+                    pt_core::events::event_names::ACTION_COMPLETE,
+                    action_index,
+                    None,
+                    action,
+                    if global.dry_run { "dry_run" } else { "shadow" },
+                    &[],
+                );
             }
         }
     } else {
@@ -6505,6 +6584,16 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
             let signal_runner = SignalActionRunner::new(SignalConfig::default());
 
             for action in &actions_to_apply {
+                action_index = action_index.saturating_add(1);
+                emit_action_event(
+                    pt_core::events::event_names::ACTION_STARTED,
+                    action_index,
+                    None,
+                    action,
+                    "started",
+                    &[],
+                );
+
                 // Skip already completed actions in resume mode
                 if completed_action_ids.contains(&action.action_id) {
                     resumed_skipped += 1;
@@ -6514,6 +6603,14 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                         "status": "already_completed",
                         "resume": true
                     }));
+                    emit_action_event(
+                        pt_core::events::event_names::ACTION_COMPLETE,
+                        action_index,
+                        None,
+                        action,
+                        "already_completed",
+                        &[("resume", serde_json::json!(true))],
+                    );
                     continue;
                 }
 
@@ -6530,7 +6627,16 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                 let check = checker.check_candidate(&candidate);
                 if !check.allowed {
                     blocked_by_constraints += 1;
-                    outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "blocked_by_constraints", "time_ms": start.elapsed().as_millis()}));
+                    let elapsed_ms = start.elapsed().as_millis() as u64;
+                    outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "blocked_by_constraints", "time_ms": elapsed_ms}));
+                    emit_action_event(
+                        pt_core::events::event_names::ACTION_COMPLETE,
+                        action_index,
+                        Some(elapsed_ms),
+                        action,
+                        "blocked_by_constraints",
+                        &[],
+                    );
                     if args.abort_on_unknown {
                         break;
                     }
@@ -6540,7 +6646,16 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                     Ok(true) => {}
                     Ok(false) => {
                         failed += 1;
-                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "identity_mismatch", "time_ms": start.elapsed().as_millis()}));
+                        let elapsed_ms = start.elapsed().as_millis() as u64;
+                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "identity_mismatch", "time_ms": elapsed_ms}));
+                        emit_action_event(
+                            pt_core::events::event_names::ACTION_FAILED,
+                            action_index,
+                            Some(elapsed_ms),
+                            action,
+                            "identity_mismatch",
+                            &[],
+                        );
                         if args.abort_on_unknown {
                             break;
                         }
@@ -6548,7 +6663,16 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                     }
                     Err(_) => {
                         failed += 1;
-                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "identity_check_failed", "time_ms": start.elapsed().as_millis()}));
+                        let elapsed_ms = start.elapsed().as_millis() as u64;
+                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "identity_check_failed", "time_ms": elapsed_ms}));
+                        emit_action_event(
+                            pt_core::events::event_names::ACTION_FAILED,
+                            action_index,
+                            Some(elapsed_ms),
+                            action,
+                            "identity_check_failed",
+                            &[],
+                        );
                         if args.abort_on_unknown {
                             break;
                         }
@@ -6561,11 +6685,29 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                             checker.record_action(0, true);
                         }
                         succeeded += 1;
-                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "success", "time_ms": start.elapsed().as_millis()}));
+                        let elapsed_ms = start.elapsed().as_millis() as u64;
+                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "success", "time_ms": elapsed_ms}));
+                        emit_action_event(
+                            pt_core::events::event_names::ACTION_COMPLETE,
+                            action_index,
+                            Some(elapsed_ms),
+                            action,
+                            "success",
+                            &[],
+                        );
                     }
                     Err(e) => {
                         failed += 1;
-                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "failed", "error": format!("{:?}", e), "time_ms": start.elapsed().as_millis()}));
+                        let elapsed_ms = start.elapsed().as_millis() as u64;
+                        outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "failed", "error": format!("{:?}", e), "time_ms": elapsed_ms}));
+                        emit_action_event(
+                            pt_core::events::event_names::ACTION_FAILED,
+                            action_index,
+                            Some(elapsed_ms),
+                            action,
+                            "failed",
+                            &[("error", serde_json::json!(format!("{:?}", e)))],
+                        );
                         if args.abort_on_unknown {
                             break;
                         }
@@ -6576,6 +6718,16 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         #[cfg(not(target_os = "linux"))]
         {
             for action in &actions_to_apply {
+                action_index = action_index.saturating_add(1);
+                emit_action_event(
+                    pt_core::events::event_names::ACTION_STARTED,
+                    action_index,
+                    None,
+                    action,
+                    "started",
+                    &[],
+                );
+
                 // Skip already completed actions in resume mode
                 if completed_action_ids.contains(&action.action_id) {
                     resumed_skipped += 1;
@@ -6585,10 +6737,26 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                         "status": "already_completed",
                         "resume": true
                     }));
+                    emit_action_event(
+                        pt_core::events::event_names::ACTION_COMPLETE,
+                        action_index,
+                        None,
+                        action,
+                        "already_completed",
+                        &[("resume", serde_json::json!(true))],
+                    );
                     continue;
                 }
                 skipped += 1;
                 outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": "unsupported_platform"}));
+                emit_action_event(
+                    pt_core::events::event_names::ACTION_COMPLETE,
+                    action_index,
+                    None,
+                    action,
+                    "unsupported_platform",
+                    &[],
+                );
             }
         }
     }
@@ -6653,10 +6821,28 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     }
 
     if blocked_by_constraints > 0 && succeeded == 0 && failed == 0 {
+        if let Some(ref e) = emitter {
+            e.emit(ProgressEvent::new(
+                pt_core::events::event_names::SESSION_ENDED,
+                Phase::Session,
+            ));
+        }
         ExitCode::PolicyBlocked
     } else if failed > 0 {
+        if let Some(ref e) = emitter {
+            e.emit(ProgressEvent::new(
+                pt_core::events::event_names::SESSION_ENDED,
+                Phase::Session,
+            ));
+        }
         ExitCode::PartialFail
     } else {
+        if let Some(ref e) = emitter {
+            e.emit(ProgressEvent::new(
+                pt_core::events::event_names::SESSION_ENDED,
+                Phase::Session,
+            ));
+        }
         ExitCode::ActionsOk
     }
 }
