@@ -9328,6 +9328,11 @@ fn run_agent_watch(global: &GlobalOpts, args: &AgentWatchArgs) -> ExitCode {
     use std::thread::sleep;
     use std::time::Duration;
 
+    if !matches!(global.format, OutputFormat::Jsonl) {
+        eprintln!("agent watch: --format jsonl required for streaming output");
+        return ExitCode::ArgsError;
+    }
+
     let threshold = match parse_watch_threshold(&args.threshold) {
         Ok(threshold) => threshold,
         Err(err) => {
