@@ -18,6 +18,7 @@ pub mod renice;
 #[cfg(unix)]
 pub mod signal;
 pub mod supervisor;
+pub mod dispatch;
 
 #[cfg(target_os = "linux")]
 pub use cgroup_throttle::{
@@ -33,6 +34,7 @@ pub use executor::{
     ActionError, ActionExecutor, ActionResult, ActionRunner, ActionStatus, ExecutionError,
     ExecutionResult, ExecutionSummary, IdentityProvider, NoopActionRunner, StaticIdentityProvider,
 };
+pub use dispatch::CompositeActionRunner;
 #[cfg(target_os = "linux")]
 pub use freeze::{is_freeze_available, FreezeActionRunner, FreezeConfig};
 pub use recovery::{plan_recovery, ActionFailure, FailureKind, RecoveryDecision, RetryPolicy};

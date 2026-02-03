@@ -685,7 +685,7 @@ fn build_plan_preview(actions: &[&PlanAction]) -> Vec<String> {
             summary.push_str(" [blocked]");
         }
         if action.routing != ActionRouting::Direct {
-            summary.push_str(&format!(" [{}]", routing_label(action.routing)));
+            summary.push_str(&format!(" [{}]", routing_label(&action.routing)));
         }
         lines.push(summary);
 
@@ -712,7 +712,7 @@ fn confidence_label(confidence: ActionConfidence) -> &'static str {
     }
 }
 
-fn routing_label(routing: ActionRouting) -> &'static str {
+fn routing_label(routing: &ActionRouting) -> &'static str {
     match routing {
         ActionRouting::Direct => "direct",
         ActionRouting::ZombieToParent => "zombie_to_parent",

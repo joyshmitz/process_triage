@@ -557,6 +557,9 @@ enum AgentCommands {
     /// Stream session progress events (JSONL)
     Tail(AgentTailArgs),
 
+    /// Watch for new candidates and emit notifications
+    Watch(AgentWatchArgs),
+
     /// Export priors to file for transfer between machines
     ExportPriors(AgentExportPriorsArgs),
 
@@ -734,6 +737,37 @@ struct AgentTailArgs {
     /// Follow the file for new events
     #[arg(long)]
     follow: bool,
+}
+
+#[derive(Args, Debug)]
+struct AgentWatchArgs {
+    /// Execute command when watch events are emitted (webhook/script)
+    #[arg(long = "notify-exec")]
+    notify_exec: Option<String>,
+
+    /// Trigger sensitivity (low|medium|high|critical)
+    #[arg(long, default_value = "medium")]
+    threshold: String,
+
+    /// Check interval in seconds
+    #[arg(long, default_value = "60")]
+    interval: u64,
+
+    /// Only consider processes older than threshold (seconds)
+    #[arg(long)]
+    min_age: Option<u64>,
+
+    /// Run a single iteration and exit
+    #[arg(long)]
+    once: bool,
+
+    /// Goal: minimum memory available (GB) before alerting
+    #[arg(long)]
+    goal_memory_available_gb: Option<f64>,
+
+    /// Goal: maximum 1-minute load average before alerting
+    #[arg(long)]
+    goal_load_max: Option<f64>,
 }
 
 #[derive(Args, Debug)]
@@ -3097,6 +3131,7 @@ fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
         AgentCommands::ListPriors(args) => run_agent_list_priors(global, args),
         AgentCommands::Inbox(args) => run_agent_inbox(global, args),
         AgentCommands::Tail(args) => run_agent_tail(global, args),
+        AgentCommands::Watch(args) => run_agent_watch(global, args),
         AgentCommands::ExportPriors(args) => run_agent_export_priors(global, args),
         AgentCommands::ImportPriors(args) => run_agent_import_priors(global, args),
         #[cfg(feature = "report")]
@@ -9265,6 +9300,458 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
     }
 
     ExitCode::Clean
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum WatchSeverity {
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+struct WatchThreshold {
+    level: WatchSeverity,
+    min_prob: f64,
+}
+
+struct WatchCandidate {
+    start_id: String,
+    severity: WatchSeverity,
+    confidence: f64,
+    classification: String,
+    command: String,
+}
+
+fn run_agent_watch(global: &GlobalOpts, args: &AgentWatchArgs) -> ExitCode {
+    use std::io::Write;
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    let threshold = match parse_watch_threshold(&args.threshold) {
+        Ok(threshold) => threshold,
+        Err(err) => {
+            eprintln!("agent watch: {}", err);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    let config_options = ConfigOptions {
+        config_dir: global.config.as_ref().map(PathBuf::from),
+        ..Default::default()
+    };
+    let config = match load_config(&config_options) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("agent watch: config error: {}", err);
+            return ExitCode::InternalError;
+        }
+    };
+    let priors = config.priors;
+    let policy = config.policy;
+
+    let scan_options = QuickScanOptions {
+        pids: vec![],
+        include_kernel_threads: false,
+        timeout: global.timeout.map(std::time::Duration::from_secs),
+        progress: None,
+    };
+
+    let mut baseline: Option<WatchBaseline> = None;
+    let mut previous: HashMap<u32, WatchCandidate> = HashMap::new();
+    let interval = Duration::from_secs(args.interval.max(1));
+
+    loop {
+        let system_state = collect_system_state();
+        if baseline.is_none() {
+            baseline = Some(WatchBaseline::from_state(&system_state));
+        }
+
+        if let Some(event) = check_goal_violation(&system_state, args) {
+            emit_watch_event(&event, args.notify_exec.as_deref());
+        }
+        if let Some(event) = check_baseline_anomaly(&system_state, baseline.as_ref()) {
+            emit_watch_event(&event, args.notify_exec.as_deref());
+        }
+
+        let scan_result = match quick_scan(&scan_options) {
+            Ok(scan) => scan,
+            Err(err) => {
+                eprintln!("agent watch: scan failed: {}", err);
+                return ExitCode::InternalError;
+            }
+        };
+
+        let protected_filter = match ProtectedFilter::from_guardrails(&policy.guardrails) {
+            Ok(filter) => filter,
+            Err(err) => {
+                eprintln!("agent watch: protected filter error: {}", err);
+                return ExitCode::InternalError;
+            }
+        };
+        let filtered = protected_filter.filter_scan_result(&scan_result);
+
+        let load_adjustment = if policy.load_aware.enabled {
+            let signals = LoadSignals::from_system_state(&system_state, filtered.passed.len());
+            compute_load_adjustment(&policy.load_aware, &signals)
+        } else {
+            None
+        };
+        let decision_policy = if let Some(adjustment) = &load_adjustment {
+            let mut adjusted = policy.clone();
+            adjusted.loss_matrix = apply_load_to_loss_matrix(&policy.loss_matrix, adjustment);
+            adjusted
+        } else {
+            policy.clone()
+        };
+
+        let mut current: HashMap<u32, WatchCandidate> = HashMap::new();
+
+        for proc in &filtered.passed {
+            if proc.pid.0 == 0 || proc.pid.0 == 1 {
+                continue;
+            }
+            if let Some(min_age) = args.min_age {
+                if proc.elapsed.as_secs() < min_age {
+                    continue;
+                }
+            }
+
+            let Some(eval) = evaluate_watch_candidate(proc, &priors, &decision_policy) else {
+                continue;
+            };
+            if eval.confidence < threshold.min_prob {
+                continue;
+            }
+            let severity = severity_from_confidence(eval.confidence);
+            if severity < threshold.level {
+                continue;
+            }
+
+            let candidate = WatchCandidate {
+                start_id: proc.start_id.0.clone(),
+                severity,
+                confidence: eval.confidence,
+                classification: eval.classification.clone(),
+                command: proc.cmd.clone(),
+            };
+
+            let emit_new = match previous.get(&proc.pid.0) {
+                Some(prev) if prev.start_id == candidate.start_id => {
+                    if candidate.severity > prev.severity {
+                        let event = serde_json::json!({
+                            "event": "severity_escalated",
+                            "timestamp": chrono::Utc::now().to_rfc3339(),
+                            "pid": proc.pid.0,
+                            "classification": candidate.classification,
+                            "prior_confidence": prev.confidence,
+                            "current_confidence": candidate.confidence,
+                            "prior_severity": severity_label(prev.severity),
+                            "current_severity": severity_label(candidate.severity),
+                            "command": candidate.command,
+                        });
+                        emit_watch_event(&event, args.notify_exec.as_deref());
+                    }
+                    false
+                }
+                _ => true,
+            };
+
+            if emit_new {
+                let event = serde_json::json!({
+                    "event": "candidate_detected",
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "pid": proc.pid.0,
+                    "classification": candidate.classification,
+                    "confidence": candidate.confidence,
+                    "severity": severity_label(candidate.severity),
+                    "command": candidate.command,
+                });
+                emit_watch_event(&event, args.notify_exec.as_deref());
+            }
+
+            current.insert(proc.pid.0, candidate);
+        }
+
+        previous = current;
+
+        let _ = std::io::stdout().flush();
+
+        if args.once {
+            break;
+        }
+        sleep(interval);
+    }
+
+    ExitCode::Clean
+}
+
+struct WatchEval {
+    confidence: f64,
+    classification: String,
+}
+
+fn evaluate_watch_candidate(
+    proc: &ProcessRecord,
+    priors: &Priors,
+    policy: &pt_core::config::Policy,
+) -> Option<WatchEval> {
+    let evidence = Evidence {
+        cpu: Some(CpuEvidence::Fraction {
+            occupancy: (proc.cpu_percent / 100.0).clamp(0.0, 1.0),
+        }),
+        runtime_seconds: Some(proc.elapsed.as_secs_f64()),
+        orphan: Some(proc.is_orphan()),
+        tty: Some(proc.has_tty()),
+        net: None,
+        io_active: None,
+        state_flag: state_to_flag(proc.state),
+        command_category: None,
+    };
+
+    let posterior_result = compute_posterior(priors, &evidence).ok()?;
+    let decision_outcome =
+        decide_action(&posterior_result.posterior, policy, &ActionFeasibility::allow_all()).ok()?;
+
+    let classification = match decision_outcome.optimal_action {
+        Action::Kill => "kill",
+        Action::Keep => "spare",
+        _ => "review",
+    }
+    .to_string();
+
+    let confidence = posterior_result
+        .posterior
+        .abandoned
+        .max(posterior_result.posterior.zombie)
+        .clamp(0.0, 1.0);
+
+    Some(WatchEval {
+        confidence,
+        classification,
+    })
+}
+
+fn parse_watch_threshold(raw: &str) -> Result<WatchThreshold, String> {
+    match raw.trim().to_lowercase().as_str() {
+        "low" => Ok(WatchThreshold {
+            level: WatchSeverity::Low,
+            min_prob: 0.5,
+        }),
+        "medium" => Ok(WatchThreshold {
+            level: WatchSeverity::Medium,
+            min_prob: 0.7,
+        }),
+        "high" => Ok(WatchThreshold {
+            level: WatchSeverity::High,
+            min_prob: 0.85,
+        }),
+        "critical" => Ok(WatchThreshold {
+            level: WatchSeverity::Critical,
+            min_prob: 0.95,
+        }),
+        other => Err(format!(
+            "invalid --threshold {} (expected low|medium|high|critical)",
+            other
+        )),
+    }
+}
+
+fn severity_from_confidence(confidence: f64) -> WatchSeverity {
+    if confidence >= 0.95 {
+        WatchSeverity::Critical
+    } else if confidence >= 0.85 {
+        WatchSeverity::High
+    } else if confidence >= 0.7 {
+        WatchSeverity::Medium
+    } else {
+        WatchSeverity::Low
+    }
+}
+
+fn severity_label(severity: WatchSeverity) -> &'static str {
+    match severity {
+        WatchSeverity::Low => "low",
+        WatchSeverity::Medium => "medium",
+        WatchSeverity::High => "high",
+        WatchSeverity::Critical => "critical",
+    }
+}
+
+struct WatchBaseline {
+    load1: f64,
+    available_gb: f64,
+}
+
+impl WatchBaseline {
+    fn from_state(state: &serde_json::Value) -> Self {
+        Self {
+            load1: read_load1(state).unwrap_or(0.0),
+            available_gb: read_available_gb(state).unwrap_or(0.0),
+        }
+    }
+}
+
+fn read_load1(state: &serde_json::Value) -> Option<f64> {
+    state
+        .get("load")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.as_f64())
+}
+
+fn read_available_gb(state: &serde_json::Value) -> Option<f64> {
+    state
+        .get("memory")
+        .and_then(|v| v.get("available_gb"))
+        .and_then(|v| v.as_f64())
+}
+
+fn check_goal_violation(
+    state: &serde_json::Value,
+    args: &AgentWatchArgs,
+) -> Option<serde_json::Value> {
+    if let Some(goal_mem) = args.goal_memory_available_gb {
+        if let Some(available) = read_available_gb(state) {
+            if available < goal_mem {
+                return Some(serde_json::json!({
+                    "event": "goal_violated",
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "goal": format!("memory_available_gb >= {}", goal_mem),
+                    "current": format!("{:.2}", available),
+                }));
+            }
+        }
+    }
+
+    if let Some(goal_load) = args.goal_load_max {
+        if let Some(load1) = read_load1(state) {
+            if load1 > goal_load {
+                return Some(serde_json::json!({
+                    "event": "goal_violated",
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "goal": format!("load1 <= {}", goal_load),
+                    "current": format!("{:.2}", load1),
+                }));
+            }
+        }
+    }
+
+    None
+}
+
+fn check_baseline_anomaly(
+    state: &serde_json::Value,
+    baseline: Option<&WatchBaseline>,
+) -> Option<serde_json::Value> {
+    let Some(baseline) = baseline else {
+        return None;
+    };
+    if baseline.load1 > 0.0 {
+        if let Some(load1) = read_load1(state) {
+            if load1 > baseline.load1 * 1.5 {
+                return Some(serde_json::json!({
+                    "event": "baseline_anomaly",
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "metric": "load1",
+                    "baseline": format!("{:.2}", baseline.load1),
+                    "current": format!("{:.2}", load1),
+                }));
+            }
+        }
+    }
+    if baseline.available_gb > 0.0 {
+        if let Some(available) = read_available_gb(state) {
+            if available < baseline.available_gb * 0.7 {
+                return Some(serde_json::json!({
+                    "event": "baseline_anomaly",
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "metric": "memory_available_gb",
+                    "baseline": format!("{:.2}", baseline.available_gb),
+                    "current": format!("{:.2}", available),
+                }));
+            }
+        }
+    }
+    None
+}
+
+fn emit_watch_event(event: &serde_json::Value, notify_exec: Option<&str>) {
+    println!("{}", serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string()));
+    if let Some(cmd) = notify_exec {
+        let event_type = event
+            .get("event")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let json = event.to_string();
+        let mut child = std::process::Command::new("sh");
+        child.arg("-c").arg(cmd);
+        child.env("PT_WATCH_EVENT", event_type);
+        child.env("PT_WATCH_EVENT_JSON", &json);
+        if let Some(pid) = event.get("pid").and_then(|v| v.as_u64()) {
+            child.env("PT_WATCH_PID", pid.to_string());
+        }
+        if let Err(err) = child.status() {
+            eprintln!("agent watch: notify-exec failed: {}", err);
+        }
+    }
+}
+
+#[cfg(test)]
+mod watch_tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_watch_threshold() {
+        let medium = parse_watch_threshold("medium").expect("medium");
+        assert_eq!(medium.level, WatchSeverity::Medium);
+        assert_eq!(medium.min_prob, 0.7);
+
+        assert!(parse_watch_threshold("critical").is_ok());
+        assert!(parse_watch_threshold("unknown").is_err());
+    }
+
+    #[test]
+    fn test_severity_from_confidence() {
+        assert_eq!(severity_from_confidence(0.96), WatchSeverity::Critical);
+        assert_eq!(severity_from_confidence(0.9), WatchSeverity::High);
+        assert_eq!(severity_from_confidence(0.75), WatchSeverity::Medium);
+        assert_eq!(severity_from_confidence(0.4), WatchSeverity::Low);
+    }
+
+    #[test]
+    fn test_goal_violation_memory() {
+        let state = serde_json::json!({
+            "load": [0.2, 0.1, 0.05],
+            "memory": {"available_gb": 1.0}
+        });
+        let args = AgentWatchArgs {
+            notify_exec: None,
+            threshold: "medium".to_string(),
+            interval: 60,
+            min_age: None,
+            once: true,
+            goal_memory_available_gb: Some(2.0),
+            goal_load_max: None,
+        };
+        let event = check_goal_violation(&state, &args).expect("goal violation");
+        assert_eq!(event.get("event").and_then(|v| v.as_str()), Some("goal_violated"));
+    }
+
+    #[test]
+    fn test_baseline_anomaly_load() {
+        let baseline_state = serde_json::json!({
+            "load": [1.0, 0.5, 0.2],
+            "memory": {"available_gb": 4.0}
+        });
+        let baseline = WatchBaseline::from_state(&baseline_state);
+        let current_state = serde_json::json!({
+            "load": [2.0, 1.0, 0.5],
+            "memory": {"available_gb": 4.0}
+        });
+        let event = check_baseline_anomaly(&current_state, Some(&baseline)).expect("baseline anomaly");
+        assert_eq!(event.get("event").and_then(|v| v.as_str()), Some("baseline_anomaly"));
+    }
 }
 
 /// Generate a report from session directory data.
