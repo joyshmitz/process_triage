@@ -13,9 +13,12 @@
 mod e2e_scenarios {
     use assert_cmd::cargo::cargo_bin_cmd;
     use assert_cmd::Command;
+    use chrono::Utc;
     use predicates::prelude::*;
     use pt_core::test_utils::ProcessHarness;
+    use pt_telemetry::shadow::{BeliefState, EventType, Observation, ProcessEvent, StateSnapshot};
     use serde_json::Value;
+    use std::fs;
     use std::fs::File;
     use std::io::Write;
     use std::time::Duration;
@@ -456,6 +459,66 @@ mod e2e_scenarios {
 
         // Clean up
         sleeper.trigger_exit();
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_shadow_report_from_observations() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let shadow_dir = dir.path().join("shadow");
+        fs::create_dir_all(&shadow_dir)?;
+
+        let now = Utc::now();
+        let observation = Observation {
+            timestamp: now,
+            pid: 4242,
+            identity_hash: "hash_shadow_report".to_string(),
+            state: StateSnapshot::default(),
+            events: vec![ProcessEvent {
+                timestamp: now,
+                event_type: EventType::ProcessExit,
+                details: Some(
+                    serde_json::json!({
+                        "reason": "missing",
+                        "comm": "sleep"
+                    })
+                    .to_string(),
+                ),
+            }],
+            belief: BeliefState {
+                p_abandoned: 0.75,
+                recommendation: "kill".to_string(),
+                ..BeliefState::default()
+            },
+        };
+
+        let payload = serde_json::to_string_pretty(&vec![observation])?;
+        let path = shadow_dir.join("shadow_observations.json");
+        fs::write(&path, payload)?;
+
+        let output = pt_core()
+            .env("PROCESS_TRIAGE_DATA", dir.path())
+            .args(["shadow", "report", "--threshold", "0.5"])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+
+        let report: Value = serde_json::from_slice(&output)?;
+        assert_eq!(
+            report.get("total_predictions").and_then(|v| v.as_u64()),
+            Some(1)
+        );
+        assert_eq!(
+            report.get("resolved_predictions").and_then(|v| v.as_u64()),
+            Some(1)
+        );
+        assert_eq!(
+            report.get("pending_predictions").and_then(|v| v.as_u64()),
+            Some(0)
+        );
 
         Ok(())
     }
