@@ -74,6 +74,8 @@ pub struct App {
     status_message: Option<String>,
     /// Whether a redraw is needed.
     needs_redraw: bool,
+    /// Whether a refresh has been requested.
+    refresh_requested: bool,
     /// Responsive layout state for tracking breakpoint changes.
     layout_state: LayoutState,
     /// Whether the detail pane is visible.
@@ -104,6 +106,7 @@ impl App {
             confirm_dialog: ConfirmDialogState::new(),
             status_message: None,
             needs_redraw: true,
+            refresh_requested: false,
             // Initialize with reasonable defaults; will be updated on first render
             layout_state: LayoutState::new(80, 24),
             detail_visible: true,
@@ -153,6 +156,19 @@ impl App {
     /// Request a redraw.
     pub fn request_redraw(&mut self) {
         self.needs_redraw = true;
+    }
+
+    /// Request a refresh of the process list.
+    pub fn request_refresh(&mut self) {
+        self.refresh_requested = true;
+        self.needs_redraw = true;
+    }
+
+    /// Check and clear refresh request.
+    pub fn take_refresh(&mut self) -> bool {
+        let requested = self.refresh_requested;
+        self.refresh_requested = false;
+        requested
     }
 
     /// Check if redraw is needed and clear the flag.
@@ -333,6 +349,7 @@ impl App {
                     }
                     KeyCode::Char('r') => {
                         self.set_status("Refreshing process list...");
+                        self.request_refresh();
                     }
                     KeyCode::Char('s') => {
                         self.set_detail_view(DetailView::Summary);
@@ -709,9 +726,16 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> TuiRes
 /// This is the main entry point for the TUI. It sets up the terminal,
 /// runs the event loop, and restores the terminal on exit.
 pub fn run_tui(mut app: App) -> TuiResult<()> {
+    run_tui_with_refresh(&mut app, |_| Ok(()))
+}
+
+pub fn run_tui_with_refresh<F>(app: &mut App, mut on_refresh: F) -> TuiResult<()>
+where
+    F: FnMut(&mut App) -> TuiResult<()>,
+{
     let mut terminal = init_terminal()?;
 
-    let result = run_event_loop(&mut terminal, &mut app);
+    let result = run_event_loop(&mut terminal, app, &mut on_refresh);
 
     // Always try to restore terminal, even if loop failed
     let restore_result = restore_terminal(&mut terminal);
@@ -722,10 +746,14 @@ pub fn run_tui(mut app: App) -> TuiResult<()> {
 }
 
 /// Main event loop.
-fn run_event_loop(
+fn run_event_loop<F>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
-) -> TuiResult<()> {
+    on_refresh: &mut F,
+) -> TuiResult<()>
+where
+    F: FnMut(&mut App) -> TuiResult<()>,
+{
     loop {
         if app.take_redraw() {
             terminal.draw(|frame| app.render(frame))?;
@@ -735,6 +763,11 @@ fn run_event_loop(
         if event::poll(Duration::from_millis(100))? {
             let event = event::read()?;
             app.handle_event(event)?;
+        }
+
+        if app.take_refresh() {
+            on_refresh(app)?;
+            app.request_redraw();
         }
 
         if app.should_quit() {

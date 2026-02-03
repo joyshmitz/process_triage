@@ -47,7 +47,7 @@ use pt_core::supervision::{
 };
 use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
 #[cfg(feature = "ui")]
-use pt_core::tui::{run_tui, App};
+use pt_core::tui::{run_tui_with_refresh, App};
 #[cfg(feature = "ui")]
 use pt_core::tui::widgets::ProcessRow;
 use pt_telemetry::shadow::{Observation, ShadowStorage, ShadowStorageConfig};
@@ -1541,6 +1541,46 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
     let priors = config.priors.clone();
     let policy = config.policy.clone();
 
+    let rows = build_tui_rows_from_live_scan(global, args, &priors, &policy)?;
+
+    let _ = handle.update_state(SessionState::Planned);
+
+    let mut app = App::new();
+    app.process_table.set_rows(rows);
+    app.process_table.select_recommended();
+    app.set_status(format!(
+        "Session {} • {} candidates",
+        session_id.0,
+        app.process_table.rows.len()
+    ));
+
+    run_tui_with_refresh(&mut app, |app| {
+        match build_tui_rows_from_live_scan(global, args, &priors, &policy) {
+            Ok(rows) => {
+                let count = rows.len();
+                app.process_table.set_rows(rows);
+                app.process_table.select_recommended();
+                app.set_status(format!("Refreshed • {} candidates", count));
+            }
+            Err(err) => {
+                app.set_status(format!("Refresh failed: {}", err));
+            }
+        }
+        Ok(())
+    })
+    .map_err(|e| format!("tui error: {}", e))?;
+
+    let _ = handle.update_state(SessionState::Completed);
+    Ok(())
+}
+
+#[cfg(feature = "ui")]
+fn build_tui_rows_from_live_scan(
+    global: &GlobalOpts,
+    args: &RunArgs,
+    priors: &Priors,
+    policy: &pt_core::config::Policy,
+) -> Result<Vec<ProcessRow>, String> {
     let scan_options = QuickScanOptions {
         pids: vec![],
         include_kernel_threads: false,
@@ -1559,29 +1599,13 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
         .map_err(|e| format!("protected filter error: {}", e))?;
     let filter_result = protected_filter.filter_scan_result(&scan_result);
 
-    let rows = build_tui_rows(
+    Ok(build_tui_rows(
         &filter_result.passed,
         args.min_age,
         deep_signals.as_ref(),
-        &priors,
-        &policy,
-    );
-
-    let _ = handle.update_state(SessionState::Planned);
-
-    let mut app = App::new();
-    app.process_table.set_rows(rows);
-    app.process_table.select_recommended();
-    app.set_status(format!(
-        "Session {} • {} candidates",
-        session_id.0,
-        app.process_table.rows.len()
-    ));
-
-    run_tui(app).map_err(|e| format!("tui error: {}", e))?;
-
-    let _ = handle.update_state(SessionState::Completed);
-    Ok(())
+        priors,
+        policy,
+    ))
 }
 
 #[cfg(feature = "ui")]
