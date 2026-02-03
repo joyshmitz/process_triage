@@ -122,6 +122,18 @@ pt --version   # Show version
 pt --help      # Full command reference
 ```
 
+### Shadow Mode (Calibration)
+
+Shadow mode records recommendations and outcomes for calibration without taking any actions.
+
+```bash
+pt shadow start                         # Start background observer
+pt shadow status                        # Check observer status
+pt shadow stop                          # Stop observer
+pt shadow export --format=json > shadow_data.json
+pt shadow report --threshold 0.5 --output shadow_report.json
+```
+
 ---
 
 ## Core Concepts
