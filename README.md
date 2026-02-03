@@ -118,6 +118,7 @@ Runs additional probes: I/O activity, CPU progress over time, TTY state, network
 ```bash
 pt history     # View past kill/spare decisions
 pt clear       # Clear learned decisions (fresh start)
+pt diff --last # Compare the latest two sessions
 pt --version   # Show version
 pt --help      # Full command reference
 ```
@@ -537,6 +538,22 @@ cargo test --workspace
 - **Bash**: shellcheck clean, use `[[` over `[`, quote all variables
 - **Rust**: `cargo fmt` and `cargo clippy` with no warnings
 - **Tests**: Every new feature needs corresponding test coverage
+
+### Coverage
+
+Run coverage locally:
+
+```bash
+scripts/coverage.sh
+```
+
+### No-Mock Policy (Core Modules)
+
+Core modules avoid mocking frameworks to keep behavior grounded in real system state.
+
+```bash
+scripts/check_no_mocks.sh
+```
 
 ### Project Structure
 

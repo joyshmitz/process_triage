@@ -18,7 +18,7 @@ env:
 
 jobs:
   # ==========================================================================
-  # Code Coverage with Tarpaulin
+  # Code Coverage with llvm-cov
   # ==========================================================================
   coverage:
     name: Code Coverage
@@ -37,30 +37,16 @@ jobs:
         with:
           workspaces: "crates -> target"
 
-      - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@cargo-tarpaulin
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Run coverage
-        run: |
-          echo "::group::Running coverage analysis"
-          cargo tarpaulin \
-            --workspace \
-            --out xml \
-            --out html \
-            --output-dir coverage \
-            --timeout 300 \
-            --skip-clean \
-            --ignore-tests \
-            --exclude-files "*/tests/*" \
-            --exclude-files "*/benches/*" \
-            2>&1 | tee coverage-output.log
-          echo "::endgroup::"
-        continue-on-error: true
+        run: scripts/coverage.sh
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
-          files: coverage/cobertura.xml
+          files: coverage/coverage.lcov
           fail_ci_if_error: false
           verbose: true
         env:
@@ -73,7 +59,6 @@ jobs:
           name: coverage-report
           path: |
             coverage/
-            coverage-output.log
           retention-days: 14
 
       - name: Generate coverage summary
@@ -81,15 +66,13 @@ jobs:
         run: |
           echo "## Coverage Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ -f coverage/cobertura.xml ]; then
-            # Extract line coverage percentage from cobertura.xml
-            line_rate=$(grep -o 'line-rate="[^"]*"' coverage/cobertura.xml | head -1 | sed 's/line-rate="\([^"]*\)"/\1/')
-            if [ -n "$line_rate" ]; then
-              percentage=$(echo "$line_rate * 100" | bc -l 2>/dev/null | cut -d. -f1 || echo "N/A")
-              echo "Line Coverage: ${percentage}%" >> $GITHUB_STEP_SUMMARY
-            fi
+          if [ -f coverage/coverage_summary.json ]; then
+            line_rate=$(jq -r '.totals.lines.percent' coverage/coverage_summary.json 2>/dev/null || echo "N/A")
+            branch_rate=$(jq -r '.totals.branches.percent' coverage/coverage_summary.json 2>/dev/null || echo "N/A")
+            echo "Line Coverage: ${line_rate}%" >> $GITHUB_STEP_SUMMARY
+            echo "Branch Coverage: ${branch_rate}%" >> $GITHUB_STEP_SUMMARY
           else
-            echo "Coverage report not generated" >> $GITHUB_STEP_SUMMARY
+            echo "Coverage summary not generated" >> $GITHUB_STEP_SUMMARY
           fi
 
   # ==========================================================================
@@ -115,14 +98,9 @@ jobs:
       - name: Extract coverage percentage
         id: coverage
         run: |
-          if [ -f coverage/cobertura.xml ]; then
-            line_rate=$(grep -o 'line-rate="[^"]*"' coverage/cobertura.xml | head -1 | sed 's/line-rate="\([^"]*\)"/\1/')
-            if [ -n "$line_rate" ]; then
-              percentage=$(echo "$line_rate * 100" | bc -l 2>/dev/null | cut -d. -f1 || echo "0")
-              echo "percentage=$percentage" >> $GITHUB_OUTPUT
-            else
-              echo "percentage=0" >> $GITHUB_OUTPUT
-            fi
+          if [ -f coverage/coverage_summary.json ]; then
+            percentage=$(jq -r '.totals.lines.percent' coverage/coverage_summary.json 2>/dev/null || echo "0")
+            echo "percentage=$percentage" >> $GITHUB_OUTPUT
           else
             echo "percentage=0" >> $GITHUB_OUTPUT
           fi

@@ -1,0 +1,48 @@
+[global]
+min_line = 1
+min_branch = 0
+
+[crates.pt-core]
+min_line = 1
+min_branch = 0
+enforce = true
+
+[crates.pt-common]
+min_line = 1
+min_branch = 0
+enforce = true
+
+[crates.pt-math]
+min_line = 1
+min_branch = 0
+enforce = true
+
+[crates.pt-telemetry]
+min_line = 0
+min_branch = 0
+enforce = false
+reason = "Coverage baseline not established yet."
+
+[crates.pt-redact]
+min_line = 0
+min_branch = 0
+enforce = false
+reason = "Coverage baseline not established yet."
+
+[crates.pt-config]
+min_line = 0
+min_branch = 0
+enforce = false
+reason = "Coverage baseline not established yet."
+
+[crates.pt-bundle]
+min_line = 0
+min_branch = 0
+enforce = false
+reason = "Coverage baseline not established yet."
+
+[crates.pt-report]
+min_line = 0
+min_branch = 0
+enforce = false
+reason = "Coverage baseline not established yet."
