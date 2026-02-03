@@ -225,10 +225,14 @@ fn find_recurring_offenders(
     old_inferences: &[PersistedInference],
     new_inferences: &[PersistedInference],
 ) -> Vec<RecurringOffender> {
-    let old_map: HashMap<String, &PersistedInference> =
-        old_inferences.iter().map(|i| (i.start_id.clone(), i)).collect();
-    let new_map: HashMap<String, &PersistedInference> =
-        new_inferences.iter().map(|i| (i.start_id.clone(), i)).collect();
+    let old_map: HashMap<String, &PersistedInference> = old_inferences
+        .iter()
+        .map(|i| (i.start_id.clone(), i))
+        .collect();
+    let new_map: HashMap<String, &PersistedInference> = new_inferences
+        .iter()
+        .map(|i| (i.start_id.clone(), i))
+        .collect();
 
     let mut offenders = Vec::new();
 
@@ -282,11 +286,7 @@ fn find_recurring_offenders(
     }
 
     // Sort by new score descending (most suspicious first).
-    offenders.sort_by(|a, b| {
-        b.new_score
-            .unwrap_or(0)
-            .cmp(&a.new_score.unwrap_or(0))
-    });
+    offenders.sort_by(|a, b| b.new_score.unwrap_or(0).cmp(&a.new_score.unwrap_or(0)));
 
     offenders
 }
@@ -296,10 +296,14 @@ fn compute_drift_summary(
     old_inferences: &[PersistedInference],
     new_inferences: &[PersistedInference],
 ) -> DriftSummary {
-    let old_map: HashMap<String, &PersistedInference> =
-        old_inferences.iter().map(|i| (i.start_id.clone(), i)).collect();
-    let new_map: HashMap<String, &PersistedInference> =
-        new_inferences.iter().map(|i| (i.start_id.clone(), i)).collect();
+    let old_map: HashMap<String, &PersistedInference> = old_inferences
+        .iter()
+        .map(|i| (i.start_id.clone(), i))
+        .collect();
+    let new_map: HashMap<String, &PersistedInference> = new_inferences
+        .iter()
+        .map(|i| (i.start_id.clone(), i))
+        .collect();
 
     let mut score_drifts = Vec::new();
     let mut abandoned_drifts = Vec::new();
@@ -436,7 +440,8 @@ mod tests {
             inf(3, "c", "abandoned", 90, "kill"),
         ];
         let diff = compute_diff(
-            "s1", "s2",
+            "s1",
+            "s2",
             &[proc(1, "a"), proc(2, "b")],
             &old,
             &[proc(1, "a"), proc(2, "b"), proc(3, "c")],
@@ -466,12 +471,20 @@ mod tests {
             inf(2, "a:2:2", "useful", 12, "keep"),
         ];
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         let report = generate_comparison_report(&diff, &old_infs, &new_infs);
         assert_eq!(report.recurring_offenders.len(), 1);
         assert_eq!(report.recurring_offenders[0].pid, 1);
-        assert!(report.recurring_offenders[0].explanation.contains("both sessions"));
+        assert!(report.recurring_offenders[0]
+            .explanation
+            .contains("both sessions"));
     }
 
     #[test]
@@ -486,12 +499,21 @@ mod tests {
             inf(2, "b", "abandoned", 70, "kill"),
         ];
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         let report = generate_comparison_report(&diff, &old_infs, &new_infs);
         assert_eq!(report.drift_summary.worsened_count, 2);
         assert!(report.drift_summary.mean_score_drift > 0.0);
-        assert_eq!(report.drift_summary.overall_trend, TrendDirection::Increasing);
+        assert_eq!(
+            report.drift_summary.overall_trend,
+            TrendDirection::Increasing
+        );
     }
 
     #[test]
@@ -506,12 +528,21 @@ mod tests {
             inf(2, "b", "useful", 15, "keep"),
         ];
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         let report = generate_comparison_report(&diff, &old_infs, &new_infs);
         assert_eq!(report.drift_summary.improved_count, 2);
         assert!(report.drift_summary.mean_score_drift < 0.0);
-        assert_eq!(report.drift_summary.overall_trend, TrendDirection::Decreasing);
+        assert_eq!(
+            report.drift_summary.overall_trend,
+            TrendDirection::Decreasing
+        );
     }
 
     #[test]
@@ -525,7 +556,8 @@ mod tests {
             inf(2, "b", "useful", 12, "keep"),
         ];
         let diff = compute_diff(
-            "s1", "s2",
+            "s1",
+            "s2",
             &[proc(1, "a"), proc(2, "b")],
             &old,
             &[proc(1, "a"), proc(2, "b")],
@@ -563,7 +595,13 @@ mod tests {
             inf(3, "c", "abandoned", 55, "kill"),
         ];
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         let report = generate_comparison_report(&diff, &old_infs, &new_infs);
         // Should be sorted by new score descending.
@@ -578,7 +616,13 @@ mod tests {
         let old_infs = vec![inf(1, "a", "useful", 10, "keep")];
         let new_infs = vec![inf(1, "a", "useful", 11, "keep")];
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         let report = generate_comparison_report(&diff, &old_infs, &new_infs);
         assert_eq!(report.drift_summary.overall_trend, TrendDirection::Stable);
@@ -592,11 +636,17 @@ mod tests {
             inf(2, "b", "useful", 20, "keep"),
         ];
         let new_infs = vec![
-            inf(1, "a", "useful", 20, "keep"),  // +10
-            inf(2, "b", "useful", 40, "keep"),   // +20
+            inf(1, "a", "useful", 20, "keep"), // +10
+            inf(2, "b", "useful", 40, "keep"), // +20
         ];
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         let report = generate_comparison_report(&diff, &old_infs, &new_infs);
         assert!((report.drift_summary.median_score_drift - 15.0).abs() < 0.01);

@@ -153,10 +153,14 @@ pub fn compute_diff(
     let new_proc_map: HashMap<String, &PersistedProcess> =
         new_procs.iter().map(|p| (identity_key(p), p)).collect();
 
-    let old_inf_map: HashMap<String, &PersistedInference> =
-        old_inferences.iter().map(|i| (inference_key(i), i)).collect();
-    let new_inf_map: HashMap<String, &PersistedInference> =
-        new_inferences.iter().map(|i| (inference_key(i), i)).collect();
+    let old_inf_map: HashMap<String, &PersistedInference> = old_inferences
+        .iter()
+        .map(|i| (inference_key(i), i))
+        .collect();
+    let new_inf_map: HashMap<String, &PersistedInference> = new_inferences
+        .iter()
+        .map(|i| (inference_key(i), i))
+        .collect();
 
     let mut deltas = Vec::new();
 
@@ -216,9 +220,18 @@ pub fn compute_diff(
         total_old: old_procs.len(),
         total_new: new_procs.len(),
         new_count: deltas.iter().filter(|d| d.kind == DeltaKind::New).count(),
-        resolved_count: deltas.iter().filter(|d| d.kind == DeltaKind::Resolved).count(),
-        changed_count: deltas.iter().filter(|d| d.kind == DeltaKind::Changed).count(),
-        unchanged_count: deltas.iter().filter(|d| d.kind == DeltaKind::Unchanged).count(),
+        resolved_count: deltas
+            .iter()
+            .filter(|d| d.kind == DeltaKind::Resolved)
+            .count(),
+        changed_count: deltas
+            .iter()
+            .filter(|d| d.kind == DeltaKind::Changed)
+            .count(),
+        unchanged_count: deltas
+            .iter()
+            .filter(|d| d.kind == DeltaKind::Unchanged)
+            .count(),
         worsened_count: deltas.iter().filter(|d| d.worsened).count(),
         improved_count: deltas.iter().filter(|d| d.improved).count(),
     };
@@ -325,7 +338,15 @@ mod tests {
             inf(1, "a:1:1", "useful", 10, "keep"),
             inf(2, "a:2:2", "useful", 15, "keep"),
         ];
-        let diff = compute_diff("s1", "s1", &procs, &infs, &procs, &infs, &DiffConfig::default());
+        let diff = compute_diff(
+            "s1",
+            "s1",
+            &procs,
+            &infs,
+            &procs,
+            &infs,
+            &DiffConfig::default(),
+        );
         assert_eq!(diff.summary.unchanged_count, 2);
         assert_eq!(diff.summary.new_count, 0);
         assert_eq!(diff.summary.resolved_count, 0);
@@ -337,11 +358,21 @@ mod tests {
         let old_procs = vec![proc(1, "a:1:1")];
         let new_procs = vec![proc(1, "a:1:1"), proc(2, "a:2:2")];
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &[], &new_procs, &[], &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &[],
+            &new_procs,
+            &[],
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.new_count, 1);
         assert_eq!(diff.summary.unchanged_count, 1);
-        let new_delta = diff.deltas.iter().find(|d| d.kind == DeltaKind::New).unwrap();
+        let new_delta = diff
+            .deltas
+            .iter()
+            .find(|d| d.kind == DeltaKind::New)
+            .unwrap();
         assert_eq!(new_delta.pid, 2);
     }
 
@@ -350,10 +381,20 @@ mod tests {
         let old_procs = vec![proc(1, "a:1:1"), proc(2, "a:2:2")];
         let new_procs = vec![proc(1, "a:1:1")];
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &[], &new_procs, &[], &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &[],
+            &new_procs,
+            &[],
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.resolved_count, 1);
-        let resolved = diff.deltas.iter().find(|d| d.kind == DeltaKind::Resolved).unwrap();
+        let resolved = diff
+            .deltas
+            .iter()
+            .find(|d| d.kind == DeltaKind::Resolved)
+            .unwrap();
         assert_eq!(resolved.pid, 2);
     }
 
@@ -363,10 +404,20 @@ mod tests {
         let old_infs = vec![inf(1, "a:1:1", "useful", 10, "keep")];
         let new_infs = vec![inf(1, "a:1:1", "abandoned", 85, "kill")];
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.changed_count, 1);
-        let changed = diff.deltas.iter().find(|d| d.kind == DeltaKind::Changed).unwrap();
+        let changed = diff
+            .deltas
+            .iter()
+            .find(|d| d.kind == DeltaKind::Changed)
+            .unwrap();
         assert!(changed.classification_changed);
         assert!(changed.worsened);
         assert_eq!(changed.score_drift, Some(75));
@@ -378,9 +429,19 @@ mod tests {
         let old_infs = vec![inf(1, "a:1:1", "abandoned", 80, "kill")];
         let new_infs = vec![inf(1, "a:1:1", "useful", 10, "keep")];
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
-        let changed = diff.deltas.iter().find(|d| d.kind == DeltaKind::Changed).unwrap();
+        let changed = diff
+            .deltas
+            .iter()
+            .find(|d| d.kind == DeltaKind::Changed)
+            .unwrap();
         assert!(changed.improved);
         assert!(!changed.worsened);
         assert_eq!(changed.score_drift, Some(-70));
@@ -392,7 +453,13 @@ mod tests {
         let old_infs = vec![inf(1, "a:1:1", "useful", 10, "keep")];
         let new_infs = vec![inf(1, "a:1:1", "useful", 13, "keep")]; // drift=3 < threshold=5
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.unchanged_count, 1);
         assert_eq!(diff.summary.changed_count, 0);
@@ -418,7 +485,13 @@ mod tests {
         let old_infs = vec![inf(1, "a:1:1", "useful", 10, "keep")];
         let new_infs = vec![inf(1, "a:1:1", "abandoned", 90, "kill")];
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &old_infs, &new_procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &old_infs,
+            &new_procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         // Order: New (pid=2), Changed (pid=1), Resolved (pid=3)
         assert_eq!(diff.deltas[0].kind, DeltaKind::New);
@@ -435,14 +508,23 @@ mod tests {
             inf(2, "a:2:2", "useful", 20, "keep"),
         ];
         let new_infs = vec![
-            inf(1, "a:1:1", "useful", 12, "keep"),      // small drift → unchanged
-            inf(2, "a:2:2", "abandoned", 85, "kill"),    // classification change → changed
+            inf(1, "a:1:1", "useful", 12, "keep"), // small drift → unchanged
+            inf(2, "a:2:2", "abandoned", 85, "kill"), // classification change → changed
         ];
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &old_infs, &new_procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &old_infs,
+            &new_procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         let s = &diff.summary;
-        assert_eq!(s.new_count + s.resolved_count + s.changed_count + s.unchanged_count, diff.deltas.len());
+        assert_eq!(
+            s.new_count + s.resolved_count + s.changed_count + s.unchanged_count,
+            diff.deltas.len()
+        );
         assert_eq!(s.total_old, 3);
         assert_eq!(s.total_new, 3);
     }
@@ -453,7 +535,13 @@ mod tests {
         let old_procs = vec![proc(1, "boot1:100:1")];
         let new_procs = vec![proc(1, "boot2:200:1")]; // PID reused after reboot
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &[], &new_procs, &[], &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &[],
+            &new_procs,
+            &[],
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.new_count, 1);
         assert_eq!(diff.summary.resolved_count, 1);

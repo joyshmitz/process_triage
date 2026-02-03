@@ -199,17 +199,17 @@ pub struct ResumeResult {
 ///
 /// The `execute_fn` callback performs the actual action and returns Ok(()) on success.
 /// The `lookup_fn` retrieves the current system identity for a PID.
-pub fn resume_plan<E, L>(
-    plan: &mut ExecutionPlan,
-    lookup_fn: L,
-    mut execute_fn: E,
-) -> ResumeResult
+pub fn resume_plan<E, L>(plan: &mut ExecutionPlan, lookup_fn: L, mut execute_fn: E) -> ResumeResult
 where
     E: FnMut(&PlannedAction) -> Result<(), String>,
     L: Fn(u32) -> Option<CurrentIdentity>,
 {
     let previously_applied = plan.applied_set().len();
-    let pending = plan.pending_actions().into_iter().cloned().collect::<Vec<_>>();
+    let pending = plan
+        .pending_actions()
+        .into_iter()
+        .cloned()
+        .collect::<Vec<_>>();
 
     let mut newly_applied = 0;
     let mut skipped_mismatch = 0;
@@ -388,11 +388,7 @@ mod tests {
     #[test]
     fn test_resume_all_valid() {
         let mut plan = ExecutionPlan::new("s1", vec![action(1), action(2)]);
-        let result = resume_plan(
-            &mut plan,
-            |pid| Some(cur(pid)),
-            |_action| Ok(()),
-        );
+        let result = resume_plan(&mut plan, |pid| Some(cur(pid)), |_action| Ok(()));
         assert_eq!(result.newly_applied, 2);
         assert_eq!(result.previously_applied, 0);
         assert!(plan.is_complete());
@@ -406,16 +402,18 @@ mod tests {
         let _r1 = resume_plan(
             &mut plan,
             |pid| Some(cur(pid)),
-            |a| if a.identity.pid == 3 { Err("oops".into()) } else { Ok(()) },
+            |a| {
+                if a.identity.pid == 3 {
+                    Err("oops".into())
+                } else {
+                    Ok(())
+                }
+            },
         );
         assert_eq!(plan.applied_set().len(), 2);
 
         // Second run: retry 3 successfully.
-        let r2 = resume_plan(
-            &mut plan,
-            |pid| Some(cur(pid)),
-            |_| Ok(()),
-        );
+        let r2 = resume_plan(&mut plan, |pid| Some(cur(pid)), |_| Ok(()));
         assert_eq!(r2.previously_applied, 2);
         assert_eq!(r2.newly_applied, 1);
     }
@@ -426,12 +424,14 @@ mod tests {
         // Return a different start_id → PID reuse.
         let result = resume_plan(
             &mut plan,
-            |_pid| Some(CurrentIdentity {
-                pid: 1,
-                start_id: "boot2:999:1".to_string(),
-                uid: 1000,
-                alive: true,
-            }),
+            |_pid| {
+                Some(CurrentIdentity {
+                    pid: 1,
+                    start_id: "boot2:999:1".to_string(),
+                    uid: 1000,
+                    alive: true,
+                })
+            },
             |_| Ok(()),
         );
         assert_eq!(result.skipped_identity_mismatch, 1);

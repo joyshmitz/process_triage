@@ -171,7 +171,9 @@ fn compute_host_summary(candidates: &[CandidateInfo]) -> HostSummary {
 
     for c in candidates {
         *class_counts.entry(c.classification.clone()).or_default() += 1;
-        *action_counts.entry(c.recommended_action.clone()).or_default() += 1;
+        *action_counts
+            .entry(c.recommended_action.clone())
+            .or_default() += 1;
         score_sum += c.score;
         max_score = max_score.max(c.score);
     }
@@ -272,7 +274,12 @@ fn find_recurring_patterns(inputs: &[HostInput]) -> Vec<RecurringPattern> {
             let hosts: Vec<String> = entries.into_iter().map(|(h, _)| h).collect();
             let dominant_action = sig_actions
                 .get(&sig)
-                .and_then(|actions| actions.iter().max_by_key(|(_, &v)| v).map(|(k, _)| k.clone()))
+                .and_then(|actions| {
+                    actions
+                        .iter()
+                        .max_by_key(|(_, &v)| v)
+                        .map(|(k, _)| k.clone())
+                })
                 .unwrap_or_default();
             RecurringPattern {
                 signature: sig,
@@ -443,8 +450,7 @@ mod tests {
         assert!((fleet.safety_budget.alpha_spent - 0.0).abs() < f64::EPSILON);
         // Each host gets 0.05 allocation.
         assert!(
-            (*fleet.safety_budget.host_allocations.get("h1").unwrap() - 0.05).abs()
-                < f64::EPSILON
+            (*fleet.safety_budget.host_allocations.get("h1").unwrap() - 0.05).abs() < f64::EPSILON
         );
     }
 
@@ -460,8 +466,7 @@ mod tests {
         assert!((fleet.safety_budget.alpha_spent - 0.03).abs() < f64::EPSILON);
         assert!((fleet.safety_budget.alpha_remaining - 0.07).abs() < f64::EPSILON);
         assert!(
-            (*fleet.safety_budget.host_allocations.get("h1").unwrap() - 0.02).abs()
-                < f64::EPSILON
+            (*fleet.safety_budget.host_allocations.get("h1").unwrap() - 0.02).abs() < f64::EPSILON
         );
     }
 
@@ -490,14 +495,8 @@ mod tests {
     #[test]
     fn test_serialization_roundtrip() {
         let inputs = vec![
-            host(
-                "h1",
-                vec![cand(1, "nginx", "useful", "spare", 0.1)],
-            ),
-            host(
-                "h2",
-                vec![cand(2, "nginx", "useful", "spare", 0.15)],
-            ),
+            host("h1", vec![cand(1, "nginx", "useful", "spare", 0.1)]),
+            host("h2", vec![cand(2, "nginx", "useful", "spare", 0.15)]),
         ];
         let fleet = create_fleet_session("f8", Some("roundtrip test"), &inputs, 0.05);
 

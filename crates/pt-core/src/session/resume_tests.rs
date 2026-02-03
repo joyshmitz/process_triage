@@ -41,11 +41,7 @@ mod tests {
         let actions = vec![planned(1, "kill"), planned(2, "kill"), planned(3, "pause")];
         let mut plan = ExecutionPlan::new("session-1", actions);
 
-        let result = resume_plan(
-            &mut plan,
-            |pid| Some(alive_identity(pid)),
-            |_| Ok(()),
-        );
+        let result = resume_plan(&mut plan, |pid| Some(alive_identity(pid)), |_| Ok(()));
 
         assert_eq!(result.newly_applied, 3);
         assert_eq!(result.previously_applied, 0);
@@ -84,11 +80,7 @@ mod tests {
         assert_eq!(result.skipped_identity_mismatch, 1); // PID 2 rejected
 
         // Verify the mismatch entry.
-        let mismatch = result
-            .entries
-            .iter()
-            .find(|e| e.identity.pid == 2)
-            .unwrap();
+        let mismatch = result.entries.iter().find(|e| e.identity.pid == 2).unwrap();
         assert_eq!(mismatch.status, ExecutionStatus::IdentityMismatch);
     }
 
@@ -115,11 +107,7 @@ mod tests {
         assert_eq!(result.newly_applied, 1);
         assert_eq!(result.skipped_process_gone, 1);
 
-        let gone = result
-            .entries
-            .iter()
-            .find(|e| e.identity.pid == 2)
-            .unwrap();
+        let gone = result.entries.iter().find(|e| e.identity.pid == 2).unwrap();
         assert_eq!(gone.status, ExecutionStatus::Skipped);
     }
 
@@ -147,11 +135,7 @@ mod tests {
         assert!(!plan.is_complete()); // PID 3 failed, still pending
 
         // Second run: retry, now PID 3 succeeds.
-        let r2 = resume_plan(
-            &mut plan,
-            |pid| Some(alive_identity(pid)),
-            |_| Ok(()),
-        );
+        let r2 = resume_plan(&mut plan, |pid| Some(alive_identity(pid)), |_| Ok(()));
         assert_eq!(r2.previously_applied, 2);
         assert_eq!(r2.newly_applied, 1);
         assert!(plan.is_complete());
@@ -164,11 +148,7 @@ mod tests {
         let actions = vec![planned(1, "kill")];
         let mut plan = ExecutionPlan::new("session-5", actions);
 
-        resume_plan(
-            &mut plan,
-            |pid| Some(alive_identity(pid)),
-            |_| Ok(()),
-        );
+        resume_plan(&mut plan, |pid| Some(alive_identity(pid)), |_| Ok(()));
         assert!(plan.is_complete());
 
         // Resume again: nothing should happen.
@@ -275,11 +255,11 @@ mod tests {
     #[test]
     fn scenario_mixed_outcomes() {
         let actions = vec![
-            planned(1, "kill"),  // Will succeed
-            planned(2, "kill"),  // PID reused
-            planned(3, "kill"),  // Process gone
-            planned(4, "kill"),  // Will fail
-            planned(5, "kill"),  // Will succeed
+            planned(1, "kill"), // Will succeed
+            planned(2, "kill"), // PID reused
+            planned(3, "kill"), // Process gone
+            planned(4, "kill"), // Will fail
+            planned(5, "kill"), // Will succeed
         ];
         let mut plan = ExecutionPlan::new("session-9", actions);
 
@@ -305,10 +285,10 @@ mod tests {
             },
         );
 
-        assert_eq!(result.newly_applied, 2);       // PIDs 1, 5
+        assert_eq!(result.newly_applied, 2); // PIDs 1, 5
         assert_eq!(result.skipped_identity_mismatch, 1); // PID 2
-        assert_eq!(result.skipped_process_gone, 1);       // PID 3
-        assert_eq!(result.failed, 1);                     // PID 4
+        assert_eq!(result.skipped_process_gone, 1); // PID 3
+        assert_eq!(result.failed, 1); // PID 4
     }
 
     // -- Scenario: Snapshot artifact persistence + resume --

@@ -10,11 +10,11 @@
 use clap::parser::ValueSource;
 use clap::FromArgMatches;
 use clap::{Args, CommandFactory, Parser, Subcommand};
-use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
 #[cfg(feature = "ui")]
 use pt_common::{IdentityQuality, ProcessIdentity};
-use pt_core::capabilities::{get_capabilities, ToolCapability};
+use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
 use pt_core::calibrate::validation::ValidationEngine;
+use pt_core::capabilities::{get_capabilities, ToolCapability};
 use pt_core::collect::protected::ProtectedFilter;
 #[cfg(target_os = "linux")]
 use pt_core::collect::{systemd::collect_systemd_unit, ContainerRuntime};
@@ -25,20 +25,27 @@ use pt_core::events::{
     FanoutEmitter, JsonlWriter, Phase, ProgressEmitter, ProgressEvent, SessionEmitter,
 };
 use pt_core::exit_codes::ExitCode;
-use pt_core::inference::signature_fast_path::{try_signature_fast_path, FastPathConfig};
+use pt_core::fleet::discovery::{
+    FleetDiscoveryConfig, InventoryProvider, ProviderRegistry, StaticInventoryProvider,
+};
 #[cfg(feature = "ui")]
 use pt_core::inference::galaxy_brain::{
     render as render_galaxy_brain, GalaxyBrainConfig, MathMode, Verbosity,
 };
+use pt_core::inference::signature_fast_path::{try_signature_fast_path, FastPathConfig};
 use pt_core::output::{encode_toon_value, CompactConfig, FieldSelector, TokenEfficientOutput};
-use pt_core::session::{
-    ListSessionsOptions, SessionContext, SessionHandle, SessionManifest, SessionMode, SessionState,
-    SessionStore,
-};
-use pt_core::fleet::discovery::{
-    FleetDiscoveryConfig, InventoryProvider, ProviderRegistry, StaticInventoryProvider,
+#[cfg(feature = "ui")]
+use pt_core::plan::{generate_plan, DecisionBundle, DecisionCandidate};
+use pt_core::session::compare::generate_comparison_report;
+use pt_core::session::diff::{
+    compute_diff, DeltaKind, DiffConfig, InferenceSummary, ProcessDelta, SessionDiff,
 };
 use pt_core::session::fleet::{create_fleet_session, CandidateInfo, HostInput};
+use pt_core::session::snapshot_persist::{load_inference, load_inventory, PersistedProcess};
+use pt_core::session::{
+    ListSessionsOptions, SessionContext, SessionHandle, SessionManifest, SessionMode, SessionState,
+    SessionStore, SessionSummary,
+};
 use pt_core::shadow::ShadowRecorder;
 use pt_core::signature_cli::load_user_signatures;
 use pt_core::supervision::pattern_persistence::DisabledPatterns;
@@ -48,19 +55,17 @@ use pt_core::supervision::{
     detect_supervision, is_human_supervised, AppActionType, AppSupervisionAnalyzer,
     AppSupervisorType, ContainerActionType, ContainerSupervisionAnalyzer,
 };
-use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
-#[cfg(feature = "ui")]
-use pt_core::tui::{run_tui_with_handlers, App};
-#[cfg(feature = "ui")]
-use pt_core::plan::{generate_plan, DecisionBundle, DecisionCandidate};
 #[cfg(feature = "ui")]
 use pt_core::tui::widgets::ProcessRow;
+#[cfg(feature = "ui")]
+use pt_core::tui::{run_tui_with_handlers, App};
+use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
 use pt_telemetry::shadow::{Observation, ShadowStorage, ShadowStorageConfig};
-use std::collections::{HashMap, HashSet};
 #[cfg(feature = "ui")]
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::path::{Path, PathBuf};
 #[cfg(feature = "ui")]
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -287,6 +292,9 @@ enum Commands {
     /// Full deep scan with all available probes
     DeepScan(DeepScanArgs),
 
+    /// Compare two sessions and show differences
+    Diff(DiffArgs),
+
     /// Query telemetry and history
     Query(QueryArgs),
 
@@ -380,6 +388,37 @@ struct DeepScanArgs {
     /// Maximum time budget for deep scan (seconds)
     #[arg(long)]
     budget: Option<u64>,
+}
+
+#[derive(Args, Debug)]
+struct DiffArgs {
+    /// Base session ID (older snapshot)
+    #[arg(value_name = "BASE", index = 1)]
+    base: Option<String>,
+
+    /// Compare session ID (newer snapshot)
+    #[arg(value_name = "COMPARE", index = 2)]
+    compare: Option<String>,
+
+    /// Compare current session to the most recent baseline-labeled session
+    #[arg(long)]
+    baseline: bool,
+
+    /// Compare the latest two sessions
+    #[arg(long)]
+    last: bool,
+
+    /// Only show changes (exclude unchanged)
+    #[arg(long)]
+    changed_only: bool,
+
+    /// Filter by category: new, resolved, changed, unchanged, worsened, improved
+    #[arg(long)]
+    category: Option<String>,
+
+    /// Minimum score delta to consider a change
+    #[arg(long)]
+    min_score_delta: Option<u32>,
 }
 
 #[derive(Args, Debug)]
@@ -1500,6 +1539,7 @@ fn main() {
         Some(Commands::Run(args)) => run_interactive(&cli.global, &args),
         Some(Commands::Scan(args)) => run_scan(&cli.global, &args),
         Some(Commands::DeepScan(args)) => run_deep_scan(&cli.global, &args),
+        Some(Commands::Diff(args)) => run_diff(&cli.global, &args),
         Some(Commands::Query(args)) => run_query(&cli.global, &args),
         Some(Commands::Bundle(args)) => run_bundle(&cli.global, &args),
         Some(Commands::Report(args)) => run_report(&cli.global, &args),
@@ -1661,7 +1701,8 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
                         Ok(path) => {
                             if global.dry_run || global.shadow {
                                 let mode = if global.dry_run { "dry_run" } else { "shadow" };
-                                if let Err(err) = write_outcomes_for_mode(&handle_for_plan, &plan, mode)
+                                if let Err(err) =
+                                    write_outcomes_for_mode(&handle_for_plan, &plan, mode)
                                 {
                                     app.set_status(format!("Failed to write outcomes: {}", err));
                                     return Ok(());
@@ -1692,7 +1733,12 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
                                     let skipped = result
                                         .outcomes
                                         .iter()
-                                        .filter(|o| matches!(o.status, pt_core::action::ActionStatus::Skipped))
+                                        .filter(|o| {
+                                            matches!(
+                                                o.status,
+                                                pt_core::action::ActionStatus::Skipped
+                                            )
+                                        })
                                         .count();
                                     let final_state = if result.summary.actions_failed > 0 {
                                         SessionState::Failed
@@ -1830,7 +1876,8 @@ fn write_plan_to_session(handle: &SessionHandle, plan: &Plan) -> Result<PathBuf,
         return Err(format!("create decision dir: {}", e));
     }
     let plan_path = decision_dir.join("plan.json");
-    let content = serde_json::to_string_pretty(plan).map_err(|e| format!("serialize plan: {}", e))?;
+    let content =
+        serde_json::to_string_pretty(plan).map_err(|e| format!("serialize plan: {}", e))?;
     std::fs::write(&plan_path, content).map_err(|e| format!("write plan: {}", e))?;
     Ok(plan_path)
 }
@@ -1848,16 +1895,13 @@ fn execute_plan_actions(
             LivePreCheckProvider,
         };
         let action_dir = handle.dir.join("action");
-        std::fs::create_dir_all(&action_dir)
-            .map_err(|e| format!("create action dir: {}", e))?;
+        std::fs::create_dir_all(&action_dir).map_err(|e| format!("create action dir: {}", e))?;
         let lock_path = action_dir.join("lock");
         let runner = CompositeActionRunner::with_defaults();
         let identity_provider = LiveIdentityProvider::new();
-        let pre_checks = LivePreCheckProvider::new(
-            Some(&policy.guardrails),
-            LivePreCheckConfig::default(),
-        )
-        .unwrap_or_else(|_| LivePreCheckProvider::with_defaults());
+        let pre_checks =
+            LivePreCheckProvider::new(Some(&policy.guardrails), LivePreCheckConfig::default())
+                .unwrap_or_else(|_| LivePreCheckProvider::with_defaults());
 
         let executor = ActionExecutor::new(&runner, &identity_provider, lock_path)
             .with_pre_check_provider(&pre_checks);
@@ -1939,7 +1983,10 @@ fn write_outcomes_from_execution(
                     "precheck".to_string(),
                     serde_json::Value::String(precheck_label(check).to_string()),
                 );
-                obj.insert("reason".to_string(), serde_json::Value::String(reason.clone()));
+                obj.insert(
+                    "reason".to_string(),
+                    serde_json::Value::String(reason.clone()),
+                );
             }
         }
         if let Err(e) = writeln!(file, "{}", entry) {
@@ -2009,12 +2056,8 @@ fn collect_deep_signals(processes: &[ProcessRecord]) -> Option<HashMap<u32, Deep
         for record in result.processes {
             let net_active = record.network.as_ref().map(|info| {
                 let counts = &info.socket_counts;
-                let total = counts.tcp
-                    + counts.tcp6
-                    + counts.udp
-                    + counts.udp6
-                    + counts.unix
-                    + counts.raw;
+                let total =
+                    counts.tcp + counts.tcp6 + counts.udp + counts.udp6 + counts.unix + counts.raw;
                 total > 0
                     || !info.listen_ports.is_empty()
                     || !info.tcp_connections.is_empty()
@@ -2102,16 +2145,14 @@ fn build_tui_rows(
             Ok(r) => r,
             Err(_) => continue,
         };
-        let decision_outcome = match decide_action(
-            &posterior_result.posterior,
-            &decision_policy,
-            &feasibility,
-        ) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
+        let decision_outcome =
+            match decide_action(&posterior_result.posterior, &decision_policy, &feasibility) {
+                Ok(d) => d,
+                Err(_) => continue,
+            };
 
-        let ledger = EvidenceLedger::from_posterior_result(&posterior_result, Some(proc.pid.0), None);
+        let ledger =
+            EvidenceLedger::from_posterior_result(&posterior_result, Some(proc.pid.0), None);
         let max_posterior = posterior_result
             .posterior
             .useful
@@ -3191,8 +3232,8 @@ fn parse_fleet_hosts(spec: &str) -> Result<Vec<String>, String> {
 
     let path = Path::new(trimmed);
     if path.exists() && path.is_file() {
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("failed to read hosts file: {}", e))?;
+        let content =
+            fs::read_to_string(path).map_err(|e| format!("failed to read hosts file: {}", e))?;
         let hosts: Vec<String> = content
             .lines()
             .map(|line| line.trim())
@@ -3210,82 +3251,73 @@ fn parse_fleet_hosts(spec: &str) -> Result<Vec<String>, String> {
 }
 
 fn run_agent_fleet_plan(global: &GlobalOpts, args: &AgentFleetPlanArgs) -> ExitCode {
-    let (hosts, inventory, source_label) = match (
-        &args.hosts,
-        &args.inventory,
-        &args.discovery_config,
-    ) {
-        (Some(hosts_spec), None, None) => {
-            let hosts = match parse_fleet_hosts(hosts_spec) {
-                Ok(h) => h,
-                Err(err) => {
-                    return output_agent_error(global, "fleet plan", &err);
-                }
-            };
-            (hosts, None, Some("hosts"))
-        }
-        (None, Some(path), None) => {
-            let provider = StaticInventoryProvider::from_path(Path::new(path));
-            let inventory = match provider.discover() {
-                Ok(inv) => inv,
-                Err(err) => {
-                    return output_agent_error(global, "fleet plan", &err.to_string());
-                }
-            };
-            let hosts: Vec<String> = inventory
-                .hosts
-                .iter()
-                .map(|h| h.hostname.clone())
-                .collect();
-            if hosts.is_empty() {
-                return output_agent_error(global, "fleet plan", "inventory contains no hosts");
+    let (hosts, inventory, source_label) =
+        match (&args.hosts, &args.inventory, &args.discovery_config) {
+            (Some(hosts_spec), None, None) => {
+                let hosts = match parse_fleet_hosts(hosts_spec) {
+                    Ok(h) => h,
+                    Err(err) => {
+                        return output_agent_error(global, "fleet plan", &err);
+                    }
+                };
+                (hosts, None, Some("hosts"))
             }
-            (hosts, Some(inventory), Some("inventory"))
-        }
-        (None, None, Some(path)) => {
-            let discovery = match FleetDiscoveryConfig::load_from_path(Path::new(path)) {
-                Ok(cfg) => cfg,
-                Err(err) => {
-                    return output_agent_error(global, "fleet plan", &err.to_string());
+            (None, Some(path), None) => {
+                let provider = StaticInventoryProvider::from_path(Path::new(path));
+                let inventory = match provider.discover() {
+                    Ok(inv) => inv,
+                    Err(err) => {
+                        return output_agent_error(global, "fleet plan", &err.to_string());
+                    }
+                };
+                let hosts: Vec<String> =
+                    inventory.hosts.iter().map(|h| h.hostname.clone()).collect();
+                if hosts.is_empty() {
+                    return output_agent_error(global, "fleet plan", "inventory contains no hosts");
                 }
-            };
-            let registry = match ProviderRegistry::from_config(&discovery) {
-                Ok(registry) => registry,
-                Err(err) => {
-                    return output_agent_error(global, "fleet plan", &err.to_string());
-                }
-            };
-            let inventory = match registry.discover_all() {
-                Ok(inv) => inv,
-                Err(err) => {
-                    return output_agent_error(global, "fleet plan", &err.to_string());
-                }
-            };
-            let hosts: Vec<String> = inventory
-                .hosts
-                .iter()
-                .map(|h| h.hostname.clone())
-                .collect();
-            if hosts.is_empty() {
-                return output_agent_error(global, "fleet plan", "discovery found no hosts");
+                (hosts, Some(inventory), Some("inventory"))
             }
-            (hosts, Some(inventory), Some("discovery_config"))
-        }
-        (None, None, None) => {
-            return output_agent_error(
-                global,
-                "fleet plan",
-                "either --hosts, --inventory, or --discovery-config is required",
-            );
-        }
-        _ => {
-            return output_agent_error(
-                global,
-                "fleet plan",
-                "--hosts, --inventory, and --discovery-config are mutually exclusive",
-            );
-        }
-    };
+            (None, None, Some(path)) => {
+                let discovery = match FleetDiscoveryConfig::load_from_path(Path::new(path)) {
+                    Ok(cfg) => cfg,
+                    Err(err) => {
+                        return output_agent_error(global, "fleet plan", &err.to_string());
+                    }
+                };
+                let registry = match ProviderRegistry::from_config(&discovery) {
+                    Ok(registry) => registry,
+                    Err(err) => {
+                        return output_agent_error(global, "fleet plan", &err.to_string());
+                    }
+                };
+                let inventory = match registry.discover_all() {
+                    Ok(inv) => inv,
+                    Err(err) => {
+                        return output_agent_error(global, "fleet plan", &err.to_string());
+                    }
+                };
+                let hosts: Vec<String> =
+                    inventory.hosts.iter().map(|h| h.hostname.clone()).collect();
+                if hosts.is_empty() {
+                    return output_agent_error(global, "fleet plan", "discovery found no hosts");
+                }
+                (hosts, Some(inventory), Some("discovery_config"))
+            }
+            (None, None, None) => {
+                return output_agent_error(
+                    global,
+                    "fleet plan",
+                    "either --hosts, --inventory, or --discovery-config is required",
+                );
+            }
+            _ => {
+                return output_agent_error(
+                    global,
+                    "fleet plan",
+                    "--hosts, --inventory, and --discovery-config are mutually exclusive",
+                );
+            }
+        };
 
     let mut host_inputs: Vec<HostInput> = Vec::new();
     for host in &hosts {
@@ -4113,7 +4145,10 @@ fn run_shadow_start(global: &GlobalOpts, args: &ShadowStartArgs) -> ExitCode {
 fn run_shadow_background(global: &GlobalOpts, args: &ShadowStartArgs) -> ExitCode {
     if let Ok(Some(pid)) = read_shadow_pid() {
         if is_process_running(pid) {
-            eprintln!("shadow start: existing shadow observer running (pid {})", pid);
+            eprintln!(
+                "shadow start: existing shadow observer running (pid {})",
+                pid
+            );
             return ExitCode::LockError;
         }
         let _ = remove_shadow_pid();
@@ -4175,10 +4210,7 @@ fn run_shadow_run(global: &GlobalOpts, args: &ShadowStartArgs) -> ExitCode {
     let mut next_deep_at = if args.deep || args.deep_interval == 0 {
         None
     } else {
-        Some(
-            std::time::Instant::now()
-                + std::time::Duration::from_secs(args.deep_interval),
-        )
+        Some(std::time::Instant::now() + std::time::Duration::from_secs(args.deep_interval))
     };
 
     loop {
@@ -4196,9 +4228,7 @@ fn run_shadow_run(global: &GlobalOpts, args: &ShadowStartArgs) -> ExitCode {
             if let Some(deadline) = next_deep_at {
                 if now >= deadline {
                     force_deep = true;
-                    next_deep_at = Some(
-                        now + std::time::Duration::from_secs(args.deep_interval),
-                    );
+                    next_deep_at = Some(now + std::time::Duration::from_secs(args.deep_interval));
                 }
             }
         }
@@ -7291,7 +7321,10 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                 None,
                 action,
                 "started",
-                &[("mode", serde_json::json!(if global.dry_run { "dry_run" } else { "shadow" }))],
+                &[(
+                    "mode",
+                    serde_json::json!(if global.dry_run { "dry_run" } else { "shadow" }),
+                )],
             );
 
             // Skip already completed actions in resume mode
@@ -7883,6 +7916,473 @@ fn run_agent_verify(global: &GlobalOpts, args: &AgentVerifyArgs) -> ExitCode {
     };
 
     exit_code
+}
+
+fn resolve_diff_sessions(
+    store: &SessionStore,
+    args: &DiffArgs,
+) -> Result<(SessionId, SessionId, Option<String>, Option<String>), String> {
+    if args.baseline && args.last {
+        return Err("diff: --baseline and --last cannot be used together".to_string());
+    }
+    if (args.baseline || args.last) && (args.base.is_some() || args.compare.is_some()) {
+        return Err(
+            "diff: positional sessions cannot be combined with --baseline/--last".to_string(),
+        );
+    }
+
+    let list_options = ListSessionsOptions {
+        limit: Some(200),
+        state: None,
+        older_than: None,
+    };
+    let sessions = store
+        .list_sessions(&list_options)
+        .map_err(|e| format!("diff: failed to list sessions: {}", e))?;
+    if sessions.is_empty() {
+        return Err("diff: no sessions found".to_string());
+    }
+
+    let use_last = args.last || (!args.baseline && args.base.is_none());
+
+    let (base_summary, compare_summary) = if args.baseline {
+        let base = sessions
+            .iter()
+            .find(|s| {
+                s.label
+                    .as_deref()
+                    .map(|l| l.eq_ignore_ascii_case("baseline"))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .ok_or_else(|| {
+                "diff: no baseline session found (label a session 'baseline')".to_string()
+            })?;
+        let compare = sessions
+            .iter()
+            .find(|s| s.session_id != base.session_id)
+            .cloned()
+            .ok_or_else(|| "diff: need at least two sessions to compare".to_string())?;
+        (base, compare)
+    } else if use_last {
+        if sessions.len() < 2 {
+            return Err("diff: need at least two sessions to compare".to_string());
+        }
+        (sessions[1].clone(), sessions[0].clone())
+    } else {
+        let base_raw = args
+            .base
+            .as_ref()
+            .ok_or_else(|| "diff: base session required".to_string())?;
+
+        let compare_summary = match args.compare.as_deref() {
+            Some("current") | Some("latest") | None => sessions
+                .iter()
+                .find(|s| s.session_id != *base_raw)
+                .cloned()
+                .ok_or_else(|| {
+                    "diff: no compare session found (need at least two sessions)".to_string()
+                })?,
+            Some(raw) => sessions
+                .iter()
+                .find(|s| s.session_id == raw)
+                .cloned()
+                .unwrap_or_else(|| SessionSummary {
+                    session_id: raw.to_string(),
+                    created_at: String::new(),
+                    state: SessionState::Created,
+                    mode: SessionMode::ScanOnly,
+                    label: None,
+                    host_id: None,
+                    candidates_count: None,
+                    actions_count: None,
+                    path: PathBuf::new(),
+                }),
+        };
+
+        let base_summary = sessions
+            .iter()
+            .find(|s| s.session_id == *base_raw)
+            .cloned()
+            .unwrap_or_else(|| SessionSummary {
+                session_id: base_raw.to_string(),
+                created_at: String::new(),
+                state: SessionState::Created,
+                mode: SessionMode::ScanOnly,
+                label: None,
+                host_id: None,
+                candidates_count: None,
+                actions_count: None,
+                path: PathBuf::new(),
+            });
+
+        (base_summary, compare_summary)
+    };
+
+    if base_summary.session_id == compare_summary.session_id {
+        return Err("diff: base and compare sessions must differ".to_string());
+    }
+
+    let base_id = SessionId::parse(&base_summary.session_id)
+        .ok_or_else(|| format!("diff: invalid base session {}", base_summary.session_id))?;
+    let compare_id = SessionId::parse(&compare_summary.session_id).ok_or_else(|| {
+        format!(
+            "diff: invalid compare session {}",
+            compare_summary.session_id
+        )
+    })?;
+
+    Ok((
+        base_id,
+        compare_id,
+        base_summary.label,
+        compare_summary.label,
+    ))
+}
+
+fn filter_diff_deltas(diff: &SessionDiff, args: &DiffArgs) -> Result<Vec<ProcessDelta>, String> {
+    let mut deltas: Vec<ProcessDelta> = diff.deltas.clone();
+
+    if args.changed_only {
+        deltas.retain(|d| d.kind != DeltaKind::Unchanged);
+    }
+
+    if let Some(category) = &args.category {
+        let cat = category.trim().to_lowercase();
+        deltas.retain(|d| match cat.as_str() {
+            "new" => d.kind == DeltaKind::New,
+            "gone" | "resolved" | "removed" => d.kind == DeltaKind::Resolved,
+            "changed" => d.kind == DeltaKind::Changed,
+            "unchanged" => d.kind == DeltaKind::Unchanged,
+            "worsened" => d.worsened,
+            "improved" => d.improved,
+            _ => true,
+        });
+
+        match cat.as_str() {
+            "new" | "gone" | "resolved" | "removed" | "changed" | "unchanged" | "worsened"
+            | "improved" => {}
+            _ => {
+                return Err(format!(
+                    "diff: invalid --category '{}'. Use: new, resolved, changed, unchanged, worsened, improved",
+                    category
+                ));
+            }
+        }
+    }
+
+    Ok(deltas)
+}
+
+fn summarize_deltas(deltas: &[ProcessDelta]) -> serde_json::Value {
+    let new_count = deltas.iter().filter(|d| d.kind == DeltaKind::New).count();
+    let resolved_count = deltas
+        .iter()
+        .filter(|d| d.kind == DeltaKind::Resolved)
+        .count();
+    let changed_count = deltas
+        .iter()
+        .filter(|d| d.kind == DeltaKind::Changed)
+        .count();
+    let unchanged_count = deltas
+        .iter()
+        .filter(|d| d.kind == DeltaKind::Unchanged)
+        .count();
+    let worsened_count = deltas.iter().filter(|d| d.worsened).count();
+    let improved_count = deltas.iter().filter(|d| d.improved).count();
+
+    serde_json::json!({
+        "total": deltas.len(),
+        "new_count": new_count,
+        "resolved_count": resolved_count,
+        "changed_count": changed_count,
+        "unchanged_count": unchanged_count,
+        "worsened_count": worsened_count,
+        "improved_count": improved_count,
+    })
+}
+
+fn build_cmd_map(records: &[PersistedProcess]) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for rec in records {
+        let cmd = if rec.cmd.is_empty() {
+            rec.comm.clone()
+        } else {
+            rec.cmd.clone()
+        };
+        out.insert(rec.start_id.clone(), cmd);
+    }
+    out
+}
+
+fn truncate_ascii(value: &str, max: usize) -> String {
+    if value.chars().count() <= max {
+        return value.to_string();
+    }
+    if max <= 3 {
+        return value.chars().take(max).collect();
+    }
+    let prefix: String = value.chars().take(max - 3).collect();
+    format!("{}...", prefix)
+}
+
+fn format_inference_summary(inf: Option<&InferenceSummary>) -> String {
+    match inf {
+        Some(i) => format!("{} {} {}", i.classification, i.score, i.recommended_action),
+        None => "-".to_string(),
+    }
+}
+
+fn format_diff_plain(
+    base_id: &SessionId,
+    compare_id: &SessionId,
+    base_ts: &str,
+    compare_ts: &str,
+    deltas: &[ProcessDelta],
+    base_cmds: &HashMap<String, String>,
+    compare_cmds: &HashMap<String, String>,
+) -> String {
+    let mut output = String::new();
+
+    output.push_str(&format!("# pt diff\n\n"));
+    output.push_str(&format!("Base: {} {}\n", base_id.0, base_ts));
+    output.push_str(&format!("Compare: {} {}\n\n", compare_id.0, compare_ts));
+
+    let summary = summarize_deltas(deltas);
+    output.push_str("Summary:\n");
+    output.push_str(&format!(
+        "- New: {} | Resolved: {} | Changed: {} | Unchanged: {} | Worsened: {} | Improved: {}\n\n",
+        summary
+            .get("new_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        summary
+            .get("resolved_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        summary
+            .get("changed_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        summary
+            .get("unchanged_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        summary
+            .get("worsened_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+        summary
+            .get("improved_count")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0),
+    ));
+
+    output.push_str(&format!(
+        "{:>6} {:<9} {:<40} | {:<22} | {:<22} | {:>6}\n",
+        "PID", "KIND", "CMD", "OLD", "NEW", "DELTA"
+    ));
+    output.push_str(&format!(
+        "{:-<6} {:-<9} {:-<40}-+-{:-<22}-+-{:-<22}-+-{:-<6}\n",
+        "", "", "", "", "", ""
+    ));
+
+    for delta in deltas {
+        let cmd = compare_cmds
+            .get(&delta.start_id)
+            .or_else(|| base_cmds.get(&delta.start_id))
+            .cloned()
+            .unwrap_or_else(|| "?".to_string());
+        let cmd = truncate_ascii(&cmd, 40);
+
+        let old_desc = truncate_ascii(&format_inference_summary(delta.old_inference.as_ref()), 22);
+        let new_desc = truncate_ascii(&format_inference_summary(delta.new_inference.as_ref()), 22);
+        let delta_str = delta
+            .score_drift
+            .map(|d| format!("{:+}", d))
+            .unwrap_or_else(|| "-".to_string());
+
+        let kind = match delta.kind {
+            DeltaKind::New => "NEW",
+            DeltaKind::Resolved => "RESOLVED",
+            DeltaKind::Changed => "CHANGED",
+            DeltaKind::Unchanged => "UNCHANGED",
+        };
+
+        output.push_str(&format!(
+            "{:>6} {:<9} {:<40} | {:<22} | {:<22} | {:>6}\n",
+            delta.pid, kind, cmd, old_desc, new_desc, delta_str
+        ));
+    }
+
+    output
+}
+
+fn run_diff(global: &GlobalOpts, args: &DiffArgs) -> ExitCode {
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("diff: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    let (base_id, compare_id, base_label, compare_label) = match resolve_diff_sessions(&store, args)
+    {
+        Ok(pair) => pair,
+        Err(e) => {
+            eprintln!("{}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    let base_handle = match store.open(&base_id) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("diff: base {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+    let compare_handle = match store.open(&compare_id) {
+        Ok(handle) => handle,
+        Err(e) => {
+            eprintln!("diff: compare {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    let base_inventory = match load_inventory(&base_handle) {
+        Ok(inv) => inv,
+        Err(e) => {
+            eprintln!("diff: base inventory: {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+    let base_inference = match load_inference(&base_handle) {
+        Ok(inf) => inf,
+        Err(e) => {
+            eprintln!("diff: base inference: {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+    let compare_inventory = match load_inventory(&compare_handle) {
+        Ok(inv) => inv,
+        Err(e) => {
+            eprintln!("diff: compare inventory: {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+    let compare_inference = match load_inference(&compare_handle) {
+        Ok(inf) => inf,
+        Err(e) => {
+            eprintln!("diff: compare inference: {}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    let mut config = DiffConfig::default();
+    if let Some(min) = args.min_score_delta {
+        config.score_drift_threshold = min;
+    }
+
+    let diff = compute_diff(
+        &base_id.0,
+        &compare_id.0,
+        &base_inventory.payload.records,
+        &base_inference.payload.candidates,
+        &compare_inventory.payload.records,
+        &compare_inference.payload.candidates,
+        &config,
+    );
+
+    let filtered_deltas = match filter_diff_deltas(&diff, args) {
+        Ok(deltas) => deltas,
+        Err(e) => {
+            eprintln!("{}", e);
+            return ExitCode::ArgsError;
+        }
+    };
+
+    let filtered_summary = summarize_deltas(&filtered_deltas);
+    let report = generate_comparison_report(
+        &diff,
+        &base_inference.payload.candidates,
+        &compare_inference.payload.candidates,
+    );
+
+    let base_ts = base_inference.generated_at.clone();
+    let compare_ts = compare_inference.generated_at.clone();
+
+    let output = serde_json::json!({
+        "comparison": {
+            "base_session": base_id.0,
+            "compare_session": compare_id.0,
+            "base_timestamp": base_ts.clone(),
+            "compare_timestamp": compare_ts.clone(),
+            "base_label": base_label,
+            "compare_label": compare_label,
+        },
+        "filters": {
+            "changed_only": args.changed_only,
+            "category": args.category,
+            "min_score_delta": args.min_score_delta,
+        },
+        "summary": diff.summary,
+        "filtered_summary": filtered_summary,
+        "delta": filtered_deltas,
+        "report": report,
+    });
+
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+            println!("{}", format_structured_output(global, output));
+        }
+        OutputFormat::Summary => {
+            let counts = summarize_deltas(&filtered_deltas);
+            println!(
+                "[{} → {}] diff: +{} new, {} changed, {} resolved, {} worsened, {} improved",
+                base_id.0,
+                compare_id.0,
+                counts
+                    .get("new_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
+                counts
+                    .get("changed_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
+                counts
+                    .get("resolved_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
+                counts
+                    .get("worsened_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
+                counts
+                    .get("improved_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0),
+            );
+        }
+        OutputFormat::Exitcode => {}
+        _ => {
+            let base_cmds = build_cmd_map(&base_inventory.payload.records);
+            let compare_cmds = build_cmd_map(&compare_inventory.payload.records);
+            let rendered = format_diff_plain(
+                &base_id,
+                &compare_id,
+                base_ts.as_str(),
+                compare_ts.as_str(),
+                &filtered_deltas,
+                &base_cmds,
+                &compare_cmds,
+            );
+            print!("{}", rendered);
+        }
+    }
+
+    ExitCode::Clean
 }
 
 fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
@@ -9595,8 +10095,12 @@ fn evaluate_watch_candidate(
     };
 
     let posterior_result = compute_posterior(priors, &evidence).ok()?;
-    let decision_outcome =
-        decide_action(&posterior_result.posterior, policy, &ActionFeasibility::allow_all()).ok()?;
+    let decision_outcome = decide_action(
+        &posterior_result.posterior,
+        policy,
+        &ActionFeasibility::allow_all(),
+    )
+    .ok()?;
 
     let classification = match decision_outcome.optimal_action {
         Action::Kill => "kill",
@@ -9762,7 +10266,10 @@ fn check_baseline_anomaly(
 }
 
 fn emit_watch_event(event: &serde_json::Value, notify_exec: Option<&str>) {
-    println!("{}", serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string()));
+    println!(
+        "{}",
+        serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string())
+    );
     if let Some(cmd) = notify_exec {
         let event_type = event
             .get("event")
@@ -9820,7 +10327,10 @@ mod watch_tests {
             goal_load_max: None,
         };
         let event = check_goal_violation(&state, &args).expect("goal violation");
-        assert_eq!(event.get("event").and_then(|v| v.as_str()), Some("goal_violated"));
+        assert_eq!(
+            event.get("event").and_then(|v| v.as_str()),
+            Some("goal_violated")
+        );
     }
 
     #[test]
@@ -9834,8 +10344,12 @@ mod watch_tests {
             "load": [2.0, 1.0, 0.5],
             "memory": {"available_gb": 4.0}
         });
-        let event = check_baseline_anomaly(&current_state, Some(&baseline)).expect("baseline anomaly");
-        assert_eq!(event.get("event").and_then(|v| v.as_str()), Some("baseline_anomaly"));
+        let event =
+            check_baseline_anomaly(&current_state, Some(&baseline)).expect("baseline anomaly");
+        assert_eq!(
+            event.get("event").and_then(|v| v.as_str()),
+            Some("baseline_anomaly")
+        );
     }
 }
 

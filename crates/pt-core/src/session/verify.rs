@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use super::resume::{
     revalidate_identity, CurrentIdentity, RevalidationIdentity, RevalidationOutcome,
 };
-use super::snapshot_persist::{PlanArtifact, PersistedPlanAction};
+use super::snapshot_persist::{PersistedPlanAction, PlanArtifact};
 
 // ---------------------------------------------------------------------------
 // Types
@@ -215,9 +215,7 @@ fn classify(
             )
         }
         RevalidationOutcome::PidReused => {
-            let new_start = current
-                .map(|c| c.start_id.as_str())
-                .unwrap_or("unknown");
+            let new_start = current.map(|c| c.start_id.as_str()).unwrap_or("unknown");
             (
                 ActionVerdict::PidReused,
                 Some(format!(
@@ -299,7 +297,11 @@ mod tests {
     fn test_process_gone() {
         let plan = make_plan(&[1, 2]);
         let report = verify_plan("s2", &plan, &opts(), |pid| {
-            if pid == 2 { None } else { Some(alive(pid)) }
+            if pid == 2 {
+                None
+            } else {
+                Some(alive(pid))
+            }
         });
 
         assert_eq!(report.valid_count, 1);
@@ -367,21 +369,24 @@ mod tests {
     fn test_mixed_verdicts() {
         let plan = make_plan(&[1, 2, 3, 4, 5]);
         let report = verify_plan("s6", &plan, &opts(), |pid| match pid {
-            1 => Some(alive(1)),                  // Valid
-            2 => None,                            // Gone
-            3 => Some(CurrentIdentity {           // PID reused
+            1 => Some(alive(1)), // Valid
+            2 => None,           // Gone
+            3 => Some(CurrentIdentity {
+                // PID reused
                 pid: 3,
                 start_id: "different:0:3".to_string(),
                 uid: 1000,
                 alive: true,
             }),
-            4 => Some(CurrentIdentity {           // UID changed
+            4 => Some(CurrentIdentity {
+                // UID changed
                 pid: 4,
                 start_id: "boot1:400:4".to_string(),
                 uid: 0,
                 alive: true,
             }),
-            5 => Some(CurrentIdentity {           // Dead
+            5 => Some(CurrentIdentity {
+                // Dead
                 pid: 5,
                 start_id: "boot1:500:5".to_string(),
                 uid: 1000,

@@ -135,9 +135,9 @@ pub fn create_session(
     let handle = store.create(&manifest)?;
 
     let now = Utc::now();
-    let expires_at = options.ttl_seconds.map(|ttl| {
-        (now + Duration::seconds(ttl as i64)).to_rfc3339()
-    });
+    let expires_at = options
+        .ttl_seconds
+        .map(|ttl| (now + Duration::seconds(ttl as i64)).to_rfc3339());
 
     let lifecycle = LifecycleInfo {
         session_id: session_id.0.clone(),
@@ -222,9 +222,7 @@ pub fn extend_session(
     let new_expiry_str = new_expiry.to_rfc3339();
 
     lifecycle.expires_at = Some(new_expiry_str.clone());
-    lifecycle.ttl_seconds = Some(
-        lifecycle.ttl_seconds.unwrap_or(0) + additional_seconds,
-    );
+    lifecycle.ttl_seconds = Some(lifecycle.ttl_seconds.unwrap_or(0) + additional_seconds);
     lifecycle.extend_count += 1;
     write_lifecycle(handle, &lifecycle)?;
 
@@ -415,7 +413,10 @@ mod tests {
         assert!(!status.is_expired);
         assert!(status.remaining_seconds.unwrap() > 3500);
         assert_eq!(status.extend_count, 0);
-        assert_eq!(status.agent_metadata.as_ref().unwrap().agent_name, "test-agent");
+        assert_eq!(
+            status.agent_metadata.as_ref().unwrap().agent_name,
+            "test-agent"
+        );
     }
 
     #[test]
@@ -557,7 +558,10 @@ mod tests {
         let (_child_id, child_handle) = create_session(&store, &child_opts).unwrap();
 
         let manifest = child_handle.read_manifest().unwrap();
-        assert_eq!(manifest.parent_session_id.as_deref(), Some(parent_id.0.as_str()));
+        assert_eq!(
+            manifest.parent_session_id.as_deref(),
+            Some(parent_id.0.as_str())
+        );
     }
 
     #[test]

@@ -62,7 +62,15 @@ mod tests {
             inf(200, "b1:200:200", "useful", 20, "keep", 0.08),
         ];
 
-        let diff = compute_diff("s1", "s2", &procs, &infs, &procs, &infs, &DiffConfig::default());
+        let diff = compute_diff(
+            "s1",
+            "s2",
+            &procs,
+            &infs,
+            &procs,
+            &infs,
+            &DiffConfig::default(),
+        );
         assert_eq!(diff.summary.new_count, 0);
         assert_eq!(diff.summary.resolved_count, 0);
         assert_eq!(diff.summary.changed_count, 0);
@@ -90,13 +98,26 @@ mod tests {
         ];
 
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &old_infs, &new_procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &old_infs,
+            &new_procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.new_count, 1);
-        let new_entry = diff.deltas.iter().find(|d| d.kind == DeltaKind::New).unwrap();
+        let new_entry = diff
+            .deltas
+            .iter()
+            .find(|d| d.kind == DeltaKind::New)
+            .unwrap();
         assert_eq!(new_entry.pid, 300);
         assert!(new_entry.new_inference.is_some());
-        assert_eq!(new_entry.new_inference.as_ref().unwrap().classification, "abandoned");
+        assert_eq!(
+            new_entry.new_inference.as_ref().unwrap().classification,
+            "abandoned"
+        );
     }
 
     // -- Scenario: Recovery (previously flagged process recovers) --
@@ -108,17 +129,30 @@ mod tests {
         let new_infs = vec![inf(100, "b1:100:100", "useful", 20, "keep", 0.08)];
 
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.changed_count, 1);
-        let changed = diff.deltas.iter().find(|d| d.kind == DeltaKind::Changed).unwrap();
+        let changed = diff
+            .deltas
+            .iter()
+            .find(|d| d.kind == DeltaKind::Changed)
+            .unwrap();
         assert!(changed.improved);
         assert!(!changed.worsened);
         assert!(changed.classification_changed);
 
         let report = generate_comparison_report(&diff, &old_infs, &new_infs);
         assert_eq!(report.drift_summary.improved_count, 1);
-        assert_eq!(report.drift_summary.overall_trend, TrendDirection::Decreasing);
+        assert_eq!(
+            report.drift_summary.overall_trend,
+            TrendDirection::Decreasing
+        );
     }
 
     // -- Scenario: PID reuse after reboot --
@@ -129,11 +163,23 @@ mod tests {
         let old_infs = vec![inf(100, "boot1:100:100", "abandoned", 90, "kill", 0.95)];
 
         // Same PID but different start_id after reboot.
-        let new_procs = vec![proc(100, "boot2:100:100", "nginx", "nginx -g daemon off", 60)];
+        let new_procs = vec![proc(
+            100,
+            "boot2:100:100",
+            "nginx",
+            "nginx -g daemon off",
+            60,
+        )];
         let new_infs = vec![inf(100, "boot2:100:100", "useful", 5, "keep", 0.02)];
 
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &old_infs, &new_procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &old_infs,
+            &new_procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         // Should treat as different processes: one resolved, one new.
         assert_eq!(diff.summary.resolved_count, 1);
@@ -159,14 +205,23 @@ mod tests {
         ];
 
         let diff = compute_diff(
-            "s1", "s2", &procs, &old_infs, &procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &procs,
+            &old_infs,
+            &procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.changed_count, 2);
         assert!(diff.deltas.iter().all(|d| d.worsened));
 
         let report = generate_comparison_report(&diff, &old_infs, &new_infs);
         assert_eq!(report.drift_summary.worsened_count, 2);
-        assert_eq!(report.drift_summary.overall_trend, TrendDirection::Increasing);
+        assert_eq!(
+            report.drift_summary.overall_trend,
+            TrendDirection::Increasing
+        );
         // Both should be recurring offenders since they went from review/keep to kill.
         assert_eq!(report.recurring_offenders.len(), 2);
     }
@@ -176,9 +231,9 @@ mod tests {
     #[test]
     fn scenario_mixed_delta() {
         let old_procs = vec![
-            proc(1, "a:1:1", "srv1", "srv1", 1000),    // Will be unchanged
-            proc(2, "a:2:2", "srv2", "srv2", 2000),    // Will be resolved
-            proc(3, "a:3:3", "test", "test", 3000),    // Will worsen
+            proc(1, "a:1:1", "srv1", "srv1", 1000), // Will be unchanged
+            proc(2, "a:2:2", "srv2", "srv2", 2000), // Will be resolved
+            proc(3, "a:3:3", "test", "test", 3000), // Will worsen
         ];
         let old_infs = vec![
             inf(1, "a:1:1", "useful", 10, "keep", 0.05),
@@ -187,8 +242,8 @@ mod tests {
         ];
 
         let new_procs = vec![
-            proc(1, "a:1:1", "srv1", "srv1", 1900),    // Unchanged
-            proc(3, "a:3:3", "test", "test", 3900),    // Worsened
+            proc(1, "a:1:1", "srv1", "srv1", 1900),      // Unchanged
+            proc(3, "a:3:3", "test", "test", 3900),      // Worsened
             proc(4, "a:4:4", "new_srv", "new_srv", 100), // New
         ];
         let new_infs = vec![
@@ -198,7 +253,13 @@ mod tests {
         ];
 
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &old_infs, &new_procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &old_infs,
+            &new_procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.new_count, 1);
         assert_eq!(diff.summary.resolved_count, 1);
@@ -225,7 +286,16 @@ mod tests {
             .map(|i| proc(i, &format!("b1:{}:{}", i, i), "srv", "srv", 1000))
             .collect();
         let old_infs: Vec<_> = (0..1000)
-            .map(|i| inf(i, &format!("b1:{}:{}", i, i), "useful", 10 + (i % 30) as u32, "keep", 0.05))
+            .map(|i| {
+                inf(
+                    i,
+                    &format!("b1:{}:{}", i, i),
+                    "useful",
+                    10 + (i % 30) as u32,
+                    "keep",
+                    0.05,
+                )
+            })
             .collect();
 
         // 900 unchanged, 50 resolved (950-999), 50 new (1000-1049)
@@ -236,14 +306,36 @@ mod tests {
             new_procs.push(proc(i, &format!("b1:{}:{}", i, i), "new", "new", 100));
         }
         let mut new_infs: Vec<_> = (0..950)
-            .map(|i| inf(i, &format!("b1:{}:{}", i, i), "useful", 10 + (i % 30) as u32, "keep", 0.05))
+            .map(|i| {
+                inf(
+                    i,
+                    &format!("b1:{}:{}", i, i),
+                    "useful",
+                    10 + (i % 30) as u32,
+                    "keep",
+                    0.05,
+                )
+            })
             .collect();
         for i in 1000..1050 {
-            new_infs.push(inf(i, &format!("b1:{}:{}", i, i), "useful", 15, "keep", 0.05));
+            new_infs.push(inf(
+                i,
+                &format!("b1:{}:{}", i, i),
+                "useful",
+                15,
+                "keep",
+                0.05,
+            ));
         }
 
         let diff = compute_diff(
-            "s1", "s2", &old_procs, &old_infs, &new_procs, &new_infs, &DiffConfig::default(),
+            "s1",
+            "s2",
+            &old_procs,
+            &old_infs,
+            &new_procs,
+            &new_infs,
+            &DiffConfig::default(),
         );
         assert_eq!(diff.summary.new_count, 50);
         assert_eq!(diff.summary.resolved_count, 50);
@@ -266,7 +358,15 @@ mod tests {
             inf(3, "c", "useful_bad", 50, "review", 0.4),
         ];
 
-        let diff = compute_diff("s1", "s1", &procs, &infs, &procs, &infs, &DiffConfig::default());
+        let diff = compute_diff(
+            "s1",
+            "s1",
+            &procs,
+            &infs,
+            &procs,
+            &infs,
+            &DiffConfig::default(),
+        );
         assert_eq!(diff.summary.new_count, 0);
         assert_eq!(diff.summary.resolved_count, 0);
         assert_eq!(diff.summary.changed_count, 0);
