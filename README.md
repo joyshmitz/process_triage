@@ -486,6 +486,7 @@ pt agent plan --format json      # Generate actionable plan
 pt agent plan --format toon      # Token-optimized plan output
 pt agent apply --session <id>    # Execute plan
 pt agent verify --session <id>   # Confirm outcomes
+pt agent watch --format jsonl    # Stream watch events (JSONL)
 ```
 
 You can also set a default format via env vars:
