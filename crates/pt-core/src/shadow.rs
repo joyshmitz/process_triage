@@ -265,6 +265,7 @@ fn confidence_score(confidence: Confidence) -> f32 {
 fn compute_identity_hash(proc: &ProcessRecord) -> String {
     let mut hasher = Sha256::new();
     hasher.update(proc.uid.to_le_bytes());
+    hasher.update(proc.start_id.0.as_bytes());
     hasher.update(proc.comm.as_bytes());
     hasher.update(proc.cmd.as_bytes());
     let digest = hasher.finalize();
@@ -378,6 +379,36 @@ mod tests {
         let h2 = compute_identity_hash(&proc);
         assert_eq!(h1, h2);
         assert_eq!(h1.len(), 16);
+    }
+
+    #[test]
+    fn identity_hash_changes_for_different_start_id() {
+        let mut proc = ProcessRecord {
+            pid: pt_common::ProcessId(1),
+            ppid: pt_common::ProcessId(0),
+            uid: 1000,
+            user: "user".to_string(),
+            pgid: None,
+            sid: None,
+            start_id: pt_common::StartId("boot:100:1".to_string()),
+            comm: "bash".to_string(),
+            cmd: "bash -c echo test".to_string(),
+            state: crate::collect::ProcessState::Running,
+            cpu_percent: 0.0,
+            rss_bytes: 0,
+            vsz_bytes: 0,
+            tty: None,
+            start_time_unix: 0,
+            elapsed: std::time::Duration::from_secs(1),
+            source: "test".to_string(),
+            container_info: None,
+        };
+
+        let h1 = compute_identity_hash(&proc);
+        proc.start_id = pt_common::StartId("boot:200:1".to_string());
+        let h2 = compute_identity_hash(&proc);
+
+        assert_ne!(h1, h2);
     }
 
     #[test]

@@ -167,7 +167,7 @@ pub struct Observation {
     /// Process ID (may be reused).
     pub pid: u32,
 
-    /// Hash of (exe, args, user) for tracking across PID reuse.
+    /// Hash of process identity (start_id, user, command) for tracking across PID reuse.
     pub identity_hash: String,
 
     /// Resource usage snapshot.
