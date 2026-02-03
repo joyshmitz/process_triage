@@ -458,6 +458,12 @@ impl ProcessTableState {
         }
     }
 
+    /// Get the currently focused row (after filtering).
+    pub fn current_row(&self) -> Option<&ProcessRow> {
+        let visible = self.visible_rows();
+        visible.get(self.cursor).copied()
+    }
+
     /// Move cursor down.
     pub fn cursor_down(&mut self) {
         let visible_count = self.visible_rows().len();

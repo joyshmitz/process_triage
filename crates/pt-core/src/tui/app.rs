@@ -399,12 +399,12 @@ impl App {
 
         // Render main content areas
         self.render_search(frame, areas.search);
-        self.render_process_table(frame, areas.content);
+        self.render_process_table(frame, areas.list);
         self.render_status_bar(frame, areas.status);
 
-        // Render sidebar if available (large breakpoint)
-        if let Some(sidebar) = areas.sidebar {
-            self.render_sidebar(frame, sidebar);
+        // Render detail pane when available (medium/large)
+        if let Some(detail) = areas.detail {
+            self.render_detail_pane(frame, detail);
         }
 
         // Render overlays using responsive popup areas
@@ -428,26 +428,38 @@ impl App {
         frame.render_widget(message, area);
     }
 
-    /// Render sidebar panel (large breakpoint only).
-    fn render_sidebar(&self, frame: &mut Frame, area: Rect) {
-        // Sidebar shows process summary, quick filters, or navigation
+    /// Render detail pane with current selection.
+    fn render_detail_pane(&self, frame: &mut Frame, area: Rect) {
         let block = Block::default()
             .borders(Borders::ALL)
-            .title(" Summary ")
+            .title(" Detail ")
             .border_style(self.theme.style_border());
 
-        let content = format!(
-            "Breakpoint: {}\nProcesses: {}\nSelected: {}",
-            self.layout_state.breakpoint().name(),
-            self.process_table.total_count(),
-            self.process_table.selected_count()
-        );
+        let content = if let Some(row) = self.process_table.current_row() {
+            let selected = if self.process_table.selected.contains(&row.pid) {
+                "yes"
+            } else {
+                "no"
+            };
+            format!(
+                "PID: {pid}\nCommand: {cmd}\nClass: {class}\nScore: {score}\nRuntime: {runtime}\nMemory: {memory}\nSelected: {selected}\n\nEvidence:\n- (ledger not wired)\n\nAction:\n- (plan details not wired)\n",
+                pid = row.pid,
+                cmd = row.command,
+                class = row.classification,
+                score = row.score,
+                runtime = row.runtime,
+                memory = row.memory,
+                selected = selected
+            )
+        } else {
+            "No process selected".to_string()
+        };
 
-        let sidebar = Paragraph::new(content)
+        let detail = Paragraph::new(content)
             .block(block)
-            .style(self.theme.style_muted());
+            .style(self.theme.style_normal());
 
-        frame.render_widget(sidebar, area);
+        frame.render_widget(detail, area);
     }
 
     /// Render the search input.

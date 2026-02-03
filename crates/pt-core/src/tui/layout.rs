@@ -15,7 +15,7 @@
 //! ```ignore
 //! let layout = ResponsiveLayout::new(frame.area());
 //! let areas = layout.main_areas();
-//! // Use areas.search, areas.content, areas.status for rendering
+//! // Use areas.search, areas.list, areas.detail, areas.status for rendering
 //! ```
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -69,10 +69,10 @@ impl Breakpoint {
 pub struct MainAreas {
     /// Search input area at top.
     pub search: Rect,
-    /// Main content area (process table).
-    pub content: Rect,
-    /// Optional sidebar area (large breakpoint only).
-    pub sidebar: Option<Rect>,
+    /// Main list area (process table).
+    pub list: Rect,
+    /// Optional detail pane area (two-pane layout).
+    pub detail: Option<Rect>,
     /// Status bar at bottom.
     pub status: Rect,
 }
@@ -151,19 +151,7 @@ impl ResponsiveLayout {
 
     /// Large breakpoint: full layout with sidebar.
     fn main_areas_large(&self) -> MainAreas {
-        // Horizontal split: sidebar | main content
-        let h_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(20), // Sidebar: 20% of width
-                Constraint::Min(80),        // Main content: remaining
-            ])
-            .split(self.area);
-
-        let sidebar = h_chunks[0];
-        let main_area = h_chunks[1];
-
-        // Vertical split of main content: search | content | status
+        // Vertical split: search | content | status
         let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -171,19 +159,28 @@ impl ResponsiveLayout {
                 Constraint::Min(10),   // Process table
                 Constraint::Length(1), // Status bar
             ])
-            .split(main_area);
+            .split(self.area);
+
+        // Horizontal split of content: list | detail
+        let content_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(55), // List
+                Constraint::Percentage(45), // Detail
+            ])
+            .split(v_chunks[1]);
 
         MainAreas {
             search: v_chunks[0],
-            content: v_chunks[1],
-            sidebar: Some(sidebar),
+            list: content_chunks[0],
+            detail: Some(content_chunks[1]),
             status: v_chunks[2],
         }
     }
 
     /// Medium breakpoint: no sidebar, standard layout.
     fn main_areas_medium(&self) -> MainAreas {
-        let chunks = Layout::default()
+        let v_chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(3), // Search input
@@ -192,11 +189,20 @@ impl ResponsiveLayout {
             ])
             .split(self.area);
 
+        // Horizontal split of content: list | detail
+        let content_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Percentage(60), // List
+                Constraint::Percentage(40), // Detail
+            ])
+            .split(v_chunks[1]);
+
         MainAreas {
-            search: chunks[0],
-            content: chunks[1],
-            sidebar: None,
-            status: chunks[2],
+            search: v_chunks[0],
+            list: content_chunks[0],
+            detail: Some(content_chunks[1]),
+            status: v_chunks[2],
         }
     }
 
@@ -213,8 +219,8 @@ impl ResponsiveLayout {
 
         MainAreas {
             search: chunks[0],
-            content: chunks[1],
-            sidebar: None,
+            list: chunks[1],
+            detail: None,
             status: chunks[2],
         }
     }
@@ -429,11 +435,11 @@ mod tests {
         assert_eq!(layout.breakpoint(), Breakpoint::Large);
 
         let areas = layout.main_areas();
-        assert!(areas.sidebar.is_some());
+        assert!(areas.detail.is_some());
 
-        // Sidebar should be 20% of width
-        let sidebar = areas.sidebar.unwrap();
-        assert_eq!(sidebar.width, 40); // 20% of 200
+        // Detail should be ~45% of width
+        let detail = areas.detail.unwrap();
+        assert_eq!(detail.width, 90); // 45% of 200
 
         // Status bar should be 1 row at bottom
         assert_eq!(areas.status.height, 1);
@@ -448,7 +454,7 @@ mod tests {
         assert_eq!(layout.breakpoint(), Breakpoint::Medium);
 
         let areas = layout.main_areas();
-        assert!(areas.sidebar.is_none());
+        assert!(areas.detail.is_some());
 
         // Search should be 3 rows
         assert_eq!(areas.search.height, 3);
@@ -465,7 +471,7 @@ mod tests {
         assert_eq!(layout.breakpoint(), Breakpoint::Small);
 
         let areas = layout.main_areas();
-        assert!(areas.sidebar.is_none());
+        assert!(areas.detail.is_none());
 
         // Compact search should be 1 row
         assert_eq!(areas.search.height, 1);
