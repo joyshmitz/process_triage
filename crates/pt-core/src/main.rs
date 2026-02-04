@@ -69,10 +69,12 @@ use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
 use pt_telemetry::retention::{RetentionConfig, RetentionEnforcer, RetentionError};
 use pt_telemetry::shadow::{Observation, ShadowStorage, ShadowStorageConfig};
 use pt_telemetry::writer::default_telemetry_dir;
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "ui")]
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "ui")]
 use std::rc::Rc;
@@ -4106,8 +4108,342 @@ fn run_config_export_preset(
 }
 
 #[cfg(feature = "daemon")]
-fn run_daemon(global: &GlobalOpts, _args: &DaemonArgs) -> ExitCode {
-    output_stub(global, "daemon", "Daemon mode not yet implemented");
+fn run_daemon(global: &GlobalOpts, args: &DaemonArgs) -> ExitCode {
+    match &args.command {
+        DaemonCommands::Start { foreground } => run_daemon_start(global, *foreground),
+        DaemonCommands::Stop => run_daemon_stop(global),
+        DaemonCommands::Status => run_daemon_status(global),
+    }
+}
+
+#[cfg(feature = "daemon")]
+fn run_daemon_start(global: &GlobalOpts, foreground: bool) -> ExitCode {
+    let (config, enabled) = load_daemon_config(global);
+    if !enabled {
+        let response = serde_json::json!({
+            "command": "daemon start",
+            "enabled": false,
+            "message": "daemon disabled in config",
+        });
+        match global.format {
+            OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+                println!("{}", format_structured_output(global, response));
+            }
+            _ => {
+                println!("Daemon disabled in config; not starting.");
+            }
+        }
+        return ExitCode::Clean;
+    }
+
+    if foreground {
+        return run_daemon_foreground(global, &config);
+    }
+    run_daemon_background(global)
+}
+
+#[cfg(feature = "daemon")]
+fn run_daemon_background(global: &GlobalOpts) -> ExitCode {
+    if let Ok(Some(pid)) = read_daemon_pid() {
+        if is_process_running(pid) {
+            eprintln!("daemon start: existing daemon running (pid {})", pid);
+            return ExitCode::LockError;
+        }
+        let _ = remove_daemon_pid();
+    }
+
+    let exe = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("daemon start: failed to resolve executable: {}", err);
+            return ExitCode::InternalError;
+        }
+    };
+
+    let mut cmd = std::process::Command::new(exe);
+    cmd.arg("daemon").arg("start").arg("--foreground");
+    apply_daemon_global_args(&mut cmd, global);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    let child = match cmd.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            eprintln!("daemon start: failed to spawn background worker: {}", err);
+            return ExitCode::IoError;
+        }
+    };
+
+    if let Err(err) = write_daemon_pid(child.id()) {
+        eprintln!("daemon start: failed to write pid file: {}", err);
+        return ExitCode::IoError;
+    }
+
+    let response = serde_json::json!({
+        "command": "daemon start",
+        "mode": "background",
+        "pid": child.id(),
+        "base_dir": daemon_base_dir().display().to_string(),
+    });
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+            println!("{}", format_structured_output(global, response));
+        }
+        _ => {
+            println!("Daemon started (pid {}).", child.id());
+        }
+    }
+
+    ExitCode::Clean
+}
+
+#[cfg(feature = "daemon")]
+fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonConfig) -> ExitCode {
+    use pt_core::inbox::{InboxItem, InboxStore};
+
+    install_daemon_signal_handlers();
+    apply_daemon_nice();
+    let own_pid = std::process::id();
+
+    let state_path = daemon_state_path();
+    let mut state_bundle = load_daemon_state(&state_path, config);
+
+    let mut config = config.clone();
+    let inbox = InboxStore::from_env().ok();
+
+    loop {
+        if DAEMON_SIGNALS.should_stop() {
+            break;
+        }
+
+        if DAEMON_SIGNALS.take_reload() {
+            let (reloaded, enabled) = load_daemon_config(global);
+            if enabled {
+                config = reloaded;
+                state_bundle.daemon.record_event(
+                    pt_core::daemon::DaemonEventType::ConfigReloaded,
+                    "config reloaded",
+                );
+            }
+        }
+
+        let metrics = collect_daemon_metrics();
+        let mut budget_exceeded = false;
+        if let Some(rss_mb) = current_rss_mb() {
+            if rss_mb > config.max_rss_mb {
+                budget_exceeded = true;
+                state_bundle.daemon.record_event(
+                    pt_core::daemon::DaemonEventType::OverheadBudgetExceeded,
+                    &format!("rss {} MB exceeds budget {}", rss_mb, config.max_rss_mb),
+                );
+            }
+        }
+
+        let (daemon_state, trigger_state, escalation_state) = (
+            &mut state_bundle.daemon,
+            &mut state_bundle.triggers,
+            &mut state_bundle.escalation,
+        );
+
+        if budget_exceeded {
+            daemon_state.tick_count += 1;
+            daemon_state.last_tick_at = Some(metrics.timestamp.clone());
+        } else {
+            let mut escalation_inbox = inbox.clone();
+            let outcome = pt_core::daemon::process_tick(
+                &config,
+                daemon_state,
+                trigger_state,
+                &metrics,
+                &mut |esc_config, fired| {
+                    let lock = match DaemonLock::try_acquire(&daemon_lock_path()) {
+                        Ok(lock) => lock,
+                        Err(err) => {
+                            return pt_core::daemon::escalation::EscalationOutcome {
+                                status: pt_core::daemon::escalation::EscalationStatus::Failed,
+                                reason: format!("lock error: {}", err),
+                                session_id: None,
+                            };
+                        }
+                    };
+
+                    let mut outcome = pt_core::daemon::escalation::decide_escalation(
+                        esc_config,
+                        escalation_state,
+                        fired,
+                        || lock.is_some(),
+                    );
+
+                    if matches!(
+                        outcome.status,
+                        pt_core::daemon::escalation::EscalationStatus::Deferred
+                    ) && outcome.reason.contains("LockContention")
+                    {
+                        if let Some(store) = escalation_inbox.as_mut() {
+                            let item = InboxItem::lock_contention(
+                                "daemon escalation deferred: lock contention".to_string(),
+                                None,
+                            );
+                            let _ = store.add(&item);
+                        }
+                    }
+
+                    if matches!(
+                        outcome.status,
+                        pt_core::daemon::escalation::EscalationStatus::Completed
+                    ) {
+                        let summary = pt_core::daemon::escalation::build_inbox_summary(fired);
+                        match run_daemon_escalation(global, fired, esc_config) {
+                            Ok(result) => {
+                                outcome.session_id = Some(result.session_id.clone());
+                                if let Some(store) = escalation_inbox.as_mut() {
+                                    let item = InboxItem::dormant_escalation(
+                                        result.session_id,
+                                        summary.clone(),
+                                        summary,
+                                        result.candidates_found,
+                                    );
+                                    let _ = store.add(&item);
+                                }
+                            }
+                            Err(err) => {
+                                outcome.status = pt_core::daemon::escalation::EscalationStatus::Failed;
+                                outcome.reason = err;
+                            }
+                        }
+                    }
+
+                    drop(lock);
+                    outcome
+                },
+            );
+
+            if outcome.escalation.is_some() {
+                state_bundle
+                    .daemon
+                    .record_event(pt_core::daemon::DaemonEventType::TickCompleted, "tick");
+            }
+        }
+
+        let _ = save_daemon_state(&state_path, &state_bundle);
+
+        if DAEMON_SIGNALS.should_stop() {
+            break;
+        }
+
+        if daemon_sleep_with_interrupt(config.tick_interval_secs) {
+            continue;
+        }
+    }
+
+    cleanup_daemon_pid_if_owned(own_pid);
+
+    let response = serde_json::json!({
+        "command": "daemon start",
+        "mode": "foreground",
+        "ticks": state_bundle.daemon.tick_count,
+        "base_dir": daemon_base_dir().display().to_string(),
+    });
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+            println!("{}", format_structured_output(global, response));
+        }
+        _ => {
+            println!("Daemon stopped after {} ticks.", state_bundle.daemon.tick_count);
+        }
+    }
+
+    ExitCode::Clean
+}
+
+#[cfg(feature = "daemon")]
+fn run_daemon_stop(global: &GlobalOpts) -> ExitCode {
+    let pid = match read_daemon_pid() {
+        Ok(Some(pid)) => pid,
+        Ok(None) => {
+            let response = serde_json::json!({
+                "command": "daemon stop",
+                "running": false,
+                "message": "no daemon pid file found",
+            });
+            match global.format {
+                OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+                    println!("{}", format_structured_output(global, response));
+                }
+                _ => {
+                    println!("Daemon not running.");
+                }
+            }
+            return ExitCode::Clean;
+        }
+        Err(err) => {
+            eprintln!("daemon stop: failed to read pid file: {}", err);
+            return ExitCode::IoError;
+        }
+    };
+
+    if let Err(err) = terminate_process(pid) {
+        eprintln!("daemon stop: failed to terminate daemon: {}", err);
+        return ExitCode::IoError;
+    }
+
+    if let Err(err) = remove_daemon_pid() {
+        eprintln!("daemon stop: failed to remove pid file: {}", err);
+        return ExitCode::IoError;
+    }
+
+    let response = serde_json::json!({
+        "command": "daemon stop",
+        "running": false,
+        "pid": pid,
+    });
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+            println!("{}", format_structured_output(global, response));
+        }
+        _ => {
+            println!("Daemon stopped (pid {}).", pid);
+        }
+    }
+
+    ExitCode::Clean
+}
+
+#[cfg(feature = "daemon")]
+fn run_daemon_status(global: &GlobalOpts) -> ExitCode {
+    let pid = read_daemon_pid().ok().flatten();
+    let running = pid.map(is_process_running).unwrap_or(false);
+    let state_path = daemon_state_path();
+    let state = if state_path.exists() {
+        std::fs::read_to_string(&state_path)
+            .ok()
+            .and_then(|content| serde_json::from_str::<DaemonStateBundle>(&content).ok())
+    } else {
+        None
+    };
+
+    let response = serde_json::json!({
+        "command": "daemon status",
+        "running": running,
+        "pid": pid,
+        "base_dir": daemon_base_dir().display().to_string(),
+        "state": state.as_ref().map(|s| serde_json::to_value(s).ok()).flatten(),
+    });
+
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+            println!("{}", format_structured_output(global, response));
+        }
+        _ => {
+            if running {
+                println!("Daemon running (pid {}).", pid.unwrap_or(0));
+            } else {
+                println!("Daemon not running.");
+            }
+        }
+    }
+
     ExitCode::Clean
 }
 
@@ -5043,6 +5379,592 @@ fn remove_shadow_pid() -> std::io::Result<()> {
         std::fs::remove_file(path)?;
     }
     Ok(())
+}
+
+// ============================================================================
+// Daemon helpers
+// ============================================================================
+
+#[cfg(feature = "daemon")]
+#[derive(Debug)]
+struct DaemonSignalState {
+    stop: AtomicBool,
+    reload: AtomicBool,
+    force_tick: AtomicBool,
+}
+
+#[cfg(feature = "daemon")]
+impl DaemonSignalState {
+    const fn new() -> Self {
+        Self {
+            stop: AtomicBool::new(false),
+            reload: AtomicBool::new(false),
+            force_tick: AtomicBool::new(false),
+        }
+    }
+
+    fn request_stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    fn should_stop(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
+    }
+
+    fn request_reload(&self) {
+        self.reload.store(true, Ordering::Relaxed);
+    }
+
+    fn take_reload(&self) -> bool {
+        self.reload.swap(false, Ordering::Relaxed)
+    }
+
+    fn request_force_tick(&self) {
+        self.force_tick.store(true, Ordering::Relaxed);
+    }
+
+    fn take_force_tick(&self) -> bool {
+        self.force_tick.swap(false, Ordering::Relaxed)
+    }
+}
+
+#[cfg(feature = "daemon")]
+static DAEMON_SIGNALS: DaemonSignalState = DaemonSignalState::new();
+
+#[cfg(feature = "daemon")]
+#[cfg(unix)]
+fn install_daemon_signal_handlers() {
+    unsafe extern "C" fn handler(signal: i32) {
+        match signal {
+            libc::SIGTERM | libc::SIGINT => DAEMON_SIGNALS.request_stop(),
+            libc::SIGHUP => {
+                DAEMON_SIGNALS.request_reload();
+                DAEMON_SIGNALS.request_force_tick();
+            }
+            libc::SIGUSR1 => DAEMON_SIGNALS.request_force_tick(),
+            _ => {}
+        }
+    }
+
+    unsafe {
+        libc::signal(libc::SIGTERM, handler as libc::sighandler_t);
+        libc::signal(libc::SIGINT, handler as libc::sighandler_t);
+        libc::signal(libc::SIGHUP, handler as libc::sighandler_t);
+        libc::signal(libc::SIGUSR1, handler as libc::sighandler_t);
+    }
+}
+
+#[cfg(feature = "daemon")]
+#[cfg(not(unix))]
+fn install_daemon_signal_handlers() {}
+
+#[cfg(feature = "daemon")]
+fn daemon_sleep_with_interrupt(seconds: u64) -> bool {
+    if seconds == 0 {
+        return false;
+    }
+    let mut remaining = seconds;
+    while remaining > 0 {
+        if DAEMON_SIGNALS.should_stop() {
+            return false;
+        }
+        if DAEMON_SIGNALS.take_force_tick() {
+            return true;
+        }
+        let step = remaining.min(1);
+        std::thread::sleep(std::time::Duration::from_secs(step));
+        remaining = remaining.saturating_sub(step);
+    }
+    false
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_base_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var("PROCESS_TRIAGE_DATA") {
+        return PathBuf::from(dir).join("daemon");
+    }
+    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
+        return PathBuf::from(dir).join("process_triage").join("daemon");
+    }
+    dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("process_triage")
+        .join("daemon")
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_pid_path() -> PathBuf {
+    daemon_base_dir().join("daemon.pid")
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_state_path() -> PathBuf {
+    daemon_base_dir().join("state.json")
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_lock_path() -> PathBuf {
+    daemon_base_dir().join("pt.lock")
+}
+
+#[cfg(feature = "daemon")]
+fn write_daemon_pid(pid: u32) -> std::io::Result<()> {
+    let path = daemon_pid_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, pid.to_string())
+}
+
+#[cfg(feature = "daemon")]
+fn read_daemon_pid() -> std::io::Result<Option<u32>> {
+    let path = daemon_pid_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let content = std::fs::read_to_string(path)?;
+    Ok(content.trim().parse::<u32>().ok())
+}
+
+#[cfg(feature = "daemon")]
+fn remove_daemon_pid() -> std::io::Result<()> {
+    let path = daemon_pid_path();
+    if path.exists() {
+        std::fs::remove_file(path)?;
+    }
+    Ok(())
+}
+
+#[cfg(feature = "daemon")]
+fn cleanup_daemon_pid_if_owned(pid: u32) {
+    if let Ok(Some(current)) = read_daemon_pid() {
+        if current == pid {
+            let _ = remove_daemon_pid();
+        }
+    }
+}
+
+#[cfg(feature = "daemon")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DaemonStateBundle {
+    daemon: pt_core::daemon::DaemonState,
+    triggers: pt_core::daemon::triggers::TriggerState,
+    escalation: pt_core::daemon::escalation::EscalationState,
+}
+
+#[cfg(feature = "daemon")]
+fn load_daemon_state(
+    path: &Path,
+    config: &pt_core::daemon::DaemonConfig,
+) -> DaemonStateBundle {
+    if let Ok(content) = std::fs::read_to_string(path) {
+        if let Ok(state) = serde_json::from_str::<DaemonStateBundle>(&content) {
+            return state;
+        }
+    }
+
+    DaemonStateBundle {
+        daemon: pt_core::daemon::DaemonState::new(),
+        triggers: pt_core::daemon::triggers::TriggerState::new(&config.triggers),
+        escalation: pt_core::daemon::escalation::EscalationState::new(),
+    }
+}
+
+#[cfg(feature = "daemon")]
+fn save_daemon_state(path: &Path, state: &DaemonStateBundle) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let content = serde_json::to_vec_pretty(state)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    std::fs::write(&tmp, content)?;
+    std::fs::rename(tmp, path)?;
+    Ok(())
+}
+
+#[cfg(feature = "daemon")]
+struct DaemonEscalationResult {
+    session_id: String,
+    candidates_found: u32,
+}
+
+#[cfg(feature = "daemon")]
+fn run_daemon_escalation(
+    global: &GlobalOpts,
+    _triggers: &[pt_core::daemon::triggers::FiredTrigger],
+    esc_config: &pt_core::daemon::escalation::EscalationConfig,
+) -> Result<DaemonEscalationResult, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args([
+        "--format",
+        "json",
+        "agent",
+        "plan",
+        "--max-candidates",
+    ])
+    .arg(esc_config.max_deep_scan_targets.to_string())
+    .stdin(std::process::Stdio::null())
+    .stderr(std::process::Stdio::piped())
+    .stdout(std::process::Stdio::piped());
+
+    apply_daemon_global_args(&mut cmd, global);
+
+    let output = cmd.output().map_err(|e| e.to_string())?;
+    let stdout = output.stdout;
+    if stdout.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "daemon escalation: empty stdout (status {:?}): {}",
+            output.status.code(),
+            stderr.trim()
+        ));
+    }
+
+    let json: serde_json::Value =
+        serde_json::from_slice(&stdout).map_err(|e| format!("invalid JSON: {}", e))?;
+    let session_id = json
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing session_id in plan output".to_string())?
+        .to_string();
+    let candidates_found = json
+        .get("summary")
+        .and_then(|s| s.get("candidates_found"))
+        .and_then(|v| v.as_u64())
+        .or_else(|| json.get("candidates").and_then(|v| v.as_array()).map(|a| a.len() as u64))
+        .unwrap_or(0) as u32;
+
+    Ok(DaemonEscalationResult {
+        session_id,
+        candidates_found,
+    })
+}
+
+#[cfg(feature = "daemon")]
+fn collect_daemon_metrics() -> pt_core::daemon::TickMetrics {
+    let load = collect_load_averages();
+    let load_avg_1 = load.get(0).copied().unwrap_or(0.0);
+    let load_avg_5 = load.get(1).copied().unwrap_or(load_avg_1);
+
+    let memory = collect_memory_info();
+    let total_gb = memory
+        .get("total_gb")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let used_gb = memory
+        .get("used_gb")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    let memory_total_mb = (total_gb * 1024.0).round() as u64;
+    let memory_used_mb = (used_gb * 1024.0).round() as u64;
+
+    pt_core::daemon::TickMetrics {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        load_avg_1,
+        load_avg_5,
+        memory_used_mb,
+        memory_total_mb,
+        swap_used_mb: collect_swap_used_mb(),
+        process_count: collect_process_count(),
+        orphan_count: collect_orphan_count(),
+    }
+}
+
+#[cfg(feature = "daemon")]
+fn collect_swap_used_mb() -> u64 {
+    let content = match std::fs::read_to_string("/proc/meminfo") {
+        Ok(c) => c,
+        Err(_) => return 0,
+    };
+    let mut total = 0u64;
+    let mut free = 0u64;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("SwapTotal:") {
+            total = rest
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix("SwapFree:") {
+            free = rest
+                .split_whitespace()
+                .next()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(0);
+        }
+    }
+    total.saturating_sub(free) / 1024
+}
+
+#[cfg(all(feature = "daemon", target_os = "linux"))]
+fn collect_orphan_count() -> u32 {
+    let mut count = 0u32;
+    let entries = match std::fs::read_dir("/proc") {
+        Ok(entries) => entries,
+        Err(_) => return 0,
+    };
+
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let pid_str = match file_name.to_str() {
+            Some(name) if name.chars().all(|c| c.is_ascii_digit()) => name,
+            _ => continue,
+        };
+        let stat_path = format!("/proc/{}/stat", pid_str);
+        let stat = match std::fs::read_to_string(stat_path) {
+            Ok(stat) => stat,
+            Err(_) => continue,
+        };
+        let end = match stat.rfind(')') {
+            Some(pos) => pos,
+            None => continue,
+        };
+        let rest = match stat.get(end + 2..) {
+            Some(rest) => rest,
+            None => continue,
+        };
+        let mut parts = rest.split_whitespace();
+        let _state = parts.next();
+        let ppid = match parts.next() {
+            Some(ppid) => ppid,
+            None => continue,
+        };
+        if ppid == "1" {
+            count = count.saturating_add(1);
+        }
+    }
+
+    count
+}
+
+#[cfg(all(feature = "daemon", target_os = "linux"))]
+fn current_rss_mb() -> Option<u64> {
+    let stats = pt_core::collect::parse_statm(std::process::id())?;
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if page_size <= 0 {
+        return None;
+    }
+    let rss_bytes = stats.resident.saturating_mul(page_size as u64);
+    Some(rss_bytes / 1024 / 1024)
+}
+
+#[cfg(all(feature = "daemon", not(target_os = "linux")))]
+fn collect_orphan_count() -> u32 {
+    0
+}
+
+#[cfg(all(feature = "daemon", not(target_os = "linux")))]
+fn current_rss_mb() -> Option<u64> {
+    None
+}
+
+#[cfg(feature = "daemon")]
+fn apply_daemon_global_args(cmd: &mut std::process::Command, global: &GlobalOpts) {
+    if let Some(dir) = &global.config {
+        cmd.arg("--config").arg(dir);
+    }
+}
+
+#[cfg(feature = "daemon")]
+fn apply_daemon_nice() {
+    #[cfg(unix)]
+    unsafe {
+        libc::setpriority(libc::PRIO_PROCESS, 0, 19);
+    }
+
+    #[cfg(unix)]
+    {
+        let _ = std::process::Command::new("ionice")
+            .args(["-c3", "-p", &std::process::id().to_string()])
+            .status();
+    }
+}
+
+#[cfg(feature = "daemon")]
+fn load_daemon_config(global: &GlobalOpts) -> (pt_core::daemon::DaemonConfig, bool) {
+    let config_dir = resolve_config_dir(global);
+    let path = config_dir.join("daemon.json");
+    if !path.exists() {
+        return (pt_core::daemon::DaemonConfig::default(), true);
+    }
+
+    let content = match std::fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(_) => return (pt_core::daemon::DaemonConfig::default(), true),
+    };
+
+    if let Ok(config) = serde_json::from_str::<pt_core::daemon::DaemonConfig>(&content) {
+        return (config, true);
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonFileConfig {
+        enabled: Option<bool>,
+        collection_interval_seconds: Option<u64>,
+        overhead_budget: Option<DaemonBudget>,
+        triggers: Option<DaemonTriggerConfig>,
+        auto_mitigate: Option<DaemonAutoMitigate>,
+        cooldown: Option<DaemonCooldown>,
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonBudget {
+        max_cpu_percent: Option<f64>,
+        max_memory_mb: Option<u64>,
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonTriggerConfig {
+        sustained_load: Option<DaemonLoadTrigger>,
+        memory_pressure: Option<DaemonMemoryTrigger>,
+        orphan_spike: Option<DaemonOrphanTrigger>,
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonLoadTrigger {
+        threshold_multiplier: Option<f64>,
+        min_duration_seconds: Option<u64>,
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonMemoryTrigger {
+        threshold_percent: Option<f64>,
+        min_duration_seconds: Option<u64>,
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonOrphanTrigger {
+        threshold_delta: Option<u32>,
+        window_seconds: Option<u64>,
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonAutoMitigate {
+        enabled: Option<bool>,
+    }
+
+    #[derive(Deserialize)]
+    struct DaemonCooldown {
+        after_escalation_seconds: Option<u64>,
+    }
+
+    let mut config = pt_core::daemon::DaemonConfig::default();
+    let mut enabled = true;
+
+    if let Ok(file_cfg) = serde_json::from_str::<DaemonFileConfig>(&content) {
+        if let Some(value) = file_cfg.enabled {
+            enabled = value;
+        }
+        if let Some(interval) = file_cfg.collection_interval_seconds {
+            config.tick_interval_secs = interval;
+        }
+        if let Some(budget) = file_cfg.overhead_budget {
+            if let Some(cpu) = budget.max_cpu_percent {
+                config.max_cpu_percent = cpu;
+            }
+            if let Some(mem) = budget.max_memory_mb {
+                config.max_rss_mb = mem;
+            }
+        }
+        if let Some(triggers) = file_cfg.triggers {
+            if let Some(load) = triggers.sustained_load {
+                if let Some(multiplier) = load.threshold_multiplier {
+                    let cores = collect_cpu_count().max(1) as f64;
+                    config.triggers.load_threshold = cores * multiplier;
+                }
+                if let Some(seconds) = load.min_duration_seconds {
+                    let ticks = (seconds / config.tick_interval_secs.max(1)).max(1) as u32;
+                    config.triggers.sustained_ticks = ticks;
+                }
+            }
+            if let Some(mem) = triggers.memory_pressure {
+                if let Some(percent) = mem.threshold_percent {
+                    config.triggers.memory_threshold = (percent / 100.0).clamp(0.0, 1.0);
+                }
+                if let Some(seconds) = mem.min_duration_seconds {
+                    let ticks = (seconds / config.tick_interval_secs.max(1)).max(1) as u32;
+                    config.triggers.sustained_ticks = config.triggers.sustained_ticks.max(ticks);
+                }
+            }
+            if let Some(orphan) = triggers.orphan_spike {
+                if let Some(delta) = orphan.threshold_delta {
+                    config.triggers.orphan_threshold = delta;
+                }
+                if let Some(seconds) = orphan.window_seconds {
+                    let ticks = (seconds / config.tick_interval_secs.max(1)).max(1) as u32;
+                    config.triggers.sustained_ticks = config.triggers.sustained_ticks.max(ticks);
+                }
+            }
+        }
+        if let Some(auto) = file_cfg.auto_mitigate {
+            if let Some(enabled) = auto.enabled {
+                config.escalation.allow_auto_mitigation = enabled;
+            }
+        }
+        if let Some(cooldown) = file_cfg.cooldown {
+            if let Some(seconds) = cooldown.after_escalation_seconds {
+                config.escalation.min_interval_secs = seconds;
+            }
+        }
+    }
+
+    (config, enabled)
+}
+
+#[cfg(feature = "daemon")]
+struct DaemonLock {
+    file: std::fs::File,
+}
+
+#[cfg(feature = "daemon")]
+impl DaemonLock {
+    fn try_acquire(path: &Path) -> Result<Option<Self>, std::io::Error> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            let fd = file.as_raw_fd();
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            if result != 0 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::WouldBlock {
+                    return Ok(None);
+                }
+                return Err(err);
+            }
+        }
+
+        file.set_len(0)?;
+        let mut writer = &file;
+        let _ = writer.write_all(format!("{}", std::process::id()).as_bytes());
+        let _ = writer.flush();
+
+        Ok(Some(Self { file }))
+    }
+}
+
+#[cfg(feature = "daemon")]
+impl Drop for DaemonLock {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            unsafe {
+                libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+            }
+        }
+    }
 }
 
 #[cfg(unix)]
