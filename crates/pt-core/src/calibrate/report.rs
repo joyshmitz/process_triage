@@ -130,6 +130,26 @@ impl CalibrationReport {
         ));
         output.push('\n');
 
+        // Calibration by score bucket
+        output.push_str("─── Calibration by Score Bucket ─────────────────────────\n");
+        for bin in &self.curve.bins {
+            let lower = (bin.lower * 100.0).round() as i32;
+            let upper = (bin.upper * 100.0).round() as i32;
+            if bin.count == 0 {
+                output.push_str(&format!("  {:>3}-{:>3}: no data\n", lower, upper));
+            } else {
+                output.push_str(&format!(
+                    "  {:>3}-{:>3}: Predicted {:>5.1}%, Actual {:>5.1}% (n={})\n",
+                    lower,
+                    upper,
+                    bin.mean_predicted * 100.0,
+                    bin.actual_rate * 100.0,
+                    bin.count
+                ));
+            }
+        }
+        output.push('\n');
+
         // Credible bounds (false-kill rate)
         output.push_str("─── False-Kill Credible Bounds ───────────────────────────\n");
         if let Some(bounds) = &self.credible_bounds {
@@ -211,6 +231,31 @@ impl CalibrationReport {
             }
             output.push('\n');
         }
+
+        output.push_str("─── Systematic Biases Detected ───────────────────────────\n");
+        let mut has_bias = false;
+        for result in &self.bias.by_proc_type {
+            if !result.significant {
+                continue;
+            }
+            has_bias = true;
+            let direction = if result.bias >= 0.0 {
+                "over-predicted"
+            } else {
+                "under-predicted"
+            };
+            output.push_str(&format!(
+                "  {:<20} {} by {:.1}% (n={})\n",
+                result.stratum,
+                direction,
+                result.bias.abs() * 100.0,
+                result.sample_count
+            ));
+        }
+        if !has_bias {
+            output.push_str("  No significant biases detected.\n");
+        }
+        output.push('\n');
 
         // Recommendations
         output.push_str("─── Recommendations ───────────────────────────────────────\n");
