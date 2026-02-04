@@ -75,7 +75,6 @@ use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fs;
-#[cfg(feature = "daemon")]
 use std::io::Write;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "ui")]
@@ -1659,6 +1658,10 @@ fn parse_output_format(value: &str) -> Option<OutputFormat> {
 // ============================================================================
 
 fn run_interactive(global: &GlobalOpts, args: &RunArgs) -> ExitCode {
+    let _lock = match acquire_global_lock(global, "run") {
+        Ok(lock) => lock,
+        Err(code) => return code,
+    };
     #[cfg(feature = "ui")]
     {
         match run_interactive_tui(global, args) {
@@ -4303,7 +4306,8 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
                 trigger_state,
                 &metrics,
                 &mut |esc_config, fired| {
-                    let lock = match DaemonLock::try_acquire(&daemon_lock_path()) {
+                    let lock_path = global_lock_path().unwrap_or_else(daemon_lock_path);
+                    let lock = match GlobalLock::try_acquire(&lock_path) {
                         Ok(lock) => lock,
                         Err(err) => {
                             return pt_core::daemon::escalation::EscalationOutcome {
@@ -4343,14 +4347,16 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
                         match run_daemon_escalation(global, fired, esc_config) {
                             Ok(result) => {
                                 outcome.session_id = Some(result.session_id.clone());
-                                if let Some(store) = escalation_inbox.as_mut() {
-                                    let item = InboxItem::dormant_escalation(
-                                        result.session_id,
-                                        summary.clone(),
-                                        summary,
-                                        result.candidates_found,
-                                    );
-                                    let _ = store.add(&item);
+                                if result.candidates_found > 0 {
+                                    if let Some(store) = escalation_inbox.as_mut() {
+                                        let item = InboxItem::dormant_escalation(
+                                            result.session_id,
+                                            summary.clone(),
+                                            summary,
+                                            result.candidates_found,
+                                        );
+                                        let _ = store.add(&item);
+                                    }
                                 }
                             }
                             Err(err) => {
@@ -5427,6 +5433,123 @@ fn remove_shadow_pid() -> std::io::Result<()> {
 }
 
 // ============================================================================
+// Global run lock (daemon vs manual/agent coordination)
+// ============================================================================
+
+/// Resolve the data directory for global lock placement.
+fn resolve_data_dir_for_lock() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("PROCESS_TRIAGE_DATA") {
+        return Some(PathBuf::from(dir));
+    }
+    if let Ok(dir) = std::env::var("XDG_DATA_HOME") {
+        return Some(PathBuf::from(dir).join("process_triage"));
+    }
+    dirs::data_dir().map(|dir| dir.join("process_triage"))
+}
+
+/// Global lock path shared by daemon + manual/agent runs.
+fn global_lock_path() -> Option<PathBuf> {
+    resolve_data_dir_for_lock().map(|dir| dir.join(".pt-lock"))
+}
+
+struct GlobalLock {
+    file: std::fs::File,
+}
+
+impl GlobalLock {
+    fn try_acquire(path: &Path) -> Result<Option<Self>, std::io::Error> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            let fd = file.as_raw_fd();
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+            if result != 0 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::WouldBlock {
+                    return Ok(None);
+                }
+                return Err(err);
+            }
+        }
+
+        file.set_len(0)?;
+        let mut writer = &file;
+        let _ = writer.write_all(format!("{}", std::process::id()).as_bytes());
+        let _ = writer.flush();
+
+        Ok(Some(Self { file }))
+    }
+}
+
+impl Drop for GlobalLock {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+            unsafe {
+                libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+            }
+        }
+    }
+}
+
+fn acquire_global_lock(global: &GlobalOpts, command: &str) -> Result<Option<GlobalLock>, ExitCode> {
+    if std::env::var("PT_SKIP_GLOBAL_LOCK").is_ok() {
+        return Ok(None);
+    }
+    let path = match global_lock_path() {
+        Some(path) => path,
+        None => return Ok(None),
+    };
+
+    match GlobalLock::try_acquire(&path) {
+        Ok(Some(lock)) => Ok(Some(lock)),
+        Ok(None) => {
+            let response = serde_json::json!({
+                "command": command,
+                "error": "lock contention",
+                "lock_path": path.display().to_string(),
+            });
+            match global.format {
+                OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+                    println!("{}", format_structured_output(global, response));
+                }
+                _ => {
+                    eprintln!("{}: lock held at {}", command, path.display());
+                }
+            }
+            Err(ExitCode::LockError)
+        }
+        Err(err) => {
+            let response = serde_json::json!({
+                "command": command,
+                "error": format!("lock error: {}", err),
+                "lock_path": path.display().to_string(),
+            });
+            match global.format {
+                OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+                    eprintln!("{}", format_structured_output(global, response));
+                }
+                _ => {
+                    eprintln!("{}: lock error at {}: {}", command, path.display(), err);
+                }
+            }
+            Err(ExitCode::IoError)
+        }
+    }
+}
+
+// ============================================================================
 // Daemon helpers
 // ============================================================================
 
@@ -5641,19 +5764,46 @@ fn run_daemon_escalation(
     _triggers: &[pt_core::daemon::triggers::FiredTrigger],
     esc_config: &pt_core::daemon::escalation::EscalationConfig,
 ) -> Result<DaemonEscalationResult, String> {
+    let quick = run_daemon_plan(global, None, false, esc_config.max_deep_scan_targets)?;
+    if quick.candidates_found == 0 {
+        return Ok(quick);
+    }
+
+    match run_daemon_plan(
+        global,
+        Some(&quick.session_id),
+        true,
+        esc_config.max_deep_scan_targets,
+    ) {
+        Ok(deep) => Ok(deep),
+        Err(err) => {
+            eprintln!("daemon escalation: deep plan failed, using quick plan: {}", err);
+            Ok(quick)
+        }
+    }
+}
+
+#[cfg(feature = "daemon")]
+fn run_daemon_plan(
+    global: &GlobalOpts,
+    session_id: Option<&str>,
+    deep: bool,
+    max_candidates: u32,
+) -> Result<DaemonEscalationResult, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut cmd = std::process::Command::new(exe);
-    cmd.args([
-        "--format",
-        "json",
-        "agent",
-        "plan",
-        "--max-candidates",
-    ])
-    .arg(esc_config.max_deep_scan_targets.to_string())
-    .stdin(std::process::Stdio::null())
-    .stderr(std::process::Stdio::piped())
-    .stdout(std::process::Stdio::piped());
+    cmd.args(["--format", "json", "agent", "plan", "--max-candidates"])
+        .arg(max_candidates.to_string());
+    if deep {
+        cmd.arg("--deep");
+    }
+    if let Some(session) = session_id {
+        cmd.arg("--session").arg(session);
+    }
+    cmd.stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .env("PT_SKIP_GLOBAL_LOCK", "1");
 
     apply_daemon_global_args(&mut cmd, global);
 
@@ -5975,60 +6125,6 @@ fn load_daemon_config(global: &GlobalOpts) -> (pt_core::daemon::DaemonConfig, bo
     }
 
     (config, enabled)
-}
-
-#[cfg(feature = "daemon")]
-struct DaemonLock {
-    file: std::fs::File,
-}
-
-#[cfg(feature = "daemon")]
-impl DaemonLock {
-    fn try_acquire(path: &Path) -> Result<Option<Self>, std::io::Error> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(path)?;
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::io::AsRawFd;
-            let fd = file.as_raw_fd();
-            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
-            if result != 0 {
-                let err = std::io::Error::last_os_error();
-                if err.kind() == std::io::ErrorKind::WouldBlock {
-                    return Ok(None);
-                }
-                return Err(err);
-            }
-        }
-
-        file.set_len(0)?;
-        let mut writer = &file;
-        let _ = writer.write_all(format!("{}", std::process::id()).as_bytes());
-        let _ = writer.flush();
-
-        Ok(Some(Self { file }))
-    }
-}
-
-#[cfg(feature = "daemon")]
-impl Drop for DaemonLock {
-    fn drop(&mut self) {
-        #[cfg(unix)]
-        {
-            use std::os::unix::io::AsRawFd;
-            unsafe {
-                libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
-            }
-        }
-    }
 }
 
 #[cfg(unix)]
@@ -7342,6 +7438,10 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
 }
 
 fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
+    let _lock = match acquire_global_lock(global, "agent plan") {
+        Ok(lock) => lock,
+        Err(code) => return code,
+    };
     let store = match SessionStore::from_env() {
         Ok(store) => store,
         Err(e) => {
@@ -8615,6 +8715,10 @@ fn is_supervised_for_robot(_pid: u32) -> bool {
 }
 
 fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
+    let _lock = match acquire_global_lock(global, "agent apply") {
+        Ok(lock) => lock,
+        Err(code) => return code,
+    };
     // Load configuration
     let config = match load_config(&config_options(global)) {
         Ok(cfg) => cfg,

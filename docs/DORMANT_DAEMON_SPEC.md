@@ -182,7 +182,7 @@ This allows triggers to fire with controllable false-positive rates even under c
 
 When a trigger fires:
 
-1. Acquire `pt.lock` (non-blocking, skip if held)
+1. Acquire global lock `.pt-lock` (non-blocking, skip if held)
 2. Run quick 3-sample scan (same as `pt scan`)
 3. Compute basic scores without full inference
 4. If candidates found:
@@ -430,7 +430,7 @@ enum LockState {
 
 ### Lock File Format
 
-`~/.local/share/process_triage/pt.lock`:
+`~/.local/share/process_triage/.pt-lock`:
 
 ```json
 {
@@ -571,22 +571,29 @@ impl Daemon {
 
 ```bash
 # Start daemon (usually via systemd/launchd)
+# Default behavior is foreground when no subcommand is provided.
 pt-core daemon
+
+# Background start (default for explicit start)
+pt-core daemon start
+
+# Foreground start (explicit)
+pt-core daemon start --foreground
 
 # Check daemon status
 pt-core daemon status
 
-# View daemon logs
-pt-core daemon logs --tail 100
+# View daemon logs (planned)
+# pt-core daemon logs --tail 100
 
 # Stop daemon gracefully
 pt-core daemon stop
 
-# Force immediate scan (for testing)
-pt-core daemon trigger --type manual
+# Force immediate scan (planned, for testing)
+# pt-core daemon trigger --type manual
 
-# Configure daemon
-pt-core daemon config --set collection_interval_seconds=60
+# Configure daemon (planned)
+# pt-core daemon config --set collection_interval_seconds=60
 ```
 
 ### Inbox Commands

@@ -699,14 +699,19 @@ pt-core report --session <id> --out <path> [OPTIONS]
 Run in dormant/background mode.
 
 ```
-pt-core daemon [OPTIONS]
+pt-core daemon [start|stop|status] [OPTIONS]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--interval <seconds>` | Check interval |
-| `--threshold <level>` | Escalation threshold |
-| `--notify <method>` | Notification method |
+| `start` | Start daemon (default behavior if no subcommand) |
+| `stop` | Stop daemon |
+| `status` | Check daemon status |
+| `--foreground` | Run in foreground (default when no subcommand) |
+
+Notes:
+- `pt-core daemon` (no subcommand) runs in the foreground.
+- `pt-core daemon start` backgrounds by default; use `--foreground` to keep it attached.
 
 ---
 
