@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_id": "config-20260204",
+  "domain": "config",
+  "capture_time": "2026-02-04T21:15:51.936379Z",
+  "source": {
+    "origin": "manual-copy",
+    "command": [
+      "cp crates/pt-config/tests/fixtures/*.json test/fixtures/config/"
+    ],
+    "paths": [
+      "crates/pt-config/tests/fixtures"
+    ]
+  },
+  "tool_versions": {
+    "fixture_capture": "1.0.0",
+    "pt": "2.0.0",
+    "schema": "fixture-manifest@1"
+  },
+  "redaction_profile": "safe",
+  "artifacts": [
+    {
+      "path": "invalid_policy_bad_alpha.json",
+      "kind": "policy",
+      "sha256": "1eb33d2fe9a503942272291d486703f86f17bddd3f9cbd18a3143ab6190445b0",
+      "bytes": 793,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "invalid_policy_missing_pid1.json",
+      "kind": "policy",
+      "sha256": "84ff1757a85b9c6a4a5352622e3c6a29cb779e74f3ccf43309bf5684bf8029ba",
+      "bytes": 797,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "invalid_priors_bad_beta.json",
+      "kind": "priors",
+      "sha256": "c4bc73935f59e657a86cbdb05413a4039bfa6dcabf215c0a7ac1327d186d455f",
+      "bytes": 1118,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "invalid_priors_bad_sum.json",
+      "kind": "priors",
+      "sha256": "351950dd2e72ce97e4e1967832ed5cbcba0fd010233672e2837f0349204e1b4a",
+      "bytes": 1118,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "valid_policy.json",
+      "kind": "policy",
+      "sha256": "8ea95bc0dddb790ea6877238f3a92421ddb979b6250a1dbccd34e1dd422bc565",
+      "bytes": 851,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "valid_priors.json",
+      "kind": "priors",
+      "sha256": "12957396cad46fc0268cc9a3e06fef0ae72738fb23637da444172688a8e3471d",
+      "bytes": 1121,
+      "redaction_profile": "safe"
+    }
+  ],
+  "description": "Config priors/policy fixtures for no-mock tests",
+  "manifest_sha256": "2f404e1afdb4df2a4df9f2f9abfaa077809cb1708b6c2c3b8cb43e27e7c0425b"
+}

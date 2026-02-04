@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_id": "pt-core-20260204",
+  "domain": "pt-core",
+  "capture_time": "2026-02-04T21:15:51.996879Z",
+  "source": {
+    "origin": "manual-copy",
+    "command": [
+      "cp crates/pt-core/tests/fixtures/*.json test/fixtures/pt-core/"
+    ],
+    "paths": [
+      "crates/pt-core/tests/fixtures"
+    ]
+  },
+  "tool_versions": {
+    "fixture_capture": "1.0.0",
+    "pt": "2.0.0",
+    "schema": "fixture-manifest@1"
+  },
+  "redaction_profile": "safe",
+  "artifacts": [
+    {
+      "path": "invalid_priors.json",
+      "kind": "priors",
+      "sha256": "d0fc4561cd303b37081f5beaf71f01f365ada05ec1f276a0111559fd4401dbd8",
+      "bytes": 526,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "malformed.json",
+      "kind": "config",
+      "sha256": "9519f39e393c5a95b0c103706ccae1f902a7c7efc88509828a60008fed4d6115",
+      "bytes": 98,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "policy.json",
+      "kind": "policy",
+      "sha256": "b193cd6e7ae269b4ce2464fdc8aed0985e9da76eab600561315bafde0732e321",
+      "bytes": 1208,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "priors.json",
+      "kind": "priors",
+      "sha256": "2e255cef355e078f14f40835eed862c5ee59b1c6a774852b1a2d9f649f8020f1",
+      "bytes": 1647,
+      "redaction_profile": "safe"
+    }
+  ],
+  "description": "pt-core policy/priors fixtures for no-mock tests",
+  "manifest_sha256": "b26eb549828a93842e9cde0965051ccbf8041c00e8d47101eea181c2b5155a35"
+}

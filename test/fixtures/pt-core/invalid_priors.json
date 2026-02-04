@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Invalid priors for error testing - priors don't sum to 1",
+  "classes": {
+    "useful": {
+      "prior_prob": 0.90,
+      "cpu_beta": { "alpha": 5.0, "beta": 3.0 }
+    },
+    "useful_bad": {
+      "prior_prob": 0.50,
+      "cpu_beta": { "alpha": 9.0, "beta": 1.0 }
+    },
+    "abandoned": {
+      "prior_prob": 0.30,
+      "cpu_beta": { "alpha": -1.0, "beta": 8.0 }
+    },
+    "zombie": {
+      "prior_prob": 0.10,
+      "cpu_beta": { "alpha": 1.0, "beta": 100.0 }
+    }
+  }
+}

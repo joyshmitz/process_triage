@@ -1,0 +1,137 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_id": "manifest-examples-20260204",
+  "domain": "manifest_examples",
+  "capture_time": "2026-02-04T21:15:52.057142Z",
+  "source": {
+    "origin": "manual-curated",
+    "command": [
+      "fixtures manifest examples"
+    ],
+    "paths": [
+      "test/fixtures/manifest_examples"
+    ]
+  },
+  "tool_versions": {
+    "fixture_capture": "1.0.0",
+    "pt": "2.0.0",
+    "schema": "fixture-manifest@1"
+  },
+  "redaction_profile": "safe",
+  "artifacts": [
+    {
+      "path": "bundle_report/artifacts/session.ptb",
+      "kind": "other",
+      "sha256": "c32eab63c396742a879672381355e7c10375fa2ffa38b11e19f63e3b9755c6e8",
+      "bytes": 19,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "bundle_report/logs/bundle_report.jsonl",
+      "kind": "log",
+      "sha256": "eb292abfb81b0c583befdcf2ccc0811f3da33bcff518717af820b3bbd5705f0f",
+      "bytes": 258,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "bundle_report/manifest.json",
+      "kind": "manifest",
+      "sha256": "47265e053837dfd4ceef27d6d791ac23ffeba77c0e6670fc2e6bb95c1ea38bc7",
+      "bytes": 1610,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "bundle_report/reports/report.html",
+      "kind": "other",
+      "sha256": "117ae89d715cfb96928d34f824fad22c9807c6d9d7d11284c27c1f29fb00f845",
+      "bytes": 32,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "daemon/logs/daemon.jsonl",
+      "kind": "log",
+      "sha256": "83a527cc721a0aae2de4a3a1e88e94c7ae7904ac4aceffab0b8e467c5e62304d",
+      "bytes": 242,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "daemon/manifest.json",
+      "kind": "manifest",
+      "sha256": "da1ef43ac37bbd3d3cdeaca22fc76fa58345dc4377eeab37eea340a2c31f0fa5",
+      "bytes": 1200,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "daemon/telemetry/daemon_telemetry.jsonl",
+      "kind": "log",
+      "sha256": "7d8e4f604ba40c7e808d7efdabcbdcbcd58cc4227674a30db50681a09c949c12",
+      "bytes": 73,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "install/artifacts/install_stderr.txt",
+      "kind": "other",
+      "sha256": "8a69d5277da19b77809a62dedd8500d2a4c5c2e62fac66f2c9a311cfb05faa27",
+      "bytes": 20,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "install/artifacts/install_stdout.txt",
+      "kind": "other",
+      "sha256": "8a69d5277da19b77809a62dedd8500d2a4c5c2e62fac66f2c9a311cfb05faa27",
+      "bytes": 20,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "install/logs/install.jsonl",
+      "kind": "log",
+      "sha256": "1e23bb4170a197c305ec20f874c6b853a7de8b6b24320e462cddcdc34d002e09",
+      "bytes": 242,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "install/manifest.json",
+      "kind": "manifest",
+      "sha256": "50ef0a6480b2867dcc2a2dc9f998fed0e9d1068ec91efb1f1c2d0d7b7ceea72a",
+      "bytes": 1412,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "tui/logs/e2e_tests.jsonl",
+      "kind": "log",
+      "sha256": "00ebc0216d991768a1bd280e54a02a21945e59122e7bedad011ae62298cee7a3",
+      "bytes": 226,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "tui/manifest.json",
+      "kind": "manifest",
+      "sha256": "1e4c86c50a79eb34e53cd6964f668e83aca7699f7f3edde40d5aafca4a946552",
+      "bytes": 1617,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "tui/plans/tui_plan.json",
+      "kind": "config",
+      "sha256": "0e6302cd4d857b323b4cc5d48da42a6f4bb0384739db7fafac833c56766b197f",
+      "bytes": 75,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "tui/snapshots/tui_snapshot.json",
+      "kind": "config",
+      "sha256": "5dba3c9e687ab39d6e814675de25047df7eee21cf4df1a9f026ab0d8a1f5fadc",
+      "bytes": 79,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "tui/telemetry/tui_telemetry.jsonl",
+      "kind": "log",
+      "sha256": "b7632e05809d7dc0427ba04be2e8b77ee6a034f9c74e74e5e57b447cc4bc993f",
+      "bytes": 70,
+      "redaction_profile": "safe"
+    }
+  ],
+  "description": "E2E artifact manifest example fixtures",
+  "manifest_sha256": "aeb836bedc6c573b50ababd8c69dd3422dfbb9b8ae893f0c1732dea7fa029db7"
+}
