@@ -13,7 +13,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand};
 #[cfg(feature = "ui")]
 use pt_common::{IdentityQuality, ProcessIdentity};
 use pt_common::{OutputFormat, SessionId, SCHEMA_VERSION};
-use pt_core::calibrate::validation::ValidationEngine;
+use pt_core::calibrate::{validation::ValidationEngine, CalibrationError};
 use pt_core::capabilities::{get_capabilities, ToolCapability};
 use pt_core::collect::protected::ProtectedFilter;
 #[cfg(target_os = "linux")]
@@ -1026,6 +1026,41 @@ struct AgentVerifyArgs {
     check_respawn: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FocusMode {
+    All,
+    New,
+    Removed,
+    Changed,
+    Resources,
+}
+
+impl FocusMode {
+    fn as_str(&self) -> &'static str {
+        match self {
+            FocusMode::All => "all",
+            FocusMode::New => "new",
+            FocusMode::Removed => "removed",
+            FocusMode::Changed => "changed",
+            FocusMode::Resources => "resources",
+        }
+    }
+}
+
+fn parse_focus_mode(value: &str) -> Result<FocusMode, String> {
+    match value.to_lowercase().as_str() {
+        "all" => Ok(FocusMode::All),
+        "new" => Ok(FocusMode::New),
+        "removed" => Ok(FocusMode::Removed),
+        "changed" => Ok(FocusMode::Changed),
+        "resources" => Ok(FocusMode::Resources),
+        other => Err(format!(
+            "Invalid focus mode: \"{}\". Valid values: all, new, removed, changed, resources",
+            other
+        )),
+    }
+}
+
 #[derive(Args, Debug)]
 struct AgentDiffArgs {
     /// Base session ID (the "before" snapshot)
@@ -1036,9 +1071,9 @@ struct AgentDiffArgs {
     #[arg(long, alias = "vs", alias = "after")]
     compare: Option<String>,
 
-    /// Focus diff output on specific changes: new, removed, changed, resources, all (default: all)
-    #[arg(long, default_value = "all")]
-    focus: String,
+    /// Focus diff output on specific changes: all, new, removed, changed, resources
+    #[arg(long, default_value = "all", value_parser = parse_focus_mode)]
+    focus: FocusMode,
 }
 
 #[derive(Args, Debug)]
@@ -4466,43 +4501,92 @@ fn run_shadow_report(global: &GlobalOpts, args: &ShadowReportArgs) -> ExitCode {
     }
 
     let engine = ValidationEngine::from_shadow_observations(&observations, args.threshold);
-    let report = match engine.compute_report() {
+
+    let is_structured = matches!(
+        global.format,
+        OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl
+    );
+
+    if is_structured {
+        let report = match engine.compute_report() {
+            Ok(report) => report,
+            Err(err) => {
+                eprintln!("shadow report: {}", err);
+                return ExitCode::InternalError;
+            }
+        };
+        let report_value = serde_json::to_value(&report).unwrap_or_default();
+        let report_output = match global.format {
+            OutputFormat::Jsonl => serde_json::to_string(&report_value).unwrap_or_default(),
+            _ => format_structured_output(global, report_value),
+        };
+
+        let wrote_file = if let Some(ref path) = args.output {
+            if let Err(err) = std::fs::write(path, &report_output) {
+                eprintln!("shadow report: failed to write {}: {}", path, err);
+                return ExitCode::IoError;
+            }
+            true
+        } else {
+            println!("{}", report_output);
+            false
+        };
+
+        if wrote_file {
+            let response = serde_json::json!({
+                "command": "shadow report",
+                "count": observations.len(),
+                "threshold": args.threshold,
+                "base_dir": base_dir.display().to_string(),
+                "output": args.output,
+            });
+            match global.format {
+                OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
+                    println!("{}", format_structured_output(global, response));
+                }
+                _ => {
+                    println!("Report generated for {} observations.", observations.len());
+                }
+            }
+        }
+
+        return ExitCode::Clean;
+    }
+
+    let report = match engine.calibration_report() {
         Ok(report) => report,
+        Err(CalibrationError::InsufficientData { count, min_required }) => {
+            println!(
+                "Calibration report requires at least {} resolved observations (found {}).",
+                min_required, count
+            );
+            return ExitCode::Clean;
+        }
+        Err(CalibrationError::NoData) => {
+            println!("Calibration report requires resolved observations.");
+            return ExitCode::Clean;
+        }
         Err(err) => {
             eprintln!("shadow report: {}", err);
             return ExitCode::InternalError;
         }
     };
 
-    let report_json = serde_json::to_string_pretty(&report).unwrap_or_default();
+    let ascii_report = report.ascii_report(60, 14);
 
     let wrote_file = if let Some(ref path) = args.output {
-        if let Err(err) = std::fs::write(path, &report_json) {
+        if let Err(err) = std::fs::write(path, &ascii_report) {
             eprintln!("shadow report: failed to write {}: {}", path, err);
             return ExitCode::IoError;
         }
         true
     } else {
-        println!("{}", report_json);
+        println!("{}", ascii_report);
         false
     };
 
     if wrote_file {
-        let response = serde_json::json!({
-            "command": "shadow report",
-            "count": observations.len(),
-            "threshold": args.threshold,
-            "base_dir": base_dir.display().to_string(),
-            "output": args.output,
-        });
-        match global.format {
-            OutputFormat::Json | OutputFormat::Toon | OutputFormat::Jsonl => {
-                println!("{}", format_structured_output(global, response));
-            }
-            _ => {
-                println!("Report generated for {} observations.", observations.len());
-            }
-        }
+        println!("Report generated for {} observations.", observations.len());
     }
 
     ExitCode::Clean
@@ -8655,16 +8739,13 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
         .unwrap_or("");
 
     // Apply focus filter
-    let focus = args.focus.to_lowercase();
-    let (show_new, show_worsened, show_improved, show_resolved, show_persistent) =
-        match focus.as_str() {
-            "new" => (true, false, false, false, false),
-            "removed" | "resolved" => (false, false, false, true, false),
-            "changed" | "worsened" => (false, true, true, false, false),
-            "improved" => (false, false, true, false, false),
-            "persistent" => (false, false, false, false, true),
-            "resources" | "all" | _ => (true, true, true, true, true),
-        };
+    let focus = args.focus;
+    let (show_new, show_worsened, show_improved, show_resolved, show_persistent) = match focus {
+        FocusMode::New => (true, false, false, false, false),
+        FocusMode::Removed => (false, false, false, true, false),
+        FocusMode::Changed => (false, true, true, false, false),
+        FocusMode::Resources | FocusMode::All => (true, true, true, true, true),
+    };
 
     let filtered_new = if show_new { new_list.clone() } else { vec![] };
     let filtered_worsened = if show_worsened {
@@ -8695,7 +8776,7 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             "prior_timestamp": base_ts,
             "current_timestamp": compare_ts,
         },
-        "focus": args.focus,
+        "focus": focus.as_str(),
         "delta": {
             "new": filtered_new,
             "worsened": filtered_worsened,
@@ -8711,7 +8792,7 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             "improved_count": improved.len(),
             "resolved_count": resolved.len(),
             "persistent_count": persistent.len(),
-            "filtered": focus != "all",
+            "filtered": focus != FocusMode::All,
         },
     });
 
@@ -8720,8 +8801,8 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             println!("{}", format_structured_output(global, output.clone()));
         }
         OutputFormat::Summary => {
-            let focus_note = if focus != "all" {
-                format!(" (focus: {})", focus)
+            let focus_note = if focus != FocusMode::All {
+                format!(" (focus: {})", focus.as_str())
             } else {
                 String::new()
             };
@@ -8742,8 +8823,8 @@ fn run_agent_diff(global: &GlobalOpts, args: &AgentDiffArgs) -> ExitCode {
             println!("# pt-core agent diff\n");
             println!("Base: {}", base.0);
             println!("Compare: {}\n", compare_id.0);
-            if focus != "all" {
-                println!("Focus: {}\n", focus);
+            if focus != FocusMode::All {
+                println!("Focus: {}\n", focus.as_str());
             }
             println!("## Summary\n");
             println!(

@@ -142,6 +142,15 @@ mod agent_errors {
             .failure()
             .stderr(predicate::str::contains("--base"));
     }
+
+    #[test]
+    fn agent_diff_rejects_invalid_focus() {
+        pt_core()
+            .args(["agent", "diff", "--base", "invalid", "--focus", "not-a-mode"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Invalid focus mode"));
+    }
 }
 
 // ============================================================================
