@@ -541,6 +541,32 @@ mod tests {
     }
 
     #[test]
+    fn test_credible_bounds_present_when_trials_exist() {
+        let data = make_data(&[
+            (0.9, true),
+            (0.9, false), // false positive at threshold 0.5
+            (0.4, false),
+            (0.4, false),
+            (0.4, false),
+            (0.4, false),
+            (0.4, false),
+            (0.4, false),
+            (0.4, false),
+            (0.4, false),
+        ]);
+
+        let report = CalibrationReport::from_data(&data, 10, 0.5).unwrap();
+        let bounds = report.credible_bounds.expect("credible bounds missing");
+
+        assert_eq!(bounds.trials, 2);
+        assert_eq!(bounds.errors, 1);
+        assert!((bounds.observed_rate - 0.5).abs() < 1e-6);
+        assert!(bounds
+            .trial_definition
+            .contains("predictions >= 0.50"));
+    }
+
+    #[test]
     fn test_confusion_matrix() {
         let mut cm = ConfusionMatrix {
             true_positives: 80,
