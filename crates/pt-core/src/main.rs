@@ -60,7 +60,9 @@ use pt_core::tui::widgets::ProcessRow;
 #[cfg(feature = "ui")]
 use pt_core::tui::{run_tui_with_handlers, App};
 use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
+use pt_telemetry::retention::{RetentionConfig, RetentionEnforcer, RetentionError};
 use pt_telemetry::shadow::{Observation, ShadowStorage, ShadowStorageConfig};
+use pt_telemetry::writer::default_telemetry_dir;
 #[cfg(feature = "ui")]
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -1322,6 +1324,14 @@ enum DaemonCommands {
 
 #[derive(Args, Debug)]
 struct TelemetryArgs {
+    /// Telemetry root directory (defaults to XDG data dir)
+    #[arg(long, global = true)]
+    telemetry_dir: Option<String>,
+
+    /// Retention config JSON path (defaults to config dir telemetry_retention.json if present)
+    #[arg(long, global = true)]
+    retention_config: Option<String>,
+
     #[command(subcommand)]
     command: TelemetryCommands,
 }
@@ -1345,6 +1355,14 @@ enum TelemetryCommands {
         /// Keep data newer than (e.g., "30d", "90d")
         #[arg(long, default_value = "30d")]
         keep: String,
+
+        /// Preview retention actions without deleting files
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Keep everything (disable pruning)
+        #[arg(long)]
+        keep_everything: bool,
     },
     /// Redact sensitive data
     Redact {
@@ -4083,11 +4101,309 @@ fn run_daemon(global: &GlobalOpts, _args: &DaemonArgs) -> ExitCode {
 }
 
 fn run_telemetry(global: &GlobalOpts, _args: &TelemetryArgs) -> ExitCode {
-    output_stub(
-        global,
-        "telemetry",
-        "Telemetry management not yet implemented",
-    );
+    match &_args.command {
+        TelemetryCommands::Status => run_telemetry_status(global, _args),
+        TelemetryCommands::Prune {
+            keep,
+            dry_run,
+            keep_everything,
+        } => run_telemetry_prune(global, _args, keep, *dry_run, *keep_everything),
+        TelemetryCommands::Export { .. } => {
+            output_stub(global, "telemetry export", "Export not yet implemented");
+            ExitCode::Clean
+        }
+        TelemetryCommands::Redact { .. } => {
+            output_stub(global, "telemetry redact", "Redaction not yet implemented");
+            ExitCode::Clean
+        }
+    }
+}
+
+fn resolve_telemetry_dir(args: &TelemetryArgs) -> PathBuf {
+    args.telemetry_dir
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(default_telemetry_dir)
+}
+
+fn resolve_config_dir(global: &GlobalOpts) -> PathBuf {
+    if let Some(dir) = &global.config {
+        return PathBuf::from(dir);
+    }
+
+    if let Ok(dir) = std::env::var("PROCESS_TRIAGE_CONFIG") {
+        return PathBuf::from(dir);
+    }
+
+    let xdg_config = std::env::var("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".config")
+        });
+
+    xdg_config.join("process_triage")
+}
+
+fn load_retention_config(
+    global: &GlobalOpts,
+    args: &TelemetryArgs,
+    telemetry_dir: &Path,
+) -> Result<RetentionConfig, RetentionError> {
+    let config_path = if let Some(path) = &args.retention_config {
+        Some(PathBuf::from(path))
+    } else {
+        let config_dir = resolve_config_dir(global);
+        let candidate = config_dir.join("telemetry_retention.json");
+        if candidate.exists() {
+            Some(candidate)
+        } else {
+            None
+        }
+    };
+
+    let mut config = if let Some(path) = &config_path {
+        let raw = std::fs::read_to_string(path)?;
+        let value: serde_json::Value = serde_json::from_str(&raw)?;
+        parse_retention_config_value(value)?
+    } else {
+        RetentionConfig::default()
+    };
+
+    config.validate()?;
+
+    if config.event_log_dir.is_none() {
+        config.event_log_dir = Some(telemetry_dir.join("retention_logs"));
+    }
+
+    Ok(config)
+}
+
+fn parse_retention_config_value(
+    value: serde_json::Value,
+) -> Result<RetentionConfig, RetentionError> {
+    if let Some(obj) = value.get("telemetry_retention") {
+        let Some(map) = obj.as_object() else {
+            return Err(RetentionError::InvalidConfig(
+                "telemetry_retention must be an object".to_string(),
+            ));
+        };
+
+        let mut config = RetentionConfig::default();
+
+        let mut set_days = |key: &str, table: &str| {
+            if let Some(days) = map.get(key).and_then(|v| v.as_u64()) {
+                config.ttl_days.insert(table.to_string(), days as u32);
+            }
+        };
+
+        set_days("runs_days", "runs");
+        set_days("proc_samples_days", "proc_samples");
+        set_days("proc_features_days", "proc_features");
+        set_days("proc_inference_days", "proc_inference");
+        set_days("outcomes_days", "outcomes");
+        set_days("audit_days", "audit");
+        set_days("signature_matches_days", "signature_matches");
+
+        if let Some(max_disk_gb) = map.get("max_disk_gb").and_then(|v| v.as_f64()) {
+            if max_disk_gb >= 0.0 {
+                config.disk_budget_bytes =
+                    (max_disk_gb * 1024.0 * 1024.0 * 1024.0).round() as u64;
+            }
+        }
+
+        if let Some(keep) = map.get("keep_everything").and_then(|v| v.as_bool()) {
+            config.keep_everything = keep;
+        }
+
+        return Ok(config);
+    }
+
+    serde_json::from_value(value).map_err(RetentionError::Json)
+}
+
+fn apply_global_ttl_override(config: &mut RetentionConfig, ttl_days: u32) {
+    let tables = [
+        "runs",
+        "proc_samples",
+        "proc_features",
+        "proc_inference",
+        "outcomes",
+        "audit",
+        "signature_matches",
+    ];
+    for table in tables {
+        config.ttl_days.insert(table.to_string(), ttl_days);
+    }
+}
+
+fn run_telemetry_status(global: &GlobalOpts, args: &TelemetryArgs) -> ExitCode {
+    let telemetry_dir = resolve_telemetry_dir(args);
+    let config = match load_retention_config(global, args, &telemetry_dir) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("telemetry status: {}", err);
+            return ExitCode::IoError;
+        }
+    };
+
+    let enforcer = RetentionEnforcer::new(telemetry_dir.clone(), config);
+    let status = match enforcer.status() {
+        Ok(status) => status,
+        Err(err) => {
+            eprintln!("telemetry status: {}", err);
+            return ExitCode::IoError;
+        }
+    };
+
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "command": "telemetry status",
+                "status": status,
+            });
+            println!("{}", format_structured_output(global, output));
+        }
+        OutputFormat::Jsonl => {
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "command": "telemetry status",
+                "status": status,
+            });
+            println!("{}", serde_json::to_string(&output).unwrap_or_default());
+        }
+        _ => {
+            println!("Telemetry directory: {}", status.root_dir);
+            println!(
+                "Total usage: {} in {} files",
+                format_bytes(status.total_bytes),
+                status.total_files
+            );
+            if status.disk_budget_bytes > 0 {
+                println!(
+                    "Disk budget: {} ({:.1}% used)",
+                    format_bytes(status.disk_budget_bytes),
+                    status.budget_used_pct
+                );
+            }
+            println!(
+                "TTL-eligible: {} files ({} bytes)",
+                status.ttl_eligible_files,
+                format_bytes(status.ttl_eligible_bytes)
+            );
+            println!();
+            println!("Per-table:");
+            for (table, table_status) in status.by_table.iter() {
+                println!(
+                    "  {:<16} files={:<4} size={:<8} ttl={}d over_ttl={}",
+                    table,
+                    table_status.file_count,
+                    format_bytes(table_status.total_bytes),
+                    table_status.ttl_days,
+                    table_status.over_ttl_count
+                );
+            }
+        }
+    }
+
+    ExitCode::Clean
+}
+
+fn run_telemetry_prune(
+    global: &GlobalOpts,
+    args: &TelemetryArgs,
+    keep: &str,
+    dry_run: bool,
+    keep_everything: bool,
+) -> ExitCode {
+    let telemetry_dir = resolve_telemetry_dir(args);
+    let mut config = match load_retention_config(global, args, &telemetry_dir) {
+        Ok(config) => config,
+        Err(err) => {
+            eprintln!("telemetry prune: {}", err);
+            return ExitCode::IoError;
+        }
+    };
+
+    if keep_everything {
+        config.keep_everything = true;
+    } else if let Some(duration) = parse_duration(keep) {
+        let days = duration.num_days();
+        if days <= 0 {
+            eprintln!("telemetry prune: keep must be at least 1 day");
+            return ExitCode::ArgsError;
+        }
+        apply_global_ttl_override(&mut config, days as u32);
+    } else {
+        eprintln!("telemetry prune: invalid keep value '{}'", keep);
+        return ExitCode::ArgsError;
+    }
+
+    let mut enforcer = RetentionEnforcer::new(telemetry_dir.clone(), config);
+    let events = if dry_run {
+        match enforcer.dry_run() {
+            Ok(events) => events,
+            Err(err) => {
+                eprintln!("telemetry prune: {}", err);
+                return ExitCode::IoError;
+            }
+        }
+    } else {
+        match enforcer.enforce() {
+            Ok(events) => events,
+            Err(err) => {
+                eprintln!("telemetry prune: {}", err);
+                return ExitCode::IoError;
+            }
+        }
+    };
+
+    let freed_bytes: u64 = events.iter().map(|e| e.size_bytes).sum();
+    let event_count = events.len();
+
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "command": "telemetry prune",
+                "dry_run": dry_run,
+                "event_count": event_count,
+                "freed_bytes": freed_bytes,
+                "events": events,
+            });
+            println!("{}", format_structured_output(global, output));
+        }
+        OutputFormat::Jsonl => {
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "command": "telemetry prune",
+                "dry_run": dry_run,
+                "event_count": event_count,
+                "freed_bytes": freed_bytes,
+                "events": events,
+            });
+            println!("{}", serde_json::to_string(&output).unwrap_or_default());
+        }
+        _ => {
+            if dry_run {
+                println!("Dry-run retention: {} file(s) eligible.", event_count);
+            } else {
+                println!("Pruned {} file(s).", event_count);
+            }
+            println!("Bytes {}: {}", if dry_run { "eligible" } else { "freed" }, format_bytes(freed_bytes));
+            for event in &events {
+                println!(
+                    "  {} ({}) [{:?}]",
+                    event.file_path,
+                    format_bytes(event.size_bytes),
+                    event.reason
+                );
+            }
+        }
+    }
+
     ExitCode::Clean
 }
 
