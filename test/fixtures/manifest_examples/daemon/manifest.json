@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "e2e-20260204-daemon-0000",
+  "suite": "daemon",
+  "test_id": "daemon-monitoring",
+  "timestamp": "2026-02-04T08:34:00Z",
+  "env": {
+    "os": "linux",
+    "arch": "x86_64",
+    "kernel": "6.6.0",
+    "ci_provider": "local",
+    "pt_version": "0.9.0",
+    "runner": "e2e_runner.sh"
+  },
+  "commands": [
+    {
+      "argv": [
+        "pt",
+        "daemon",
+        "status"
+      ],
+      "exit_code": 0,
+      "duration_ms": 420
+    }
+  ],
+  "logs": [
+    {
+      "path": "logs/daemon.jsonl",
+      "kind": "jsonl",
+      "sha256": "83a527cc721a0aae2de4a3a1e88e94c7ae7904ac4aceffab0b8e467c5e62304d",
+      "bytes": 242
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "telemetry/daemon_telemetry.jsonl",
+      "kind": "telemetry",
+      "sha256": "7d8e4f604ba40c7e808d7efdabcbdcbcd58cc4227674a30db50681a09c949c12",
+      "bytes": 73,
+      "redaction_profile": "safe"
+    }
+  ],
+  "metrics": {
+    "timings_ms": {
+      "total": 1000,
+      "setup": 100,
+      "run": 800
+    },
+    "counts": {
+      "tests": 1,
+      "failures": 0
+    },
+    "flake_retries": 0
+  },
+  "manifest_sha256": "d0e750a32c01e0134dc882b6ad3ea9ca5b4d298e679ba9159f6aed76ddb83eda"
+}

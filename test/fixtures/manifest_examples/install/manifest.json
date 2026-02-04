@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "e2e-20260204-install-0000",
+  "suite": "install",
+  "test_id": "install-workflow",
+  "timestamp": "2026-02-04T08:34:00Z",
+  "env": {
+    "os": "linux",
+    "arch": "x86_64",
+    "kernel": "6.6.0",
+    "ci_provider": "local",
+    "pt_version": "0.9.0",
+    "runner": "e2e_runner.sh"
+  },
+  "commands": [
+    {
+      "argv": [
+        "./install.sh",
+        "--dry-run"
+      ],
+      "exit_code": 0,
+      "duration_ms": 980
+    }
+  ],
+  "logs": [
+    {
+      "path": "logs/install.jsonl",
+      "kind": "jsonl",
+      "sha256": "1e23bb4170a197c305ec20f874c6b853a7de8b6b24320e462cddcdc34d002e09",
+      "bytes": 242
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "artifacts/install_stdout.txt",
+      "kind": "install",
+      "sha256": "8a69d5277da19b77809a62dedd8500d2a4c5c2e62fac66f2c9a311cfb05faa27",
+      "bytes": 20,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "artifacts/install_stderr.txt",
+      "kind": "install",
+      "sha256": "8a69d5277da19b77809a62dedd8500d2a4c5c2e62fac66f2c9a311cfb05faa27",
+      "bytes": 20,
+      "redaction_profile": "safe"
+    }
+  ],
+  "metrics": {
+    "timings_ms": {
+      "total": 1000,
+      "setup": 100,
+      "run": 800
+    },
+    "counts": {
+      "tests": 1,
+      "failures": 0
+    },
+    "flake_retries": 0
+  },
+  "manifest_sha256": "1da5a4d0147bdcc954e04256c0bf085db99822bffc7adc597353e08773301310"
+}

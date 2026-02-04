@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0.0",
+  "run_id": "e2e-20260204-tui-0000",
+  "suite": "tui",
+  "test_id": "tui-workflow",
+  "timestamp": "2026-02-04T08:34:00Z",
+  "env": {
+    "os": "linux",
+    "arch": "x86_64",
+    "kernel": "6.6.0",
+    "ci_provider": "local",
+    "pt_version": "0.9.0",
+    "runner": "e2e_runner.sh"
+  },
+  "commands": [
+    {
+      "argv": [
+        "pt",
+        "tui",
+        "--demo"
+      ],
+      "exit_code": 0,
+      "duration_ms": 1520
+    }
+  ],
+  "logs": [
+    {
+      "path": "logs/e2e_tests.jsonl",
+      "kind": "jsonl",
+      "sha256": "00ebc0216d991768a1bd280e54a02a21945e59122e7bedad011ae62298cee7a3",
+      "bytes": 226
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "snapshots/tui_snapshot.json",
+      "kind": "snapshot",
+      "sha256": "5dba3c9e687ab39d6e814675de25047df7eee21cf4df1a9f026ab0d8a1f5fadc",
+      "bytes": 79,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "plans/tui_plan.json",
+      "kind": "plan",
+      "sha256": "0e6302cd4d857b323b4cc5d48da42a6f4bb0384739db7fafac833c56766b197f",
+      "bytes": 75,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "telemetry/tui_telemetry.jsonl",
+      "kind": "telemetry",
+      "sha256": "b7632e05809d7dc0427ba04be2e8b77ee6a034f9c74e74e5e57b447cc4bc993f",
+      "bytes": 70,
+      "redaction_profile": "safe"
+    }
+  ],
+  "metrics": {
+    "timings_ms": {
+      "total": 1000,
+      "setup": 100,
+      "run": 800
+    },
+    "counts": {
+      "tests": 1,
+      "failures": 0
+    },
+    "flake_retries": 0
+  },
+  "manifest_sha256": "3c492f0adefb8d2be456e7139de98ccf1f9b0e902ce682dbca6607915250cb72"
+}

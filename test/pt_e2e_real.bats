@@ -28,7 +28,11 @@ setup() {
         "$ARTIFACT_SNAPSHOTS_DIR" \
         "$ARTIFACT_TELEMETRY_DIR"
 
-    export TEST_LOG_FILE="$ARTIFACT_LOG_DIR/pt_e2e_real.jsonl"
+    if [[ -z "${TEST_LOG_FILE:-}" ]]; then
+        export TEST_LOG_FILE="$ARTIFACT_LOG_DIR/pt_e2e_real.jsonl"
+    else
+        export TEST_LOG_FILE_SECONDARY="$ARTIFACT_LOG_DIR/pt_e2e_real.jsonl"
+    fi
 
     test_start "real e2e" "pt CLI real-system E2E with artifacts"
     test_info "Artifacts: $ARTIFACT_DIR"
@@ -89,11 +93,18 @@ log_json_event() {
     local cmd_esc
     local out_esc
     local err_esc
+    local run_id_esc
+    local run_id_field
     cmd_esc=$(escape_json "$cmd")
     out_esc=$(escape_json "$out_file")
     err_esc=$(escape_json "$err_file")
+    run_id_field=""
+    if [[ -n "${E2E_RUN_ID:-}" ]]; then
+        run_id_esc=$(escape_json "$E2E_RUN_ID")
+        run_id_field=",\"run_id\":\"${run_id_esc}\""
+    fi
 
-    printf '{"ts":"%s","event":"%s","status":%s,"cmd":"%s","stdout":"%s","stderr":"%s","lines":%s}\n' \
+    printf '{"ts":"%s","event":"%s","status":%s,"cmd":"%s","stdout":"%s","stderr":"%s","lines":%s%s}\n' \
         "$ts" \
         "$event" \
         "$status" \
@@ -101,6 +112,7 @@ log_json_event() {
         "$out_esc" \
         "$err_esc" \
         "$line_count" \
+        "$run_id_field" \
         >> "$TEST_LOG_FILE"
 }
 

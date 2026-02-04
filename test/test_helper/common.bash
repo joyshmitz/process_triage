@@ -23,7 +23,7 @@ test_log_json() {
     local level="$1"
     local msg="$2"
 
-    if [[ -z "${TEST_LOG_FILE:-}" ]]; then
+    if [[ -z "${TEST_LOG_FILE:-}" && -z "${TEST_LOG_FILE_SECONDARY:-}" ]]; then
         return 0
     fi
 
@@ -34,18 +34,32 @@ test_log_json() {
     local msg_esc
     local test_name_esc
     local test_file_esc
+    local run_id_esc
+    local run_id_field
     level_esc=$(json_escape "$level")
     msg_esc=$(json_escape "$msg")
     test_name_esc=$(json_escape "${BATS_TEST_NAME:-}")
     test_file_esc=$(json_escape "${BATS_TEST_FILENAME:-}")
+    run_id_field=""
+    if [[ -n "${E2E_RUN_ID:-}" ]]; then
+        run_id_esc=$(json_escape "$E2E_RUN_ID")
+        run_id_field=",\"run_id\":\"${run_id_esc}\""
+    fi
 
-    printf '{"ts":"%s","event":"log","level":"%s","test":"%s","file":"%s","message":"%s"}\n' \
+    local line
+    printf -v line '{"ts":"%s","event":"log","level":"%s","test":"%s","file":"%s","message":"%s"%s}' \
         "$ts" \
         "$level_esc" \
         "$test_name_esc" \
         "$test_file_esc" \
         "$msg_esc" \
-        >> "$TEST_LOG_FILE"
+        "$run_id_field"
+    if [[ -n "${TEST_LOG_FILE:-}" ]]; then
+        printf '%s\n' "$line" >> "$TEST_LOG_FILE"
+    fi
+    if [[ -n "${TEST_LOG_FILE_SECONDARY:-}" ]]; then
+        printf '%s\n' "$line" >> "$TEST_LOG_FILE_SECONDARY"
+    fi
 }
 
 test_event_json() {
@@ -53,7 +67,7 @@ test_event_json() {
     local status="${2:-}"
     local label="${3:-}"
 
-    if [[ -z "${TEST_LOG_FILE:-}" ]]; then
+    if [[ -z "${TEST_LOG_FILE:-}" && -z "${TEST_LOG_FILE_SECONDARY:-}" ]]; then
         return 0
     fi
 
@@ -65,20 +79,34 @@ test_event_json() {
     local label_esc
     local test_name_esc
     local test_file_esc
+    local run_id_esc
+    local run_id_field
     event_esc=$(json_escape "$event")
     status_esc=$(json_escape "$status")
     label_esc=$(json_escape "$label")
     test_name_esc=$(json_escape "${BATS_TEST_NAME:-}")
     test_file_esc=$(json_escape "${BATS_TEST_FILENAME:-}")
+    run_id_field=""
+    if [[ -n "${E2E_RUN_ID:-}" ]]; then
+        run_id_esc=$(json_escape "$E2E_RUN_ID")
+        run_id_field=",\"run_id\":\"${run_id_esc}\""
+    fi
 
-    printf '{"ts":"%s","event":"%s","test":"%s","file":"%s","status":"%s","label":"%s"}\n' \
+    local line
+    printf -v line '{"ts":"%s","event":"%s","test":"%s","file":"%s","status":"%s","label":"%s"%s}' \
         "$ts" \
         "$event_esc" \
         "$test_name_esc" \
         "$test_file_esc" \
         "$status_esc" \
         "$label_esc" \
-        >> "$TEST_LOG_FILE"
+        "$run_id_field"
+    if [[ -n "${TEST_LOG_FILE:-}" ]]; then
+        printf '%s\n' "$line" >> "$TEST_LOG_FILE"
+    fi
+    if [[ -n "${TEST_LOG_FILE_SECONDARY:-}" ]]; then
+        printf '%s\n' "$line" >> "$TEST_LOG_FILE_SECONDARY"
+    fi
 }
 
 test_log() {

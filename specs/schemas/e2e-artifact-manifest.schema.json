@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://process-triage.dev/schemas/e2e-artifact-manifest/1.0.0",
+  "title": "Process Triage E2E Artifact Manifest",
+  "description": "Schema for E2E artifact manifests emitted by test runners",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "suite",
+    "test_id",
+    "timestamp",
+    "env",
+    "commands",
+    "logs",
+    "artifacts",
+    "metrics",
+    "manifest_sha256"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^1\\.[0-9]+\\.[0-9]+$",
+      "description": "Schema version (major version must be 1)"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Unique E2E run identifier"
+    },
+    "suite": {
+      "type": "string",
+      "description": "E2E suite name (tui, install, daemon, bundle-report, etc.)"
+    },
+    "test_id": {
+      "type": "string",
+      "description": "Test case or workflow identifier"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "arch", "kernel", "ci_provider"],
+      "properties": {
+        "os": { "type": "string" },
+        "arch": { "type": "string" },
+        "kernel": { "type": "string" },
+        "ci_provider": { "type": "string" },
+        "pt_version": { "type": "string" },
+        "capabilities": { "type": "object" },
+        "runner": { "type": "string" }
+      }
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/command_entry" }
+    },
+    "logs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/log_entry" }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact_entry" }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timings_ms", "counts", "flake_retries"],
+      "properties": {
+        "timings_ms": {
+          "type": "object",
+          "additionalProperties": { "type": "number", "minimum": 0 }
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "flake_retries": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "manifest_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$",
+      "description": "SHA-256 of the canonical manifest JSON with this field removed"
+    }
+  },
+  "$defs": {
+    "command_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["argv", "exit_code", "duration_ms"],
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "exit_code": { "type": "integer" },
+        "duration_ms": { "type": "integer", "minimum": 0 },
+        "cwd": { "type": "string" },
+        "stdout_path": { "type": "string" },
+        "stderr_path": { "type": "string" },
+        "env": { "type": "object" }
+      }
+    },
+    "log_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "sha256", "bytes"],
+      "properties": {
+        "path": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": ["jsonl", "text", "tap", "stdout", "stderr"]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "artifact_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind", "sha256", "bytes"],
+      "properties": {
+        "path": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "snapshot",
+            "plan",
+            "telemetry",
+            "bundle",
+            "report",
+            "daemon",
+            "install",
+            "tui",
+            "manifest",
+            "other"
+          ]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "bytes": { "type": "integer", "minimum": 0 },
+        "redaction_profile": {
+          "type": "string",
+          "enum": ["minimal", "safe", "forensic", "custom"]
+        }
+      }
+    }
+  }
+}

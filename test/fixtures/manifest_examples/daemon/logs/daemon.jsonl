@@ -1,0 +1,2 @@
+{"ts":"2026-02-04T08:34:00Z","event":"test_start","run_id":"e2e-20260204-daemon-0000","test":"daemon-monitoring"}
+{"ts":"2026-02-04T08:34:00Z","event":"test_end","run_id":"e2e-20260204-daemon-0000","test":"daemon-monitoring","status":"pass"}
