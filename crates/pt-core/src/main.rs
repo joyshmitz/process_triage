@@ -1472,8 +1472,8 @@ struct ShadowExportArgs {
     output: Option<String>,
 
     /// Export format (json, jsonl)
-    #[arg(long, default_value = "json")]
-    format: String,
+    #[arg(long = "export-format", default_value = "json")]
+    export_format: String,
 
     /// Max observations to export (most recent first)
     #[arg(long)]
@@ -5655,7 +5655,7 @@ fn run_shadow_export(global: &GlobalOpts, args: &ShadowExportArgs) -> ExitCode {
         }
     };
 
-    let output = match args.format.as_str() {
+    let output = match args.export_format.as_str() {
         "jsonl" => observations
             .iter()
             .map(|obs| serde_json::to_string(obs).unwrap_or_default())

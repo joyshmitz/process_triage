@@ -28,6 +28,7 @@ PY
         "$PROJECT_ROOT/test/fixtures/manifest_examples/fixture_manifest.json"
         "$PROJECT_ROOT/test/fixtures/capabilities/fixture_manifest.json"
         "$PROJECT_ROOT/test/fixtures/output/fixture_manifest.json"
+        "$PROJECT_ROOT/test/fixtures/shadow/fixture_manifest.json"
     )
 
     for manifest in "${manifests[@]}"; do

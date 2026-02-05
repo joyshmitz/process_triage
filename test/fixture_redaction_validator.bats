@@ -13,6 +13,7 @@ setup() {
         "$PROJECT_ROOT/test/fixtures/manifest_examples"
         "$PROJECT_ROOT/test/fixtures/capabilities"
         "$PROJECT_ROOT/test/fixtures/output"
+        "$PROJECT_ROOT/test/fixtures/shadow"
     )
 
     for fixture in "${fixtures[@]}"; do
