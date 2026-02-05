@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_id": "capabilities-20260205",
+  "domain": "capabilities",
+  "capture_time": "2026-02-05T01:38:07.504397Z",
+  "source": {
+    "origin": "manual-curated",
+    "command": [
+      "capabilities fixture"
+    ],
+    "paths": [
+      "test/fixtures/capabilities"
+    ]
+  },
+  "tool_versions": {
+    "fixture_capture": "1.0.0",
+    "pt": "2.0.0",
+    "schema": "fixture-manifest@1"
+  },
+  "redaction_profile": "safe",
+  "artifacts": [
+    {
+      "path": "capabilities.json",
+      "kind": "config",
+      "sha256": "9352a5222ff156c69e5521549dc1b370cfd71beb77b8782cdd3668313ff63013",
+      "bytes": 1934,
+      "redaction_profile": "safe"
+    }
+  ],
+  "description": "Capabilities manifest fixture",
+  "manifest_sha256": "4e28ff6880f7ffc5927c9633a238574656fbe332d40d681421f6bdaf14e1421c"
+}

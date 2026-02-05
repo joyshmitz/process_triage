@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0.0",
+  "os": {
+    "family": "linux",
+    "name": "Ubuntu",
+    "release": "Ubuntu 24.04",
+    "version": "24.04",
+    "kernel": "6.8.0-40-generic",
+    "arch": "x86_64"
+  },
+  "tools": {
+    "ps": {
+      "available": true,
+      "path": "/usr/bin/ps",
+      "version": "procps-ng 4.0.4",
+      "functional": true
+    },
+    "lsof": {
+      "available": false,
+      "reason": "not installed"
+    }
+  },
+  "proc_fs": {
+    "available": true,
+    "readable_fields": ["stat", "status", "cmdline", "environ"]
+  },
+  "cgroups": {
+    "version": "v2",
+    "readable": true,
+    "controllers": ["cpu", "memory", "io", "pids"]
+  },
+  "systemd": {
+    "available": true,
+    "version": "256",
+    "user_units": true
+  },
+  "psi": {
+    "available": true,
+    "cpu": true,
+    "memory": true,
+    "io": false
+  },
+  "containers": {
+    "docker": {
+      "available": false
+    },
+    "podman": {
+      "available": false,
+      "rootless": true
+    },
+    "inside_container": false,
+    "container_type": null
+  },
+  "sudo": {
+    "available": true,
+    "passwordless": false,
+    "timeout_active": false
+  },
+  "user": {
+    "uid": 1000,
+    "username": "user",
+    "home": "/home/USER",
+    "shell": "/bin/bash"
+  },
+  "paths": {
+    "config_dir": "/home/USER/.config/process_triage",
+    "data_dir": "/home/USER/.local/share/process_triage",
+    "cache_dir": "/home/USER/.cache/process_triage",
+    "telemetry_dir": "/home/USER/.local/share/process_triage/telemetry",
+    "lock_file": "/home/USER/.cache/process_triage/pt.lock"
+  },
+  "system": {
+    "hostname": "host",
+    "cpu_cores": 12,
+    "total_memory_mb": 32768
+  },
+  "privileges": {
+    "is_root": false,
+    "effective_uid": 1000,
+    "can_sudo": true,
+    "perf_paranoid": 3,
+    "ptrace_scope": 1,
+    "linux_capabilities": ["CAP_KILL"]
+  },
+  "discovered_at": "2026-02-05T01:33:00Z",
+  "discovery_duration_ms": 1234,
+  "wrapper_version": "2.0.0"
+}

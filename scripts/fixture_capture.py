@@ -132,6 +132,7 @@ def write_log(
     fixture_id: str,
     duration_ms: int,
     artifacts: List[Dict[str, Any]],
+    host_id: Optional[str],
 ) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -144,6 +145,8 @@ def write_log(
             for item in artifacts
         ],
     }
+    if host_id:
+        payload["host_id"] = host_id
     with log_path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, separators=(",", ":")) + "\n")
 
@@ -223,6 +226,11 @@ def main() -> int:
         help="Log event name",
     )
     parser.add_argument(
+        "--host-id",
+        default=None,
+        help="Optional host identifier for log correlation",
+    )
+    parser.add_argument(
         "--exclude",
         action="append",
         default=[],
@@ -284,7 +292,7 @@ def main() -> int:
 
     duration_ms = int((time.time() - start) * 1000)
     if log_path is not None:
-        write_log(log_path, args.event, args.fixture_id, duration_ms, artifacts)
+        write_log(log_path, args.event, args.fixture_id, duration_ms, artifacts, args.host_id)
 
     return 0
 

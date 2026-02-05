@@ -1,0 +1,1 @@
+{"event":"fixture_capture","timestamp":"2026-02-05T01:38:07.505040Z","fixture_id":"capabilities-20260205","duration_ms":0,"artifacts":[{"path":"capabilities.json","sha256":"9352a5222ff156c69e5521549dc1b370cfd71beb77b8782cdd3668313ff63013","bytes":1934}],"host_id":"host-01"}
