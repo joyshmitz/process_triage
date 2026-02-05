@@ -8002,6 +8002,15 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     };
     let priors = config.priors.clone();
     let policy = config.policy.clone();
+    let rate_limit_path = resolve_data_dir_for_lock().map(|dir| dir.join("rate_limit.json"));
+    let enforcer = match pt_core::decision::PolicyEnforcer::new(&policy, rate_limit_path.as_deref())
+    {
+        Ok(enforcer) => enforcer,
+        Err(e) => {
+            eprintln!("agent plan: failed to init policy enforcer: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
 
     if args.prediction_fields.is_some() && !args.include_predictions {
         eprintln!("agent plan: --prediction-fields requires --include-predictions");
@@ -8093,6 +8102,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     // Collect ALL candidates above threshold with their max_posterior for sorting
     // Then sort by max_posterior descending and take top N
     let mut all_candidates: Vec<(f64, serde_json::Value)> = Vec::new();
+    let mut policy_blocked_count = 0usize;
 
     let feasibility = ActionFeasibility::allow_all();
     let mut shadow_recorder = if global.shadow {
@@ -8193,7 +8203,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             .max(posterior.zombie);
 
         // Determine recommended action string (used for shadow recording and plan output)
-        let recommended_action = match decision_outcome.optimal_action {
+        let mut recommended_action = match decision_outcome.optimal_action {
             Action::Keep => "keep",
             Action::Renice => "renice",
             Action::Pause => "pause",
@@ -8245,6 +8255,59 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         if !include {
             continue;
         }
+
+        let process_candidate = pt_core::decision::ProcessCandidate {
+            pid: proc.pid.0 as i32,
+            ppid: proc.ppid.0 as i32,
+            cmdline: proc.cmd.clone(),
+            user: Some(proc.user.clone()),
+            group: None,
+            category: decision_outcome.rationale.category.clone(),
+            age_seconds: proc.elapsed.as_secs(),
+            posterior: Some(max_posterior),
+            memory_mb: Some(proc.rss_bytes as f64 / (1024.0 * 1024.0)),
+            has_known_signature: decision_outcome
+                .rationale
+                .has_known_signature
+                .unwrap_or(false),
+            open_write_fds: None,
+            has_locked_files: None,
+            has_active_tty: Some(proc.has_tty()),
+            seconds_since_io: None,
+            cwd_deleted: None,
+            process_state: Some(proc.state),
+            wchan: None,
+            critical_files: Vec::new(),
+        };
+        let policy_result = enforcer.check_action(
+            &process_candidate,
+            decision_outcome.optimal_action,
+            global.robot,
+        );
+        let policy_blocked = !policy_result.allowed;
+        if policy_blocked {
+            policy_blocked_count += 1;
+            recommended_action = "review";
+        }
+        let policy_value = serde_json::to_value(&policy_result)
+            .unwrap_or_else(|_| serde_json::json!({ "allowed": policy_result.allowed }));
+        let action_rationale = if policy_blocked {
+            policy_result
+                .violation
+                .as_ref()
+                .map(|v| format!("Policy blocked: {}", v.message))
+                .unwrap_or_else(|| "Policy blocked".to_string())
+        } else {
+            format!(
+                "Action {:?} selected{}",
+                decision_outcome.rationale.chosen_action,
+                if decision_outcome.rationale.tie_break {
+                    " (tie-break)"
+                } else {
+                    ""
+                }
+            )
+        };
 
         // Build evidence contributions from Bayes factors
         let evidence_contributions: Vec<serde_json::Value> = ledger
@@ -8325,15 +8388,15 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             },
             "recommendation": recommended_action.to_uppercase(),
             "recommended_action": recommended_action,
-            "action_rationale": format!("Action {:?} selected{}",
-                decision_outcome.rationale.chosen_action,
-                if decision_outcome.rationale.tie_break { " (tie-break)" } else { "" }),
+            "action_rationale": action_rationale,
             "expected_loss": decision_outcome.expected_loss.iter()
                 .map(|el| serde_json::json!({
                     "action": format!("{:?}", el.action),
                     "loss": el.loss,
                 }))
                 .collect::<Vec<_>>(),
+            "policy_blocked": policy_blocked,
+            "policy": policy_value,
         });
 
         if let Some(predictions) = predictions {
@@ -8424,6 +8487,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         "candidates_returned": candidates.len(),   // After truncation to max_candidates
         "kill_recommendations": kill_candidates.len(),
         "review_recommendations": review_candidates.len(),
+        "policy_blocked": policy_blocked_count,
         "threshold_used": args.min_posterior,
         "filter_used": args.only,
     });
