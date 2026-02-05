@@ -597,6 +597,26 @@ impl ConstraintChecker {
             });
         }
 
+        // Check policy snapshot requirement
+        if self.constraints.require_policy_snapshot && !candidate.has_policy_snapshot {
+            violations.push(ConstraintViolation {
+                constraint: ConstraintKind::RequirePolicySnapshot,
+                message: "Policy snapshot required but not attached".to_string(),
+                threshold: "require_policy_snapshot: true".to_string(),
+                actual: "policy_snapshot: missing".to_string(),
+                source: self
+                    .constraints
+                    .sources
+                    .as_ref()
+                    .map(|s| s.require_policy_snapshot)
+                    .unwrap_or_default(),
+                remediation: Some(
+                    "Attach policy snapshot to session or disable require_policy_snapshot"
+                        .to_string(),
+                ),
+            });
+        }
+
         // Check category exclusions
         if let Some(ref category) = candidate.category {
             let cat_lower = category.to_lowercase();
@@ -1026,6 +1046,28 @@ mod tests {
             .violations
             .iter()
             .any(|v| v.constraint == ConstraintKind::RequireKnownSignature));
+    }
+
+    #[test]
+    fn test_checker_requires_policy_snapshot() {
+        let mut robot_mode = test_robot_mode();
+        robot_mode.require_policy_snapshot = Some(true);
+
+        let constraints = RuntimeRobotConstraints::from_policy(&robot_mode);
+        let checker = ConstraintChecker::new(constraints);
+
+        let candidate = RobotCandidate::new()
+            .with_posterior(0.98)
+            .with_memory_mb(100.0)
+            .with_policy_snapshot(false)
+            .with_kill_action(true);
+
+        let result = checker.check_candidate(&candidate);
+        assert!(!result.allowed);
+        assert!(result
+            .violations
+            .iter()
+            .any(|v| v.constraint == ConstraintKind::RequirePolicySnapshot));
     }
 
     #[test]
