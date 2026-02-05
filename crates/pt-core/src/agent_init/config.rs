@@ -175,6 +175,10 @@ fn configure_claude_code(
     } else {
         json!({})
     };
+    if !config.is_object() {
+        changes.push("Replaced non-object Claude settings with empty object".to_string());
+        config = json!({});
+    }
 
     // Create backup if needed
     let backup = if settings_path.exists() && !options.skip_backup && !options.dry_run {
@@ -199,16 +203,35 @@ fn configure_claude_code(
     }
 
     // Add MCP server configuration
-    if config.get("mcpServers").is_none() {
-        config["mcpServers"] = json!({});
-    }
+    let mcp_servers = match config.get_mut("mcpServers").and_then(|v| v.as_object_mut()) {
+        Some(servers) => servers,
+        None => {
+            let had_servers = config.get("mcpServers").is_some();
+            config["mcpServers"] = json!({});
+            if had_servers {
+                changes.push(
+                    "Replaced invalid mcpServers value with object for Claude configuration"
+                        .to_string(),
+                );
+            } else {
+                changes.push("Created mcpServers object for Claude configuration".to_string());
+            }
+            config
+                .get_mut("mcpServers")
+                .and_then(|v| v.as_object_mut())
+                .expect("mcpServers object should be initialized")
+        }
+    };
 
-    if config["mcpServers"].get("process_triage").is_none() {
-        config["mcpServers"]["process_triage"] = json!({
-            "command": "pt",
-            "args": ["mcp", "serve"],
-            "description": "Process triage MCP server for Bayesian process management"
-        });
+    if !mcp_servers.contains_key("process_triage") {
+        mcp_servers.insert(
+            "process_triage".to_string(),
+            json!({
+                "command": "pt",
+                "args": ["mcp", "serve"],
+                "description": "Process triage MCP server for Bayesian process management"
+            }),
+        );
         changes.push("Added process_triage MCP server configuration".to_string());
     }
 
@@ -238,6 +261,10 @@ fn configure_codex(config_dir: &Path, options: &InitOptions) -> Result<ConfigRes
     } else {
         json!({})
     };
+    if !config.is_object() {
+        changes.push("Replaced non-object Codex config with empty object".to_string());
+        config = json!({});
+    }
 
     let backup = if config_path.exists() && !options.skip_backup && !options.dry_run {
         Some(create_backup(&config_path)?)
@@ -245,13 +272,25 @@ fn configure_codex(config_dir: &Path, options: &InitOptions) -> Result<ConfigRes
         None
     };
 
-    // Add tools array if not present
-    if config.get("tools").is_none() {
-        config["tools"] = json!([]);
-    }
+    // Add tools array if not present (or if invalid type)
+    let tools = match config.get_mut("tools").and_then(|v| v.as_array_mut()) {
+        Some(tools) => tools,
+        None => {
+            let had_tools = config.get("tools").is_some();
+            config["tools"] = json!([]);
+            if had_tools {
+                changes.push("Replaced invalid tools value with array for Codex configuration".to_string());
+            } else {
+                changes.push("Created tools array for Codex configuration".to_string());
+            }
+            config
+                .get_mut("tools")
+                .and_then(|v| v.as_array_mut())
+                .expect("tools array should be initialized")
+        }
+    };
 
     // Check if pt tool already exists
-    let tools = config["tools"].as_array_mut().unwrap();
     let has_pt = tools
         .iter()
         .any(|t| t.get("name").and_then(|n| n.as_str()) == Some("process_triage"));
@@ -355,6 +394,10 @@ fn configure_cursor(config_dir: &Path, options: &InitOptions) -> Result<ConfigRe
     } else {
         json!({})
     };
+    if !config.is_object() {
+        changes.push("Replaced non-object Cursor settings with empty object".to_string());
+        config = json!({});
+    }
 
     let backup = if settings_path.exists() && !options.skip_backup && !options.dry_run {
         Some(create_backup(&settings_path)?)
@@ -363,16 +406,35 @@ fn configure_cursor(config_dir: &Path, options: &InitOptions) -> Result<ConfigRe
     };
 
     // Add extensions configuration
-    if config.get("extensions").is_none() {
-        config["extensions"] = json!({});
-    }
+    let extensions = match config.get_mut("extensions").and_then(|v| v.as_object_mut()) {
+        Some(ext) => ext,
+        None => {
+            let had_extensions = config.get("extensions").is_some();
+            config["extensions"] = json!({});
+            if had_extensions {
+                changes.push(
+                    "Replaced invalid extensions value with object for Cursor configuration"
+                        .to_string(),
+                );
+            } else {
+                changes.push("Created extensions object for Cursor configuration".to_string());
+            }
+            config
+                .get_mut("extensions")
+                .and_then(|v| v.as_object_mut())
+                .expect("extensions object should be initialized")
+        }
+    };
 
-    if config["extensions"].get("process_triage").is_none() {
-        config["extensions"]["process_triage"] = json!({
-            "enabled": true,
-            "command": "pt",
-            "description": "Bayesian process triage and cleanup"
-        });
+    if !extensions.contains_key("process_triage") {
+        extensions.insert(
+            "process_triage".to_string(),
+            json!({
+                "enabled": true,
+                "command": "pt",
+                "description": "Bayesian process triage and cleanup"
+            }),
+        );
         changes.push("Added process_triage extension to Cursor".to_string());
     }
 

@@ -216,7 +216,7 @@ pub fn build_process_explanation(proc: &ProcessRecord, priors: &Priors) -> serde
 
     let evidence = Evidence {
         cpu: Some(CpuEvidence::Fraction {
-            occupancy: proc.cpu_percent / 100.0,
+            occupancy: (proc.cpu_percent / 100.0).clamp(0.0, 1.0),
         }),
         runtime_seconds: Some(proc.elapsed.as_secs_f64()),
         orphan: Some(proc.ppid.0 == 1),
