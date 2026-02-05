@@ -399,7 +399,11 @@ impl EnvironAnalyzer {
         // Find the best match (highest confidence)
         let best = matches
             .iter()
-            .max_by(|a, b| a.0.confidence.partial_cmp(&b.0.confidence).unwrap())
+            .max_by(|a, b| {
+                a.0.confidence
+                    .partial_cmp(&b.0.confidence)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
             .unwrap();
 
         let evidence: Vec<SupervisionEvidence> = matches

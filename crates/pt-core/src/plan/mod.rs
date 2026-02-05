@@ -426,6 +426,7 @@ fn plan_zombie_actions(candidate: &DecisionCandidate, blocked: bool) -> Option<V
                     PreCheck::CheckSessionSafety,
                     PreCheck::CheckDataLossGate,
                     PreCheck::CheckSupervisor,
+                    PreCheck::CheckAgentSupervision,
                 ],
                 rationale: base_rationale.clone(),
                 on_success: vec![ActionHook {
@@ -507,6 +508,7 @@ fn pre_checks_for(action: Action) -> Vec<PreCheck> {
         Action::Kill | Action::Restart => {
             checks.push(PreCheck::CheckDataLossGate);
             checks.push(PreCheck::CheckSupervisor);
+            checks.push(PreCheck::CheckAgentSupervision);
         }
         Action::Pause
         | Action::Throttle
@@ -515,6 +517,7 @@ fn pre_checks_for(action: Action) -> Vec<PreCheck> {
         | Action::Unfreeze
         | Action::Quarantine => {
             checks.push(PreCheck::CheckSupervisor);
+            checks.push(PreCheck::CheckAgentSupervision);
         }
         // Resume/Unquarantine only need identity verification
         Action::Resume | Action::Unquarantine => {}
@@ -796,6 +799,9 @@ mod tests {
         assert_eq!(action.routing, ActionRouting::ZombieToParent);
         assert!(action.original_zombie_target.is_some());
         assert_eq!(action.original_zombie_target.as_ref().unwrap().pid.0, 42);
+        assert!(action
+            .pre_checks
+            .contains(&PreCheck::CheckAgentSupervision));
     }
 
     #[test]
@@ -982,5 +988,37 @@ mod tests {
         assert_eq!(action.routing, ActionRouting::Direct);
         assert_eq!(action.confidence, ActionConfidence::Normal);
         assert!(action.d_state_diagnostics.is_none());
+    }
+
+    #[test]
+    fn kill_includes_agent_supervision_precheck() {
+        let bundle = DecisionBundle {
+            session_id: SessionId("pt-20260115-120000-abcd".to_string()),
+            policy: Policy::default(),
+            generated_at: Some("2026-01-15T12:00:00Z".to_string()),
+            candidates: vec![candidate(42, Action::Kill, 100.0, 1.0)],
+        };
+        let plan = generate_plan(&bundle);
+
+        let action = &plan.actions[0];
+        assert!(action
+            .pre_checks
+            .contains(&PreCheck::CheckAgentSupervision));
+    }
+
+    #[test]
+    fn pause_includes_agent_supervision_precheck() {
+        let bundle = DecisionBundle {
+            session_id: SessionId("pt-20260115-120000-abcd".to_string()),
+            policy: Policy::default(),
+            generated_at: Some("2026-01-15T12:00:00Z".to_string()),
+            candidates: vec![candidate(42, Action::Pause, 10.0, 1.0)],
+        };
+        let plan = generate_plan(&bundle);
+
+        let action = &plan.actions[0];
+        assert!(action
+            .pre_checks
+            .contains(&PreCheck::CheckAgentSupervision));
     }
 }
