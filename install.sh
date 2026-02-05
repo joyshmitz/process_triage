@@ -361,7 +361,7 @@ verify_download() {
     local checksum_url="${RELEASES_URL}/download/v${version}/pt.sha256"
     local expected
 
-    expected=$(curl -fsSL --connect-timeout 5 "$checksum_url" 2>/dev/null) || {
+    expected=$(fetch_stdout "$checksum_url" 2>/dev/null) || {
         log_warn "Could not download checksum file"
         log_warn "URL: $checksum_url"
         log_warn ""
@@ -638,29 +638,64 @@ main() {
     trap 'rm -rf "${temp_dir:-}"' EXIT
 
     # Download consolidated checksums file (for verification)
-    local checksums_file="$temp_dir/checksums.sha256"
-    local have_checksums=false
+    local wrapper_checksums_file="$temp_dir/checksums-wrapper.sha256"
+    local core_checksums_file="$temp_dir/checksums-core.sha256"
+    local have_wrapper_checksums=false
+    local have_core_checksums=false
     if [[ "${VERIFY:-}" == "1" ]]; then
         log_step "Downloading checksums..."
-        if download_checksums "$core_version" "$checksums_file"; then
-            have_checksums=true
-            log_success "Downloaded checksums.sha256"
+        if download_checksums "$version" "$wrapper_checksums_file"; then
+            have_wrapper_checksums=true
+            log_success "Downloaded wrapper checksums.sha256"
+        fi
+
+        if [[ "$core_version" == "$version" ]]; then
+            core_checksums_file="$wrapper_checksums_file"
+            have_core_checksums="$have_wrapper_checksums"
+        else
+            if download_checksums "$core_version" "$core_checksums_file"; then
+                have_core_checksums=true
+                log_success "Downloaded pt-core checksums.sha256"
+            fi
         fi
     fi
 
     # Download pt wrapper script
     log_step "Downloading pt wrapper..."
     local download_url
-    download_url=$(append_cache_buster "${RAW_URL}/pt")
-    download "$download_url" "$temp_dir/pt" || {
-        log_error "Failed to download pt wrapper"
-        exit 1
-    }
+    local downloaded_wrapper=false
+    local release_url="${RELEASES_URL}/download/v${version}/pt"
+    local tag_url="https://raw.githubusercontent.com/${GITHUB_REPO}/v${version}/pt"
+    local master_url="${RAW_URL}/pt"
+
+    download_url=$(append_cache_buster "$release_url")
+    if download "$download_url" "$temp_dir/pt"; then
+        downloaded_wrapper=true
+    else
+        download_url=$(append_cache_buster "$tag_url")
+        if download "$download_url" "$temp_dir/pt"; then
+            downloaded_wrapper=true
+        fi
+    fi
+
+    if [[ "$downloaded_wrapper" != "true" ]]; then
+        if [[ "${VERIFY:-}" == "1" ]]; then
+            log_warn "Failed to download pt wrapper from release or tag."
+            log_warn "Falling back to master; verification may be unavailable."
+        else
+            log_warn "Falling back to master pt wrapper (unverified)."
+        fi
+        download_url=$(append_cache_buster "$master_url")
+        download "$download_url" "$temp_dir/pt" || {
+            log_error "Failed to download pt wrapper"
+            exit 1
+        }
+    fi
 
     # Verify pt wrapper if requested
     if [[ "${VERIFY:-}" == "1" ]]; then
-        if [[ "$have_checksums" == "true" ]]; then
-            if ! verify_file_checksum "$temp_dir/pt" "pt" "$checksums_file"; then
+        if [[ "$have_wrapper_checksums" == "true" ]]; then
+            if ! verify_file_checksum "$temp_dir/pt" "pt" "$wrapper_checksums_file"; then
                 log_error "Installation aborted: pt wrapper verification failed"
                 exit 1
             fi
@@ -702,8 +737,8 @@ main() {
         if [[ "$download_success" == "true" ]]; then
             # Verify pt-core archive if requested
             if [[ "${VERIFY:-}" == "1" ]]; then
-                if [[ "$have_checksums" == "true" ]]; then
-                    if ! verify_file_checksum "$temp_dir/$archive_name" "$archive_name" "$checksums_file"; then
+                if [[ "$have_core_checksums" == "true" ]]; then
+                    if ! verify_file_checksum "$temp_dir/$archive_name" "$archive_name" "$core_checksums_file"; then
                         log_error "Installation aborted: pt-core verification failed"
                         exit 1
                     fi

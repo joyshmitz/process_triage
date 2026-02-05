@@ -804,6 +804,14 @@ struct AgentWatchArgs {
     #[arg(long = "notify-exec")]
     notify_exec: Option<String>,
 
+    /// Execute command directly (no shell) when watch events are emitted
+    #[arg(long = "notify-cmd")]
+    notify_cmd: Option<String>,
+
+    /// Arguments for --notify-cmd (repeatable)
+    #[arg(long = "notify-arg")]
+    notify_arg: Vec<String>,
+
     /// Trigger sensitivity (low|medium|high|critical)
     #[arg(long, default_value = "medium")]
     threshold: String,
@@ -12248,6 +12256,13 @@ fn run_agent_watch(global: &GlobalOpts, args: &AgentWatchArgs) -> ExitCode {
     let mut baseline: Option<WatchBaseline> = None;
     let mut previous: HashMap<u32, WatchCandidate> = HashMap::new();
     let interval = Duration::from_secs(args.interval.max(1));
+    let notify_cmd = args.notify_cmd.as_deref();
+    let notify_exec = args.notify_exec.as_deref();
+    let notify_args = &args.notify_arg;
+
+    if notify_cmd.is_some() && notify_exec.is_some() {
+        eprintln!("agent watch: both --notify-cmd and --notify-exec set; using --notify-cmd");
+    }
 
     loop {
         let system_state = collect_system_state();
@@ -12256,10 +12271,10 @@ fn run_agent_watch(global: &GlobalOpts, args: &AgentWatchArgs) -> ExitCode {
         }
 
         if let Some(event) = check_goal_violation(&system_state, args) {
-            emit_watch_event(&event, args.notify_exec.as_deref());
+            emit_watch_event(&event, notify_exec, notify_cmd, notify_args);
         }
         if let Some(event) = check_baseline_anomaly(&system_state, baseline.as_ref()) {
-            emit_watch_event(&event, args.notify_exec.as_deref());
+            emit_watch_event(&event, notify_exec, notify_cmd, notify_args);
         }
 
         let scan_result = match quick_scan(&scan_options) {
@@ -12338,7 +12353,7 @@ fn run_agent_watch(global: &GlobalOpts, args: &AgentWatchArgs) -> ExitCode {
                             "current_severity": severity_label(candidate.severity),
                             "command": candidate.command,
                         });
-                        emit_watch_event(&event, args.notify_exec.as_deref());
+                        emit_watch_event(&event, notify_exec, notify_cmd, notify_args);
                     }
                     false
                 }
@@ -12355,7 +12370,7 @@ fn run_agent_watch(global: &GlobalOpts, args: &AgentWatchArgs) -> ExitCode {
                     "severity": severity_label(candidate.severity),
                     "command": candidate.command,
                 });
-                emit_watch_event(&event, args.notify_exec.as_deref());
+                emit_watch_event(&event, notify_exec, notify_cmd, notify_args);
             }
 
             current.insert(proc.pid.0, candidate);
@@ -12568,17 +12583,38 @@ fn check_baseline_anomaly(
     None
 }
 
-fn emit_watch_event(event: &serde_json::Value, notify_exec: Option<&str>) {
+fn emit_watch_event(
+    event: &serde_json::Value,
+    notify_exec: Option<&str>,
+    notify_cmd: Option<&str>,
+    notify_args: &[String],
+) {
     println!(
         "{}",
         serde_json::to_string(event).unwrap_or_else(|_| "{}".to_string())
     );
+    let event_type = event
+        .get("event")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let json = event.to_string();
+    if let Some(cmd) = notify_cmd {
+        let mut child = std::process::Command::new(cmd);
+        for arg in notify_args {
+            child.arg(arg);
+        }
+        child.env("PT_WATCH_EVENT", event_type);
+        child.env("PT_WATCH_EVENT_JSON", &json);
+        if let Some(pid) = event.get("pid").and_then(|v| v.as_u64()) {
+            child.env("PT_WATCH_PID", pid.to_string());
+        }
+        if let Err(err) = child.status() {
+            eprintln!("agent watch: notify-cmd failed: {}", err);
+        }
+        return;
+    }
+
     if let Some(cmd) = notify_exec {
-        let event_type = event
-            .get("event")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-        let json = event.to_string();
         let mut child = std::process::Command::new("sh");
         child.arg("-c").arg(cmd);
         child.env("PT_WATCH_EVENT", event_type);
@@ -12622,6 +12658,8 @@ mod watch_tests {
         });
         let args = AgentWatchArgs {
             notify_exec: None,
+            notify_cmd: None,
+            notify_arg: Vec::new(),
             threshold: "medium".to_string(),
             interval: 60,
             min_age: None,

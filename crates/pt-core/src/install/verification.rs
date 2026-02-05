@@ -102,10 +102,18 @@ pub fn verify_binary(
 
     // Verify version matches expected if provided
     if let Some(expected) = expected_version {
-        if let Some(ref actual) = version {
-            if !versions_match(actual, expected) {
+        match version.as_deref() {
+            Some(actual) => {
+                if !versions_match(actual, expected) {
+                    return Ok(VerificationResult::failure(
+                        format!("Version mismatch: expected {}, got {}", expected, actual),
+                        start.elapsed().as_millis() as u64,
+                    ));
+                }
+            }
+            None => {
                 return Ok(VerificationResult::failure(
-                    format!("Version mismatch: expected {}, got {}", expected, actual),
+                    "Version check succeeded but output was unparseable".to_string(),
                     start.elapsed().as_millis() as u64,
                 ));
             }
@@ -201,6 +209,12 @@ fn versions_match(actual: &str, expected: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
+    #[cfg(unix)]
+    use tempfile::TempDir;
 
     #[test]
     fn test_extract_version() {
@@ -229,5 +243,27 @@ mod tests {
         let result = verify_binary(Path::new("/nonexistent/binary"), None).unwrap();
         assert!(!result.passed);
         assert!(result.error.unwrap().contains("does not exist"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_verify_expected_version_unparseable() {
+        let temp = TempDir::new().unwrap();
+        let script_path = temp.path().join("pt-core-test");
+        fs::write(
+            &script_path,
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"version unknown\"\n  exit 0\nfi\nexit 1\n",
+        )
+        .unwrap();
+        let mut perms = fs::metadata(&script_path).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&script_path, perms).unwrap();
+
+        let result = verify_binary(&script_path, Some("1.2.3")).unwrap();
+        assert!(!result.passed);
+        assert!(result
+            .error
+            .unwrap_or_default()
+            .contains("unparseable"));
     }
 }
