@@ -1,0 +1,5 @@
+{"event":"supervision_case","timestamp":"2026-02-05T05:59:10Z","case_id":"systemd-ssh-service","supervisor_type":"systemd","pid":4242,"duration_ms":4,"artifacts":[{"path":"cases.json","kind":"fixture"}]}
+{"event":"supervision_case","timestamp":"2026-02-05T05:59:11Z","case_id":"container-docker","supervisor_type":"docker","pid":3301,"duration_ms":3,"artifacts":[{"path":"cases.json","kind":"fixture"}]}
+{"event":"supervision_case","timestamp":"2026-02-05T05:59:12Z","case_id":"container-k8s-containerd","supervisor_type":"containerd","pid":3302,"duration_ms":5,"artifacts":[{"path":"cases.json","kind":"fixture"}]}
+{"event":"supervision_case","timestamp":"2026-02-05T05:59:13Z","case_id":"env-claude-agent","supervisor_type":"agent","pid":3303,"duration_ms":2,"artifacts":[{"path":"cases.json","kind":"fixture"}]}
+{"event":"supervision_case","timestamp":"2026-02-05T05:59:14Z","case_id":"env-launchd-xpc","supervisor_type":"launchd","pid":3304,"duration_ms":2,"artifacts":[{"path":"cases.json","kind":"fixture"}]}

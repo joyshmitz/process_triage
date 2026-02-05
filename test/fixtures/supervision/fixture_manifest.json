@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0.0",
+  "fixture_id": "supervision-20260205",
+  "domain": "supervision",
+  "capture_time": "2026-02-05T05:59:30Z",
+  "source": {
+    "origin": "manual-curated",
+    "command": [
+      "supervision fixtures"
+    ],
+    "paths": [
+      "test/fixtures/supervision"
+    ]
+  },
+  "tool_versions": {
+    "fixture_capture": "1.0.0",
+    "pt": "2.0.0",
+    "schema": "fixture-manifest@1"
+  },
+  "redaction_profile": "safe",
+  "artifacts": [
+    {
+      "path": "cases.json",
+      "kind": "config",
+      "sha256": "461f96158998abeeb9f3c52ab2d2f3028308b3fc63c72a168c43e6f21c2a23d1",
+      "bytes": 1965,
+      "redaction_profile": "safe"
+    },
+    {
+      "path": "logs/supervision_detection.jsonl",
+      "kind": "log",
+      "sha256": "c6f212a6b784ef1b4f282c1afbda466910f8eed9ebeaa8c93d3a95dd3baae836",
+      "bytes": 1015,
+      "redaction_profile": "safe"
+    }
+  ],
+  "description": "Supervision detection fixtures + JSONL logs for no-mock tests",
+  "manifest_sha256": "ea044cd167de97ccbf80d1035d552f28d6652afa792882db11e7f9a5f224633c"
+}

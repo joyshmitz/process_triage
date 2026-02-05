@@ -1,0 +1,73 @@
+{
+  "schema_version": "1.0.0",
+  "cases": [
+    {
+      "id": "systemd-ssh-service",
+      "kind": "systemd_show",
+      "input": {
+        "pid": 4242,
+        "systemctl_show": "Id=ssh.service\nActiveState=active\nSubState=running\nMainPID=4242\nControlPID=0\nFragmentPath=/lib/systemd/system/ssh.service\nDescription=OpenSSH server daemon\n"
+      },
+      "expected": {
+        "unit_name": "ssh.service",
+        "unit_type": "service",
+        "active_state": "active",
+        "is_main_process": true
+      }
+    },
+    {
+      "id": "container-docker",
+      "kind": "cgroup_path",
+      "input": {
+        "cgroup_path": "/docker/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "expected": {
+        "runtime": "docker",
+        "in_container": true,
+        "container_id_short": "0123456789ab"
+      }
+    },
+    {
+      "id": "container-k8s-containerd",
+      "kind": "cgroup_path",
+      "input": {
+        "cgroup_path": "/kubepods/burstable/pod12345678-1234-1234-1234-1234567890ab/containerd/abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "expected": {
+        "runtime": "containerd",
+        "in_container": true,
+        "kubernetes_pod_uid": "12345678-1234-1234-1234-1234567890ab"
+      }
+    },
+    {
+      "id": "env-claude-agent",
+      "kind": "env_map",
+      "input": {
+        "env": {
+          "CLAUDE_SESSION_ID": "session-1234",
+          "PATH": "/usr/bin"
+        }
+      },
+      "expected": {
+        "supervisor_name": "claude",
+        "category": "agent",
+        "is_human_supervised": true
+      }
+    },
+    {
+      "id": "env-launchd-xpc",
+      "kind": "env_map",
+      "input": {
+        "env": {
+          "XPC_SERVICE_NAME": "com.apple.Spotlight",
+          "PATH": "/usr/bin"
+        }
+      },
+      "expected": {
+        "supervisor_name": "launchd",
+        "category": "orchestrator",
+        "is_human_supervised": false
+      }
+    }
+  ]
+}
