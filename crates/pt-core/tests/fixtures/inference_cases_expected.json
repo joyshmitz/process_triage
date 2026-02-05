@@ -1,0 +1,98 @@
+{
+  "schema_version": "1.0.0",
+  "cases": [
+    {
+      "case_id": "idle_orphan_low_io",
+      "posterior": {
+        "useful": 1.3580509094554107e-14,
+        "useful_bad": 2.416421326496237e-20,
+        "abandoned": 0.537422692603861,
+        "zombie": 0.4625773073961246
+      },
+      "classification": "abandoned",
+      "confidence": "low",
+      "top_evidence": [
+        {
+          "feature": "cpu",
+          "direction": "supports abandoned",
+          "strength": "decisive",
+          "delta_bits": 22.78868139295719
+        },
+        {
+          "feature": "runtime",
+          "direction": "supports abandoned",
+          "strength": "decisive",
+          "delta_bits": 15.003833868629053
+        },
+        {
+          "feature": "orphan",
+          "direction": "supports abandoned",
+          "strength": "decisive",
+          "delta_bits": 3.9772799234999168
+        }
+      ]
+    },
+    {
+      "case_id": "active_tty_net",
+      "posterior": {
+        "useful": 0.9945676641389708,
+        "useful_bad": 0.005432217123659855,
+        "abandoned": 1.187373700952328e-7,
+        "zombie": 2.567777444534649e-64
+      },
+      "classification": "useful",
+      "confidence": "very_high",
+      "top_evidence": [
+        {
+          "feature": "cpu",
+          "direction": "supports useful",
+          "strength": "decisive",
+          "delta_bits": -12.054095520550755
+        },
+        {
+          "feature": "io_active",
+          "direction": "supports useful",
+          "strength": "strong",
+          "delta_bits": -3.044394119358454
+        },
+        {
+          "feature": "tty",
+          "direction": "supports useful",
+          "strength": "strong",
+          "delta_bits": -2.8479969065549504
+        }
+      ]
+    },
+    {
+      "case_id": "mixed_idle_with_tty",
+      "posterior": {
+        "useful": 0.03493015770182757,
+        "useful_bad": 8.815742428234433e-8,
+        "abandoned": 0.9650357848427937,
+        "zombie": 0.000033969297953539424
+      },
+      "classification": "abandoned",
+      "confidence": "high",
+      "top_evidence": [
+        {
+          "feature": "cpu",
+          "direction": "supports abandoned",
+          "strength": "decisive",
+          "delta_bits": 8.813451394658067
+        },
+        {
+          "feature": "tty",
+          "direction": "supports useful",
+          "strength": "strong",
+          "delta_bits": -2.8479969065549504
+        },
+        {
+          "feature": "orphan",
+          "direction": "supports useful",
+          "strength": "substantial",
+          "delta_bits": -1.929610672108602
+        }
+      ]
+    }
+  ]
+}

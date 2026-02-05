@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "cases": [
+    {
+      "case_id": "idle_orphan_low_io",
+      "evidence": {
+        "cpu": { "type": "fraction", "occupancy": 0.01 },
+        "runtime_seconds": 172800,
+        "orphan": true,
+        "tty": false,
+        "net": false,
+        "io_active": false
+      }
+    },
+    {
+      "case_id": "active_tty_net",
+      "evidence": {
+        "cpu": { "type": "fraction", "occupancy": 0.75 },
+        "runtime_seconds": 600,
+        "orphan": false,
+        "tty": true,
+        "net": true,
+        "io_active": true
+      }
+    },
+    {
+      "case_id": "mixed_idle_with_tty",
+      "evidence": {
+        "cpu": { "type": "fraction", "occupancy": 0.10 },
+        "runtime_seconds": 36000,
+        "orphan": false,
+        "tty": true,
+        "net": false,
+        "io_active": false
+      }
+    }
+  ]
+}
