@@ -51,6 +51,13 @@ impl SignalActionRunner {
         Self::new(SignalConfig::default())
     }
 
+    fn resolve_group_target(&self, pid: u32, pgid: Option<u32>) -> (u32, bool) {
+        let pgid = pgid.filter(|pgid| *pgid > 0);
+        let use_group = self.config.use_process_groups && pgid.is_some();
+        let target = if use_group { pgid.unwrap() } else { pid };
+        (target, use_group)
+    }
+
     /// Send a signal to a process.
     #[cfg(unix)]
     fn send_signal(&self, pid: u32, signal: i32, use_group: bool) -> Result<(), ActionError> {
@@ -146,12 +153,7 @@ impl SignalActionRunner {
     #[cfg(unix)]
     fn execute_pause(&self, action: &PlanAction) -> Result<(), ActionError> {
         let pid = action.target.pid.0;
-        let use_group = self.config.use_process_groups && action.target.pgid.is_some();
-        let target = if use_group {
-            action.target.pgid.unwrap_or(pid)
-        } else {
-            pid
-        };
+        let (target, use_group) = self.resolve_group_target(pid, action.target.pgid);
 
         self.send_signal(target, libc::SIGSTOP, use_group)?;
         Ok(())
@@ -161,12 +163,7 @@ impl SignalActionRunner {
     #[cfg(unix)]
     fn execute_kill(&self, action: &PlanAction) -> Result<(), ActionError> {
         let pid = action.target.pid.0;
-        let use_group = self.config.use_process_groups && action.target.pgid.is_some();
-        let target = if use_group {
-            action.target.pgid.unwrap_or(pid)
-        } else {
-            pid
-        };
+        let (target, use_group) = self.resolve_group_target(pid, action.target.pgid);
 
         // Stage 1: SIGTERM
         self.send_signal(target, libc::SIGTERM, use_group)?;
@@ -208,7 +205,9 @@ impl SignalActionRunner {
     /// Execute a resume action (SIGCONT) - raw version.
     #[cfg(unix)]
     pub fn resume(&self, pid: u32, use_group: bool, pgid: Option<u32>) -> Result<(), ActionError> {
-        let target = if use_group { pgid.unwrap_or(pid) } else { pid };
+        let pgid = pgid.filter(|pgid| *pgid > 0);
+        let use_group = use_group && pgid.is_some();
+        let target = if use_group { pgid.unwrap() } else { pid };
         self.send_signal(target, libc::SIGCONT, use_group)
     }
 
@@ -223,12 +222,7 @@ impl SignalActionRunner {
     #[cfg(unix)]
     fn execute_resume(&self, action: &PlanAction) -> Result<(), ActionError> {
         let pid = action.target.pid.0;
-        let use_group = self.config.use_process_groups && action.target.pgid.is_some();
-        let target = if use_group {
-            action.target.pgid.unwrap_or(pid)
-        } else {
-            pid
-        };
+        let (target, use_group) = self.resolve_group_target(pid, action.target.pgid);
 
         self.send_signal(target, libc::SIGCONT, use_group)?;
         Ok(())

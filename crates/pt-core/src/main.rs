@@ -800,7 +800,7 @@ struct AgentTailArgs {
 
 #[derive(Args, Debug)]
 struct AgentWatchArgs {
-    /// Execute command when watch events are emitted (webhook/script)
+    /// Execute command via shell when watch events are emitted (legacy; prefer --notify-cmd)
     #[arg(long = "notify-exec")]
     notify_exec: Option<String>,
 

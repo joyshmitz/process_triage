@@ -274,11 +274,11 @@ fn extract_docker_id(path: &str) -> Option<String> {
         }
     }
 
-    // Try docker-<id>.scope pattern
+    // Try docker-<id>.scope pattern (handle optional subpaths)
     if let Some(idx) = path.find("docker-") {
         let after = &path[idx + 7..];
-        let id = after.strip_suffix(".scope").or(Some(after))?;
-        let id = id.split('/').next()?;
+        let first = after.split('/').next()?;
+        let id = first.strip_suffix(".scope").unwrap_or(first);
         if is_container_id(id) {
             return Some(id.to_string());
         }
@@ -295,8 +295,8 @@ fn extract_podman_id(path: &str) -> Option<String> {
 
     if let Some(idx) = path.find("libpod-") {
         let after = &path[idx + 7..];
-        let id = after.strip_suffix(".scope").unwrap_or(after);
-        let id = id.split('/').next()?;
+        let first = after.split('/').next()?;
+        let id = first.strip_suffix(".scope").unwrap_or(first);
         if is_container_id(id) {
             return Some(id.to_string());
         }
@@ -483,12 +483,32 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_docker_scope_with_subpath() {
+        let path = "/system.slice/docker-abc123def456789012345678901234567890123456789012345678901234.scope/xyz";
+        let info = detect_container_from_cgroup(path);
+
+        assert!(info.in_container);
+        assert_eq!(info.runtime, ContainerRuntime::Docker);
+        assert!(info.container_id.is_some());
+    }
+
+    #[test]
     fn test_detect_podman() {
         let path = "/machine.slice/libpod-abc123def456789012345678901234567890123456789012345678901234.scope";
         let info = detect_container_from_cgroup(path);
 
         assert!(info.in_container);
         assert_eq!(info.runtime, ContainerRuntime::Podman);
+    }
+
+    #[test]
+    fn test_detect_podman_scope_with_subpath() {
+        let path = "/machine.slice/libpod-abc123def456789012345678901234567890123456789012345678901234.scope/xyz";
+        let info = detect_container_from_cgroup(path);
+
+        assert!(info.in_container);
+        assert_eq!(info.runtime, ContainerRuntime::Podman);
+        assert!(info.container_id.is_some());
     }
 
     #[test]

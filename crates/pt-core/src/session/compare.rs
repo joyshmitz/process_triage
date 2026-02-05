@@ -337,7 +337,7 @@ fn compute_drift_summary(
         0.0
     } else {
         let mut sorted = score_drifts.clone();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mid = sorted.len() / 2;
         if sorted.len() % 2 == 0 {
             (sorted[mid - 1] + sorted[mid]) / 2.0
