@@ -9215,6 +9215,33 @@ fn is_supervised_for_robot(_pid: u32) -> bool {
     false
 }
 
+#[cfg(target_os = "linux")]
+fn first_precheck_block(
+    provider: &dyn pt_core::action::prechecks::PreCheckProvider,
+    action: &PlanAction,
+) -> Option<(pt_core::plan::PreCheck, String)> {
+    let results = provider.run_checks(&action.pre_checks, action.target.pid.0, action.target.sid);
+    for result in results {
+        if let pt_core::action::prechecks::PreCheckResult::Blocked { check, reason } = result {
+            return Some((check, reason));
+        }
+    }
+    None
+}
+
+fn precheck_label_for_apply(check: &pt_core::plan::PreCheck) -> &'static str {
+    use pt_core::plan::PreCheck;
+    match check {
+        PreCheck::VerifyIdentity => "verify_identity",
+        PreCheck::CheckNotProtected => "check_not_protected",
+        PreCheck::CheckSessionSafety => "check_session_safety",
+        PreCheck::CheckDataLossGate => "check_data_loss_gate",
+        PreCheck::CheckSupervisor => "check_supervisor",
+        PreCheck::CheckAgentSupervision => "check_agent_supervision",
+        PreCheck::VerifyProcessState => "verify_process_state",
+    }
+}
+
 fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     let _lock = match acquire_global_lock(global, "agent apply") {
         Ok(lock) => lock,
@@ -9411,11 +9438,22 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     let constraints_summary = constraints.active_constraints_summary();
     let _ = handle.update_state(SessionState::Executing);
 
+    #[cfg(target_os = "linux")]
+    let precheck_provider = {
+        use pt_core::action::{LivePreCheckConfig, LivePreCheckProvider};
+        LivePreCheckProvider::new(
+            Some(&config.policy.guardrails),
+            LivePreCheckConfig::from(&config.policy.data_loss_gates),
+        )
+        .unwrap_or_else(|_| LivePreCheckProvider::with_defaults())
+    };
+
     let mut outcomes: Vec<serde_json::Value> = Vec::new();
     let mut succeeded = 0usize;
     let mut failed = 0usize;
     let mut skipped = 0usize;
     let mut blocked_by_constraints = 0usize;
+    let mut blocked_by_prechecks = 0usize;
     let mut resumed_skipped = 0usize;
 
     // Handle dry-run/shadow mode or execute
@@ -9454,6 +9492,24 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                 continue;
             }
 
+            if action.blocked {
+                blocked_by_prechecks += 1;
+                outcomes.push(serde_json::json!({
+                    "action_id": action.action_id,
+                    "pid": action.target.pid.0,
+                    "status": "blocked_by_plan"
+                }));
+                emit_action_event(
+                    pt_core::events::event_names::ACTION_COMPLETE,
+                    action_index,
+                    None,
+                    action,
+                    "blocked_by_plan",
+                    &[],
+                );
+                continue;
+            }
+
             let candidate = RobotCandidate {
                 posterior: action.rationale.posterior_odds_abandoned_vs_useful,
                 memory_mb: None,
@@ -9475,18 +9531,40 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                     "blocked_by_constraints",
                     &[],
                 );
-            } else {
-                skipped += 1;
-                outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": if global.dry_run { "dry_run" } else { "shadow" }}));
+                continue;
+            }
+
+            #[cfg(target_os = "linux")]
+            if let Some((check, reason)) = first_precheck_block(&precheck_provider, action) {
+                blocked_by_prechecks += 1;
+                outcomes.push(serde_json::json!({
+                    "action_id": action.action_id,
+                    "pid": action.target.pid.0,
+                    "status": "precheck_blocked",
+                    "check": precheck_label_for_apply(&check),
+                    "reason": reason
+                }));
                 emit_action_event(
                     pt_core::events::event_names::ACTION_COMPLETE,
                     action_index,
                     None,
                     action,
-                    if global.dry_run { "dry_run" } else { "shadow" },
-                    &[],
+                    "precheck_blocked",
+                    &[("check", serde_json::json!(precheck_label_for_apply(&check)))],
                 );
+                continue;
             }
+
+            skipped += 1;
+            outcomes.push(serde_json::json!({"action_id": action.action_id, "pid": action.target.pid.0, "status": if global.dry_run { "dry_run" } else { "shadow" }}));
+            emit_action_event(
+                pt_core::events::event_names::ACTION_COMPLETE,
+                action_index,
+                None,
+                action,
+                if global.dry_run { "dry_run" } else { "shadow" },
+                &[],
+            );
         }
     } else {
         #[cfg(target_os = "linux")]
@@ -9522,6 +9600,27 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                         "already_completed",
                         &[("resume", serde_json::json!(true))],
                     );
+                    continue;
+                }
+
+                if action.blocked {
+                    blocked_by_prechecks += 1;
+                    outcomes.push(serde_json::json!({
+                        "action_id": action.action_id,
+                        "pid": action.target.pid.0,
+                        "status": "blocked_by_plan"
+                    }));
+                    emit_action_event(
+                        pt_core::events::event_names::ACTION_COMPLETE,
+                        action_index,
+                        None,
+                        action,
+                        "blocked_by_plan",
+                        &[],
+                    );
+                    if args.abort_on_unknown {
+                        break;
+                    }
                     continue;
                 }
 
@@ -9589,6 +9688,30 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
                         }
                         continue;
                     }
+                }
+                if let Some((check, reason)) = first_precheck_block(&precheck_provider, action) {
+                    blocked_by_prechecks += 1;
+                    let elapsed_ms = start.elapsed().as_millis() as u64;
+                    outcomes.push(serde_json::json!({
+                        "action_id": action.action_id,
+                        "pid": action.target.pid.0,
+                        "status": "precheck_blocked",
+                        "check": precheck_label_for_apply(&check),
+                        "reason": reason,
+                        "time_ms": elapsed_ms
+                    }));
+                    emit_action_event(
+                        pt_core::events::event_names::ACTION_COMPLETE,
+                        action_index,
+                        Some(elapsed_ms),
+                        action,
+                        "precheck_blocked",
+                        &[("check", serde_json::json!(precheck_label_for_apply(&check)))],
+                    );
+                    if args.abort_on_unknown {
+                        break;
+                    }
+                    continue;
                 }
                 match signal_runner.execute(action) {
                     Ok(()) => {
@@ -9702,6 +9825,7 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
             "failed": failed,
             "skipped": skipped,
             "blocked_by_constraints": blocked_by_constraints,
+            "blocked_by_prechecks": blocked_by_prechecks,
             "resumed_skipped": resumed_skipped
         },
         "outcomes": outcomes,
@@ -9715,13 +9839,24 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         OutputFormat::Summary => {
             if resumed_skipped > 0 {
                 println!(
-                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} already done (resumed)",
-                    sid, succeeded, failed, skipped, blocked_by_constraints, resumed_skipped
+                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} precheck_blocked, {} already done (resumed)",
+                    sid,
+                    succeeded,
+                    failed,
+                    skipped,
+                    blocked_by_constraints,
+                    blocked_by_prechecks,
+                    resumed_skipped
                 );
             } else {
                 println!(
-                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked",
-                    sid, succeeded, failed, skipped, blocked_by_constraints
+                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} precheck_blocked",
+                    sid,
+                    succeeded,
+                    failed,
+                    skipped,
+                    blocked_by_constraints,
+                    blocked_by_prechecks
                 );
             }
         }
@@ -9731,7 +9866,7 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         ),
     }
 
-    if blocked_by_constraints > 0 && succeeded == 0 && failed == 0 {
+    if (blocked_by_constraints + blocked_by_prechecks) > 0 && succeeded == 0 && failed == 0 {
         if let Some(ref e) = emitter {
             e.emit(ProgressEvent::new(
                 pt_core::events::event_names::SESSION_ENDED,
