@@ -12,7 +12,9 @@
 
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+use crate::decision::{select_fdr, FdrCandidate, FdrMethod, TargetIdentity};
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -98,6 +100,31 @@ pub struct SafetyBudget {
     pub alpha_remaining: f64,
     /// Per-host alpha allocations.
     pub host_allocations: HashMap<String, f64>,
+    /// Pooled fleet-wide FDR status for kill recommendations.
+    pub pooled_fdr: PooledFdrStatus,
+}
+
+/// Summary of pooled fleet-wide FDR selection for kill recommendations.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PooledFdrStatus {
+    /// FDR method used for selection.
+    pub method: String,
+    /// Alpha level used for pooled selection.
+    pub alpha: f64,
+    /// Number of kill recommendations evaluated across all hosts.
+    pub total_kill_candidates: usize,
+    /// Number of kill recommendations approved by pooled FDR.
+    pub selected_kills: usize,
+    /// Number of kill recommendations rejected by pooled FDR.
+    pub rejected_kills: usize,
+    /// Selection threshold in e-value space at the decision boundary.
+    pub selection_threshold: Option<f64>,
+    /// BY correction factor when applicable.
+    pub correction_factor: Option<f64>,
+    /// Approved kill counts per host.
+    pub selected_by_host: HashMap<String, u32>,
+    /// Rejected kill counts per host.
+    pub rejected_by_host: HashMap<String, u32>,
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +139,8 @@ pub struct CandidateInfo {
     pub classification: String,
     pub recommended_action: String,
     pub score: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub e_value: Option<f64>,
 }
 
 /// Per-host input for fleet aggregation.
@@ -135,10 +164,13 @@ pub fn create_fleet_session(
     host_inputs: &[HostInput],
     max_fdr: f64,
 ) -> FleetSession {
+    let (selected_kill_keys, pooled_fdr) = compute_pooled_fdr(host_inputs, max_fdr);
+
     let hosts: Vec<HostEntry> = host_inputs
         .iter()
         .map(|input| {
-            let summary = compute_host_summary(&input.candidates);
+            let summary =
+                compute_host_summary(&input.host_id, &input.candidates, &selected_kill_keys);
             HostEntry {
                 host_id: input.host_id.clone(),
                 session_id: input.session_id.clone(),
@@ -150,8 +182,8 @@ pub fn create_fleet_session(
         })
         .collect();
 
-    let aggregate = compute_aggregate(&hosts, host_inputs);
-    let safety_budget = compute_safety_budget(&hosts, max_fdr);
+    let aggregate = compute_aggregate(&hosts, host_inputs, &selected_kill_keys);
+    let safety_budget = compute_safety_budget(&hosts, max_fdr, pooled_fdr);
 
     FleetSession {
         fleet_session_id: fleet_session_id.to_string(),
@@ -163,17 +195,20 @@ pub fn create_fleet_session(
     }
 }
 
-fn compute_host_summary(candidates: &[CandidateInfo]) -> HostSummary {
+fn compute_host_summary(
+    host_id: &str,
+    candidates: &[CandidateInfo],
+    selected_kill_keys: &HashSet<String>,
+) -> HostSummary {
     let mut class_counts: HashMap<String, u32> = HashMap::new();
     let mut action_counts: HashMap<String, u32> = HashMap::new();
     let mut score_sum = 0.0;
     let mut max_score = 0.0f64;
 
     for c in candidates {
+        let action = effective_action(host_id, c, selected_kill_keys);
         *class_counts.entry(c.classification.clone()).or_default() += 1;
-        *action_counts
-            .entry(c.recommended_action.clone())
-            .or_default() += 1;
+        *action_counts.entry(action).or_default() += 1;
         score_sum += c.score;
         max_score = max_score.max(c.score);
     }
@@ -192,7 +227,11 @@ fn compute_host_summary(candidates: &[CandidateInfo]) -> HostSummary {
     }
 }
 
-fn compute_aggregate(hosts: &[HostEntry], inputs: &[HostInput]) -> FleetAggregate {
+fn compute_aggregate(
+    hosts: &[HostEntry],
+    inputs: &[HostInput],
+    selected_kill_keys: &HashSet<String>,
+) -> FleetAggregate {
     let mut class_counts: HashMap<String, u32> = HashMap::new();
     let mut action_counts: HashMap<String, u32> = HashMap::new();
     let mut total_processes = 0u32;
@@ -221,7 +260,7 @@ fn compute_aggregate(hosts: &[HostEntry], inputs: &[HostInput]) -> FleetAggregat
         score_sum / score_count as f64
     };
 
-    let recurring_patterns = find_recurring_patterns(inputs);
+    let recurring_patterns = find_recurring_patterns(inputs, selected_kill_keys);
 
     FleetAggregate {
         total_hosts: hosts.len(),
@@ -235,7 +274,10 @@ fn compute_aggregate(hosts: &[HostEntry], inputs: &[HostInput]) -> FleetAggregat
     }
 }
 
-fn find_recurring_patterns(inputs: &[HostInput]) -> Vec<RecurringPattern> {
+fn find_recurring_patterns(
+    inputs: &[HostInput],
+    selected_kill_keys: &HashSet<String>,
+) -> Vec<RecurringPattern> {
     // Group candidates by signature across hosts.
     let mut sig_map: HashMap<String, Vec<(String, u32)>> = HashMap::new();
     // sig_map: signature → [(host_id, count)]
@@ -257,10 +299,11 @@ fn find_recurring_patterns(inputs: &[HostInput]) -> Vec<RecurringPattern> {
     let mut sig_actions: HashMap<String, HashMap<String, u32>> = HashMap::new();
     for input in inputs {
         for c in &input.candidates {
+            let action = effective_action(&input.host_id, c, selected_kill_keys);
             *sig_actions
                 .entry(c.signature.clone())
                 .or_default()
-                .entry(c.recommended_action.clone())
+                .entry(action)
                 .or_default() += 1;
         }
     }
@@ -301,7 +344,11 @@ fn find_recurring_patterns(inputs: &[HostInput]) -> Vec<RecurringPattern> {
     patterns
 }
 
-fn compute_safety_budget(hosts: &[HostEntry], max_fdr: f64) -> SafetyBudget {
+fn compute_safety_budget(
+    hosts: &[HostEntry],
+    max_fdr: f64,
+    pooled_fdr: PooledFdrStatus,
+) -> SafetyBudget {
     let n = hosts.len().max(1) as f64;
     let per_host_alpha = max_fdr / n;
 
@@ -315,7 +362,132 @@ fn compute_safety_budget(hosts: &[HostEntry], max_fdr: f64) -> SafetyBudget {
         alpha_spent: 0.0,
         alpha_remaining: max_fdr,
         host_allocations,
+        pooled_fdr,
     }
+}
+
+fn candidate_key(host_id: &str, pid: u32) -> String {
+    format!("{}:{}", host_id, pid)
+}
+
+fn effective_action(
+    host_id: &str,
+    candidate: &CandidateInfo,
+    selected_kill_keys: &HashSet<String>,
+) -> String {
+    let action = candidate.recommended_action.to_ascii_lowercase();
+    if action == "kill" && !selected_kill_keys.contains(&candidate_key(host_id, candidate.pid)) {
+        "review".to_string()
+    } else {
+        action
+    }
+}
+
+fn score_to_default_evalue(score: f64) -> f64 {
+    let clamped = score.clamp(0.0, 1.0 - 1e-12);
+    if clamped <= 0.0 {
+        0.0
+    } else {
+        // Convert posterior confidence into a monotonic e-value proxy.
+        let odds = clamped / (1.0 - clamped);
+        odds.powf(3.0)
+    }
+}
+
+fn compute_pooled_fdr(host_inputs: &[HostInput], alpha: f64) -> (HashSet<String>, PooledFdrStatus) {
+    let mut pool: Vec<(String, String, FdrCandidate)> = Vec::new();
+    for input in host_inputs {
+        for cand in &input.candidates {
+            if !cand.recommended_action.eq_ignore_ascii_case("kill") {
+                continue;
+            }
+            let key = candidate_key(&input.host_id, cand.pid);
+            let e_value = cand
+                .e_value
+                .unwrap_or_else(|| score_to_default_evalue(cand.score))
+                .max(0.0);
+            let fdr_candidate = FdrCandidate {
+                target: TargetIdentity {
+                    pid: cand.pid as i32,
+                    start_id: key.clone(),
+                    uid: 0,
+                },
+                e_value,
+            };
+            pool.push((key, input.host_id.clone(), fdr_candidate));
+        }
+    }
+
+    if pool.is_empty() {
+        return (
+            HashSet::new(),
+            PooledFdrStatus {
+                method: "eby".to_string(),
+                alpha,
+                total_kill_candidates: 0,
+                selected_kills: 0,
+                rejected_kills: 0,
+                selection_threshold: None,
+                correction_factor: None,
+                selected_by_host: HashMap::new(),
+                rejected_by_host: HashMap::new(),
+            },
+        );
+    }
+
+    let candidates: Vec<FdrCandidate> = pool.iter().map(|(_, _, c)| c.clone()).collect();
+    let selection = select_fdr(&candidates, alpha, FdrMethod::EBy);
+
+    let mut selected_keys = HashSet::new();
+    let mut selected_by_host: HashMap<String, u32> = HashMap::new();
+    let mut rejected_by_host: HashMap<String, u32> = HashMap::new();
+
+    let (selected_count, selection_threshold, correction_factor) = match selection {
+        Ok(result) => {
+            for selected in &result.selected_ids {
+                selected_keys.insert(selected.start_id.clone());
+            }
+
+            for (key, host_id, _) in &pool {
+                if selected_keys.contains(key) {
+                    *selected_by_host.entry(host_id.clone()).or_default() += 1;
+                } else {
+                    *rejected_by_host.entry(host_id.clone()).or_default() += 1;
+                }
+            }
+
+            (
+                result.selected_k,
+                if result.selection_threshold.is_finite() {
+                    Some(result.selection_threshold)
+                } else {
+                    None
+                },
+                result.correction_factor,
+            )
+        }
+        Err(_) => {
+            for (_, host_id, _) in &pool {
+                *rejected_by_host.entry(host_id.clone()).or_default() += 1;
+            }
+            (0, None, None)
+        }
+    };
+
+    let total = pool.len();
+    let status = PooledFdrStatus {
+        method: "eby".to_string(),
+        alpha,
+        total_kill_candidates: total,
+        selected_kills: selected_count,
+        rejected_kills: total.saturating_sub(selected_count),
+        selection_threshold,
+        correction_factor,
+        selected_by_host,
+        rejected_by_host,
+    };
+
+    (selected_keys, status)
 }
 
 /// Record alpha spending for a host (after executing actions).
@@ -352,6 +524,25 @@ mod tests {
             classification: class.to_string(),
             recommended_action: action.to_string(),
             score,
+            e_value: None,
+        }
+    }
+
+    fn cand_with_e(
+        pid: u32,
+        sig: &str,
+        class: &str,
+        action: &str,
+        score: f64,
+        e_value: f64,
+    ) -> CandidateInfo {
+        CandidateInfo {
+            pid,
+            signature: sig.to_string(),
+            classification: class.to_string(),
+            recommended_action: action.to_string(),
+            score,
+            e_value: Some(e_value),
         }
     }
 
@@ -448,9 +639,42 @@ mod tests {
         assert!((fleet.safety_budget.max_fdr - 0.10).abs() < f64::EPSILON);
         assert!((fleet.safety_budget.alpha_remaining - 0.10).abs() < f64::EPSILON);
         assert!((fleet.safety_budget.alpha_spent - 0.0).abs() < f64::EPSILON);
+        assert_eq!(fleet.safety_budget.pooled_fdr.method, "eby");
+        assert_eq!(fleet.safety_budget.pooled_fdr.total_kill_candidates, 2);
         // Each host gets 0.05 allocation.
         assert!(
             (*fleet.safety_budget.host_allocations.get("h1").unwrap() - 0.05).abs() < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn test_pooled_fdr_filters_low_evidence_kills() {
+        let inputs = vec![
+            host(
+                "h1",
+                vec![
+                    cand_with_e(1, "sig-a", "abandoned", "kill", 0.99, 220.0),
+                    cand_with_e(2, "sig-b", "abandoned", "kill", 0.80, 30.0),
+                ],
+            ),
+            host(
+                "h2",
+                vec![cand_with_e(3, "sig-c", "zombie", "kill", 0.97, 130.0)],
+            ),
+        ];
+
+        let fleet = create_fleet_session("fdr-filter", None, &inputs, 0.05);
+
+        // For m=3 and alpha=0.05 with eBY, first two pass and one is filtered.
+        assert_eq!(fleet.safety_budget.pooled_fdr.total_kill_candidates, 3);
+        assert_eq!(fleet.safety_budget.pooled_fdr.selected_kills, 2);
+        assert_eq!(fleet.safety_budget.pooled_fdr.rejected_kills, 1);
+
+        // One kill should be downgraded to review in aggregate action counts.
+        assert_eq!(*fleet.aggregate.action_counts.get("kill").unwrap_or(&0), 2);
+        assert_eq!(
+            *fleet.aggregate.action_counts.get("review").unwrap_or(&0),
+            1
         );
     }
 
