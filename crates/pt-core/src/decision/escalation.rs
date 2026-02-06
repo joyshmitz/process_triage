@@ -7,6 +7,25 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PersistedTriggerState {
+    first_seen_at: f64,
+    last_seen_at: f64,
+    last_sent_at: Option<f64>,
+    last_sent_level: Option<EscalationLevel>,
+}
+
+/// Persisted state for the escalation manager.
+///
+/// Stored by the daemon so notification escalation survives restarts.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PersistedEscalationState {
+    #[serde(default)]
+    states: HashMap<String, PersistedTriggerState>,
+    #[serde(default)]
+    notification_log: Vec<f64>,
+}
+
 /// A trigger condition that may generate a notification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EscalationTrigger {
@@ -160,7 +179,7 @@ impl Default for EscalationConfig {
             max_notifications_per_hour: 10,
             bundle_window_secs: 60.0,
             min_severity: Severity::Warning,
-            level2_after_secs: 3600.0,      // 1 hour
+            level2_after_secs: 3600.0,        // 1 hour
             level3_after_secs: 24.0 * 3600.0, // 24 hours
             level4_after_secs: 48.0 * 3600.0, // 48 hours
             min_confidence_for_escalation: 0.7,
@@ -198,6 +217,58 @@ impl EscalationManager {
         }
     }
 
+    pub fn from_persisted(config: EscalationConfig, persisted: PersistedEscalationState) -> Self {
+        let mut states = HashMap::new();
+        for (k, v) in persisted.states {
+            states.insert(
+                k,
+                TriggerState {
+                    first_seen_at: v.first_seen_at,
+                    last_seen_at: v.last_seen_at,
+                    last_sent_at: v.last_sent_at,
+                    last_sent_level: v.last_sent_level,
+                },
+            );
+        }
+        Self {
+            config,
+            states,
+            notification_log: persisted.notification_log,
+            pending_triggers: HashMap::new(),
+        }
+    }
+
+    pub fn persisted_state(&self) -> PersistedEscalationState {
+        let mut states = HashMap::new();
+        for (k, v) in &self.states {
+            states.insert(
+                k.clone(),
+                PersistedTriggerState {
+                    first_seen_at: v.first_seen_at,
+                    last_seen_at: v.last_seen_at,
+                    last_sent_at: v.last_sent_at,
+                    last_sent_level: v.last_sent_level,
+                },
+            );
+        }
+        PersistedEscalationState {
+            states,
+            notification_log: self.notification_log.clone(),
+        }
+    }
+
+    /// Drop all escalation state for a dedupe key.
+    ///
+    /// Use this when a notification is acknowledged so we do not keep escalating.
+    pub fn forget_key(&mut self, dedupe_key: &str) {
+        self.states.remove(dedupe_key);
+        self.pending_triggers.remove(dedupe_key);
+    }
+
+    pub fn has_key(&self, dedupe_key: &str) -> bool {
+        self.states.contains_key(dedupe_key)
+    }
+
     /// Submit a trigger. Returns true if it was accepted (not rate-limited).
     pub fn submit_trigger(&mut self, trigger: EscalationTrigger) -> bool {
         // Check severity threshold.
@@ -211,12 +282,15 @@ impl EscalationManager {
             trigger.dedupe_key.clone()
         };
 
-        let st = self.states.entry(dedupe_key.clone()).or_insert(TriggerState {
-            first_seen_at: trigger.detected_at,
-            last_seen_at: trigger.detected_at,
-            last_sent_at: None,
-            last_sent_level: None,
-        });
+        let st = self
+            .states
+            .entry(dedupe_key.clone())
+            .or_insert(TriggerState {
+                first_seen_at: trigger.detected_at,
+                last_seen_at: trigger.detected_at,
+                last_sent_at: None,
+                last_sent_level: None,
+            });
         st.last_seen_at = trigger.detected_at;
 
         // Keep the most recent trigger details for the dedupe_key.
@@ -291,16 +365,26 @@ impl EscalationManager {
         }
 
         // Bundle all into one notification.
-        let max_severity = emit.iter().map(|(_, t, _)| t.severity).max().unwrap();
+        let Some(max_severity) = emit.iter().map(|(_, t, _)| t.severity).max() else {
+            return vec![];
+        };
         let session_id = emit.iter().find_map(|(_, t, _)| t.session_id.clone());
-        let max_level = emit.iter().map(|(_, _, l)| *l).max().unwrap_or(EscalationLevel::L1);
+        let max_level = emit
+            .iter()
+            .map(|(_, _, l)| *l)
+            .max()
+            .unwrap_or(EscalationLevel::L1);
         let summaries: Vec<String> = emit
             .iter()
-            .map(|(_, t, level)| format!("- [{}/{}] {}", t.severity, level_string(*level), t.summary))
+            .map(|(_, t, level)| {
+                format!("- [{}/{}] {}", t.severity, level_string(*level), t.summary)
+            })
             .collect();
 
         let count = emit.len();
-        let dedupe_key = "bundle".to_string();
+        let mut bundle_keys: Vec<String> = emit.iter().map(|(k, _, _)| k.clone()).collect();
+        bundle_keys.sort();
+        let dedupe_key = bundle_dedupe_key(&bundle_keys);
         for (key, _, level) in emit {
             self.update_state_sent(&key, now, level);
         }
@@ -344,6 +428,26 @@ impl EscalationManager {
         self.states
             .retain(|_, st| now - st.last_seen_at < stale_after);
     }
+}
+
+fn bundle_dedupe_key(keys: &[String]) -> String {
+    if keys.is_empty() {
+        return "bundle:empty".to_string();
+    }
+
+    // FNV-1a 64-bit (simple, dependency-free, stable across platforms).
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for k in keys {
+        for b in k.as_bytes() {
+            hash ^= u64::from(*b);
+            hash = hash.wrapping_mul(0x00000100000001B3);
+        }
+        // Separator.
+        hash ^= 0xff;
+        hash = hash.wrapping_mul(0x00000100000001B3);
+    }
+
+    format!("bundle:{:016x}", hash)
 }
 
 fn desired_level(
@@ -647,5 +751,18 @@ mod tests {
         let n4 = mgr.flush(31.0);
         assert_eq!(n4.len(), 1);
         assert_eq!(n4[0].level, EscalationLevel::L4);
+    }
+
+    #[test]
+    fn test_persisted_state_roundtrip() {
+        let mut mgr = EscalationManager::new(EscalationConfig::default());
+        mgr.submit_trigger(make_trigger("t1", Severity::Warning, 1000.0));
+        let _ = mgr.flush(1000.0);
+
+        let persisted = mgr.persisted_state();
+        let mgr2 = EscalationManager::from_persisted(EscalationConfig::default(), persisted);
+        // We can't access internals directly, but flush should not panic and
+        // the manager should retain its send log.
+        assert!(mgr2.total_sent() >= 1);
     }
 }

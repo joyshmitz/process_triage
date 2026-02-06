@@ -35,6 +35,41 @@ pub struct DaemonConfig {
     pub triggers: triggers::TriggerConfig,
     /// Escalation configuration.
     pub escalation: escalation::EscalationConfig,
+    /// Notification escalation ladder configuration.
+    #[serde(default)]
+    pub notification_ladder: crate::decision::escalation::EscalationConfig,
+    /// Notification delivery configuration.
+    #[serde(default)]
+    pub notifications: DaemonNotificationsConfig,
+}
+
+/// Notification delivery settings for the daemon.
+///
+/// The ladder decides *what* level/channels are appropriate; this config
+/// decides which channels are actually delivered in this environment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DaemonNotificationsConfig {
+    /// Enable notification delivery (inbox items are still written separately).
+    pub enabled: bool,
+    /// Best-effort desktop notifications (Linux/macOS).
+    pub desktop: bool,
+    /// Execute a command when a notification is emitted (best-effort).
+    #[serde(default)]
+    pub notify_cmd: Option<String>,
+    /// Extra args for notify_cmd.
+    #[serde(default)]
+    pub notify_arg: Vec<String>,
+}
+
+impl Default for DaemonNotificationsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            desktop: true,
+            notify_cmd: None,
+            notify_arg: Vec::new(),
+        }
+    }
 }
 
 impl Default for DaemonConfig {
@@ -45,6 +80,8 @@ impl Default for DaemonConfig {
             max_rss_mb: 64,
             triggers: triggers::TriggerConfig::default(),
             escalation: escalation::EscalationConfig::default(),
+            notification_ladder: crate::decision::escalation::EscalationConfig::default(),
+            notifications: DaemonNotificationsConfig::default(),
         }
     }
 }

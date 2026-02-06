@@ -4755,6 +4755,10 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
 
     let mut config = config.clone();
     let inbox = InboxStore::from_env().ok();
+    let mut notify_mgr = pt_core::decision::escalation::EscalationManager::from_persisted(
+        config.notification_ladder.clone(),
+        state_bundle.notifications.clone(),
+    );
 
     loop {
         if DAEMON_SIGNALS.should_stop() {
@@ -4765,6 +4769,11 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
             let (reloaded, enabled) = load_daemon_config(global);
             if enabled {
                 config = reloaded;
+                // Apply new ladder config while preserving persisted state.
+                notify_mgr = pt_core::decision::escalation::EscalationManager::from_persisted(
+                    config.notification_ladder.clone(),
+                    notify_mgr.persisted_state(),
+                );
                 state_bundle.daemon.record_event(
                     pt_core::daemon::DaemonEventType::ConfigReloaded,
                     "config reloaded",
@@ -4773,6 +4782,12 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
         }
 
         let metrics = collect_daemon_metrics();
+        let now_secs = daemon_now_secs();
+
+        if let Some(store) = inbox.as_ref() {
+            daemon_refresh_inbox_notifications(&config, &mut notify_mgr, store, now_secs);
+        }
+
         let mut budget_exceeded = false;
         let now = std::time::Instant::now();
         if let Some(cpu_total) = current_cpu_seconds() {
@@ -4876,6 +4891,19 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
                                             result.candidates_found,
                                         );
                                         let _ = store.add(&item);
+                                        // Emit L1 notification immediately for new inbox item.
+                                        if config.notifications.enabled {
+                                            daemon_submit_inbox_item_trigger(
+                                                &config,
+                                                &mut notify_mgr,
+                                                &item,
+                                                now_secs,
+                                            );
+                                            let notifs = notify_mgr.flush(now_secs);
+                                            for n in notifs {
+                                                daemon_deliver_notification(&config, &n);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -4897,6 +4925,8 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
                 .record_event(pt_core::daemon::DaemonEventType::TickCompleted, "tick");
         }
 
+        // Persist notification escalation state.
+        state_bundle.notifications = notify_mgr.persisted_state();
         let _ = save_daemon_state(&state_path, &state_bundle);
 
         if DAEMON_SIGNALS.should_stop() {
@@ -4929,6 +4959,210 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
     }
 
     ExitCode::Clean
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_now_secs() -> f64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
+#[cfg(feature = "daemon")]
+fn parse_rfc3339_secs(s: &str) -> Option<f64> {
+    chrono::DateTime::parse_from_rfc3339(s)
+        .ok()
+        .map(|dt| dt.timestamp_millis() as f64 / 1000.0)
+}
+
+#[cfg(feature = "daemon")]
+fn inbox_item_dedupe_key(item: &pt_core::inbox::InboxItem) -> String {
+    item.session_id.clone().unwrap_or_else(|| item.id.clone())
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_submit_inbox_item_trigger(
+    config: &pt_core::daemon::DaemonConfig,
+    notify_mgr: &mut pt_core::decision::escalation::EscalationManager,
+    item: &pt_core::inbox::InboxItem,
+    now_secs: f64,
+) {
+    use pt_core::decision::escalation::{EscalationTrigger, Severity, TriggerType};
+    use pt_core::inbox::InboxItemType;
+
+    // Only escalate on actionable daemon inbox items.
+    if !matches!(
+        item.item_type,
+        InboxItemType::DormantEscalation | InboxItemType::LockContention
+    ) {
+        return;
+    }
+
+    let key = inbox_item_dedupe_key(item);
+    let created_at = parse_rfc3339_secs(&item.created_at).unwrap_or(now_secs);
+    let detected_at = if notify_mgr.has_key(&key) {
+        now_secs
+    } else {
+        created_at
+    };
+
+    let candidates = item.candidates.unwrap_or(0);
+    let severity = if item.item_type == InboxItemType::LockContention {
+        Severity::Warning
+    } else if candidates >= 10 {
+        Severity::Critical
+    } else if candidates >= 1 {
+        Severity::Warning
+    } else {
+        Severity::Info
+    };
+
+    let summary = match (&item.review_command, &item.trigger) {
+        (Some(cmd), Some(trig)) => format!("{} ({})\nReview: {}", item.summary, trig, cmd),
+        (Some(cmd), None) => format!("{}\nReview: {}", item.summary, cmd),
+        _ => item.summary.clone(),
+    };
+
+    notify_mgr.submit_trigger(EscalationTrigger {
+        trigger_id: item.id.clone(),
+        dedupe_key: key,
+        trigger_type: TriggerType::HighRiskCandidates,
+        severity,
+        confidence: Some(0.95),
+        summary,
+        detected_at,
+        session_id: item.session_id.clone(),
+    });
+
+    // Bound growth even if inbox is noisy.
+    notify_mgr.prune(now_secs);
+
+    // Config is currently embedded in the manager; this helper just ensures we
+    // reference the config so future work doesn't silently drop it.
+    let _ = &config.notification_ladder;
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_refresh_inbox_notifications(
+    config: &pt_core::daemon::DaemonConfig,
+    notify_mgr: &mut pt_core::decision::escalation::EscalationManager,
+    store: &pt_core::inbox::InboxStore,
+    now_secs: f64,
+) {
+    if !config.notifications.enabled {
+        return;
+    }
+
+    let items = match store.list() {
+        Ok(items) => items,
+        Err(_) => return,
+    };
+
+    // Acknowledged items stop escalation.
+    for item in &items {
+        if item.acknowledged {
+            notify_mgr.forget_key(&inbox_item_dedupe_key(item));
+        }
+    }
+
+    for item in items.iter().filter(|i| !i.acknowledged) {
+        daemon_submit_inbox_item_trigger(config, notify_mgr, item, now_secs);
+    }
+
+    let notifs = notify_mgr.flush(now_secs);
+    for n in notifs {
+        daemon_deliver_notification(config, &n);
+    }
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_deliver_notification(
+    config: &pt_core::daemon::DaemonConfig,
+    notif: &pt_core::decision::escalation::Notification,
+) {
+    if !config.notifications.enabled {
+        return;
+    }
+
+    if config.notifications.desktop
+        && notif.channels.iter().any(|c| {
+            matches!(
+                c,
+                pt_core::decision::escalation::NotificationChannel::Desktop
+            )
+        })
+    {
+        let _ = daemon_notify_desktop(notif);
+    }
+
+    if let Some(cmd) = config.notifications.notify_cmd.as_deref() {
+        let _ = daemon_notify_cmd(cmd, &config.notifications.notify_arg, notif);
+    }
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_notify_cmd(
+    cmd: &str,
+    args: &[String],
+    notif: &pt_core::decision::escalation::Notification,
+) -> std::io::Result<()> {
+    use std::process::Command;
+
+    let mut c = Command::new(cmd);
+    c.args(args);
+    c.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+
+    c.env("PT_NOTIFY_LEVEL", format!("{:?}", notif.level));
+    c.env("PT_NOTIFY_SEVERITY", format!("{:?}", notif.severity));
+    c.env("PT_NOTIFY_TITLE", notif.title.clone());
+    c.env("PT_NOTIFY_BODY", notif.body.clone());
+    c.env("PT_NOTIFY_DEDUPE_KEY", notif.dedupe_key.clone());
+    if let Some(session_id) = &notif.session_id {
+        c.env("PT_NOTIFY_SESSION_ID", session_id.clone());
+    }
+
+    let _ = c.status();
+    Ok(())
+}
+
+#[cfg(feature = "daemon")]
+fn daemon_notify_desktop(
+    notif: &pt_core::decision::escalation::Notification,
+) -> std::io::Result<()> {
+    use std::process::Command;
+
+    #[cfg(target_os = "linux")]
+    {
+        let urgency = match notif.severity {
+            pt_core::decision::escalation::Severity::Critical => "critical",
+            pt_core::decision::escalation::Severity::Warning => "normal",
+            pt_core::decision::escalation::Severity::Info => "low",
+        };
+        let _ = Command::new("notify-send")
+            .args(["-u", urgency, "-a", "pt", &notif.title, &notif.body])
+            .status();
+        return Ok(());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Best-effort: avoid shell by passing a single osascript program string.
+        let body = notif.body.replace('"', "\\\"");
+        let title = notif.title.replace('"', "\\\"");
+        let script = format!("display notification \"{}\" with title \"{}\"", body, title);
+        let _ = Command::new("osascript").args(["-e", &script]).status();
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = notif;
+        Ok(())
+    }
 }
 
 #[cfg(feature = "daemon")]
@@ -6249,6 +6483,8 @@ struct DaemonStateBundle {
     daemon: pt_core::daemon::DaemonState,
     triggers: pt_core::daemon::triggers::TriggerState,
     escalation: pt_core::daemon::escalation::EscalationState,
+    #[serde(default)]
+    notifications: pt_core::decision::escalation::PersistedEscalationState,
 }
 
 #[cfg(feature = "daemon")]
@@ -6263,6 +6499,7 @@ fn load_daemon_state(path: &Path, config: &pt_core::daemon::DaemonConfig) -> Dae
         daemon: pt_core::daemon::DaemonState::new(),
         triggers: pt_core::daemon::triggers::TriggerState::new(&config.triggers),
         escalation: pt_core::daemon::escalation::EscalationState::new(),
+        notifications: pt_core::decision::escalation::PersistedEscalationState::default(),
     }
 }
 
