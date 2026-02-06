@@ -215,7 +215,10 @@ fn compute_entry_hash(entry: &AuditEntry) -> String {
     let mut verify_entry = entry.clone();
     verify_entry.entry_hash = None;
 
-    let json = serde_json::to_string(&verify_entry).unwrap_or_default();
+    let json = match serde_json::to_string(&verify_entry) {
+        Ok(json) => json,
+        Err(_) => return "serialization_failed".to_string(),
+    };
 
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();

@@ -8,6 +8,7 @@
 //! - Hash chain fields for integrity
 
 use chrono::{DateTime, Utc};
+use super::AuditError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -120,12 +121,12 @@ impl AuditEntry {
     ///
     /// The hash is computed over the JSON representation of the entry
     /// with `entry_hash` set to None.
-    pub fn compute_hash(&mut self) {
+    pub fn compute_hash(&mut self) -> Result<(), AuditError> {
         // Temporarily clear entry_hash for hashing
         self.entry_hash = None;
 
         // Serialize to JSON for hashing
-        let json = serde_json::to_string(self).unwrap_or_default();
+        let json = serde_json::to_string(self).map_err(|e| AuditError::Serialization { source: e })?;
 
         // Compute SHA-256
         use sha2::{Digest, Sha256};
@@ -134,6 +135,7 @@ impl AuditEntry {
         let result = hasher.finalize();
 
         self.entry_hash = Some(hex::encode(result));
+        Ok(())
     }
 
     /// Verify that the entry hash is correct.
@@ -147,7 +149,10 @@ impl AuditEntry {
         let mut verify_entry = self.clone();
         verify_entry.entry_hash = None;
 
-        let json = serde_json::to_string(&verify_entry).unwrap_or_default();
+        let json = match serde_json::to_string(&verify_entry) {
+            Ok(json) => json,
+            Err(_) => return false,
+        };
 
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
@@ -343,7 +348,7 @@ mod tests {
         let ctx = AuditContext::new("run-12345", "host-abc");
         let mut entry = AuditEntry::new(&ctx, AuditEventType::Scan, "Scan started", "genesis");
 
-        entry.compute_hash();
+        entry.compute_hash().unwrap();
 
         assert!(entry.entry_hash.is_some());
         assert_eq!(entry.entry_hash.as_ref().unwrap().len(), 64); // SHA-256 = 64 hex chars
@@ -354,7 +359,7 @@ mod tests {
         let ctx = AuditContext::new("run-12345", "host-abc");
         let mut entry = AuditEntry::new(&ctx, AuditEventType::Scan, "Scan started", "genesis");
 
-        entry.compute_hash();
+        entry.compute_hash().unwrap();
         assert!(entry.verify_hash());
 
         // Tamper with the entry

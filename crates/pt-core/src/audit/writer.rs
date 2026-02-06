@@ -142,7 +142,7 @@ impl AuditLog {
         entry.prev_hash = self.last_hash.clone();
 
         // Compute this entry's hash
-        entry.compute_hash();
+        entry.compute_hash()?;
 
         // Serialize and write
         let line = entry.to_jsonl();
