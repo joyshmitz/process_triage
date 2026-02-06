@@ -27,7 +27,7 @@ fn build_bundle_with_profile(profile: ExportProfile) -> Vec<u8> {
     let redacted = engine.redact_with_profile(secret, FieldClass::FreeText, profile);
 
     let mut writer = BundleWriter::new(
-        &format!("pt-20260205-report-{:?}", profile),
+        format!("pt-20260205-report-{:?}", profile),
         "host-report-test",
         profile,
     )

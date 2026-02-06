@@ -133,7 +133,7 @@ fn run_full_pipeline(
     let redacted = engine.redact_with_profile(secret, FieldClass::FreeText, profile);
 
     // Step 3: Build pipeline JSONL log entries
-    let log_entries = vec![
+    let log_entries = [
         json!({
             "event": "bundle_create",
             "timestamp": Utc::now().to_rfc3339(),

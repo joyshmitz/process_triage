@@ -728,7 +728,7 @@ fn test_failure_empty_telemetry_dir_zeros() {
     assert_eq!(status.ttl_eligible_bytes, 0);
 
     // All table entries should have zero counts
-    for (_, ts) in &status.by_table {
+    for ts in status.by_table.values() {
         assert_eq!(ts.file_count, 0);
         assert_eq!(ts.total_bytes, 0);
         assert_eq!(ts.over_ttl_count, 0);

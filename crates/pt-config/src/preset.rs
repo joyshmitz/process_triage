@@ -48,7 +48,7 @@ impl PresetName {
     }
 
     /// Parse preset name from string.
-    pub fn from_str(s: &str) -> Option<PresetName> {
+    pub fn parse(s: &str) -> Option<PresetName> {
         match s.to_lowercase().as_str() {
             "developer" | "dev" => Some(PresetName::Developer),
             "server" | "srv" | "production" | "prod" => Some(PresetName::Server),
@@ -81,7 +81,7 @@ impl std::str::FromStr for PresetName {
     type Err = PresetError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        PresetName::from_str(s).ok_or_else(|| PresetError::UnknownPreset(s.to_string()))
+        PresetName::parse(s).ok_or_else(|| PresetError::UnknownPreset(s.to_string()))
     }
 }
 
@@ -938,16 +938,13 @@ mod tests {
 
     #[test]
     fn test_preset_name_parsing() {
-        assert_eq!(
-            PresetName::from_str("developer"),
-            Some(PresetName::Developer)
-        );
-        assert_eq!(PresetName::from_str("dev"), Some(PresetName::Developer));
-        assert_eq!(PresetName::from_str("server"), Some(PresetName::Server));
-        assert_eq!(PresetName::from_str("prod"), Some(PresetName::Server));
-        assert_eq!(PresetName::from_str("ci"), Some(PresetName::Ci));
-        assert_eq!(PresetName::from_str("paranoid"), Some(PresetName::Paranoid));
-        assert_eq!(PresetName::from_str("unknown"), None);
+        assert_eq!(PresetName::parse("developer"), Some(PresetName::Developer));
+        assert_eq!(PresetName::parse("dev"), Some(PresetName::Developer));
+        assert_eq!(PresetName::parse("server"), Some(PresetName::Server));
+        assert_eq!(PresetName::parse("prod"), Some(PresetName::Server));
+        assert_eq!(PresetName::parse("ci"), Some(PresetName::Ci));
+        assert_eq!(PresetName::parse("paranoid"), Some(PresetName::Paranoid));
+        assert_eq!(PresetName::parse("unknown"), None);
     }
 
     #[test]

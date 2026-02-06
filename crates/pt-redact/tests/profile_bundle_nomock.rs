@@ -124,7 +124,7 @@ fn test_system_paths_allowed_across_profiles() {
     let system_paths = ["/usr/bin/python3", "/bin/bash", "/sbin/init"];
 
     for path in &system_paths {
-        let result = engine.redact(*path, FieldClass::PathSystem);
+        let result = engine.redact(path, FieldClass::PathSystem);
         assert_eq!(
             result.output, *path,
             "System path should be allowed: {}",

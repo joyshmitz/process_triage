@@ -559,7 +559,7 @@ fn test_encrypted_bundle_different_sessions_are_independent() {
     for i in 1..=2 {
         let path = temp_dir.path().join(format!("session-{}.ptb", i));
         let mut writer = BundleWriter::new(
-            &format!("session-ind-{}", i),
+            format!("session-ind-{}", i),
             "host-ind",
             ExportProfile::Safe,
         );
