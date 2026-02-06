@@ -164,10 +164,7 @@ fn test_shadow_status_json_schema() {
         json.get("running").is_some(),
         "status should have 'running' field"
     );
-    assert!(
-        json.get("pid").is_some(),
-        "status should have 'pid' field"
-    );
+    assert!(json.get("pid").is_some(), "status should have 'pid' field");
     assert!(
         json.get("stale_pid_file").is_some(),
         "status should have 'stale_pid_file' field"
@@ -226,11 +223,11 @@ fn test_shadow_status_stale_pid_detection() {
 
     let json: Value = serde_json::from_slice(&output).expect("parse JSON");
 
-    assert_eq!(json["running"], false, "stale process should not show as running");
     assert_eq!(
-        json["stale_pid_file"], true,
-        "should detect stale pid file"
+        json["running"], false,
+        "stale process should not show as running"
     );
+    assert_eq!(json["stale_pid_file"], true, "should detect stale pid file");
 }
 
 // ============================================================================
@@ -407,10 +404,7 @@ fn test_shadow_export_observation_fields() {
         belief.get("confidence").is_some(),
         "belief should have confidence"
     );
-    assert!(
-        belief.get("score").is_some(),
-        "belief should have score"
-    );
+    assert!(belief.get("score").is_some(), "belief should have score");
     assert!(
         belief.get("recommendation").is_some(),
         "belief should have recommendation"
@@ -452,9 +446,12 @@ fn test_shadow_export_to_file() {
     let output = pt_core()
         .env("PROCESS_TRIAGE_DATA", dir.path())
         .args([
-            "--format", "json",
-            "shadow", "export",
-            "-o", output_path.to_str().unwrap(),
+            "--format",
+            "json",
+            "shadow",
+            "export",
+            "-o",
+            output_path.to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -491,10 +488,14 @@ fn test_shadow_export_jsonl_format() {
     pt_core()
         .env("PROCESS_TRIAGE_DATA", dir.path())
         .args([
-            "--format", "json",
-            "shadow", "export",
-            "--export-format", "jsonl",
-            "-o", output_path.to_str().unwrap(),
+            "--format",
+            "json",
+            "shadow",
+            "export",
+            "--export-format",
+            "jsonl",
+            "-o",
+            output_path.to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -593,9 +594,12 @@ fn test_shadow_report_to_file() {
     pt_core()
         .env("PROCESS_TRIAGE_DATA", dir.path())
         .args([
-            "--format", "json",
-            "shadow", "report",
-            "-o", output_path.to_str().unwrap(),
+            "--format",
+            "json",
+            "shadow",
+            "report",
+            "-o",
+            output_path.to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -616,11 +620,7 @@ fn test_shadow_report_with_threshold() {
 
     pt_core()
         .env("PROCESS_TRIAGE_DATA", dir.path())
-        .args([
-            "--format", "json",
-            "shadow", "report",
-            "--threshold", "0.9",
-        ])
+        .args(["--format", "json", "shadow", "report", "--threshold", "0.9"])
         .assert()
         .success()
         .code(0);
@@ -634,11 +634,7 @@ fn test_shadow_report_with_limit() {
 
     pt_core()
         .env("PROCESS_TRIAGE_DATA", dir.path())
-        .args([
-            "--format", "json",
-            "shadow", "report",
-            "--limit", "3",
-        ])
+        .args(["--format", "json", "shadow", "report", "--limit", "3"])
         .assert()
         .success()
         .code(0);
@@ -660,11 +656,16 @@ fn test_shadow_start_foreground_one_iteration() {
     let output = cmd
         .env("PROCESS_TRIAGE_DATA", dir.path())
         .args([
-            "--format", "json",
-            "shadow", "start",
-            "--iterations", "1",
-            "--interval", "1",
-            "--sample-size", "5",
+            "--format",
+            "json",
+            "shadow",
+            "start",
+            "--iterations",
+            "1",
+            "--interval",
+            "1",
+            "--sample-size",
+            "5",
         ])
         .assert()
         .success()
@@ -677,10 +678,7 @@ fn test_shadow_start_foreground_one_iteration() {
     let json = parse_last_json_object_with_command(&output, "shadow run");
     assert_eq!(json["command"], "shadow run");
     assert_eq!(json["iterations"], 1, "should have completed 1 iteration");
-    assert!(
-        json.get("base_dir").is_some(),
-        "should have base_dir"
-    );
+    assert!(json.get("base_dir").is_some(), "should have base_dir");
 }
 
 // ============================================================================
@@ -699,11 +697,7 @@ fn test_shadow_start_background_lock_detection() {
 
     pt_core()
         .env("PROCESS_TRIAGE_DATA", dir.path())
-        .args([
-            "--format", "json",
-            "shadow", "start",
-            "--background",
-        ])
+        .args(["--format", "json", "shadow", "start", "--background"])
         .assert()
         .failure()
         .code(14); // LockError
@@ -727,11 +721,16 @@ fn test_shadow_start_background_clears_stale_pid() {
 
     cmd.env("PROCESS_TRIAGE_DATA", dir.path())
         .args([
-            "--format", "json",
-            "shadow", "start",
-            "--iterations", "1",
-            "--interval", "1",
-            "--sample-size", "5",
+            "--format",
+            "json",
+            "shadow",
+            "start",
+            "--iterations",
+            "1",
+            "--interval",
+            "1",
+            "--sample-size",
+            "5",
         ])
         .assert()
         .success()
@@ -800,11 +799,16 @@ fn test_shadow_lifecycle_foreground_workflow() {
     let run_output = run_cmd
         .env("PROCESS_TRIAGE_DATA", dir_str)
         .args([
-            "--format", "json",
-            "shadow", "start",
-            "--iterations", "1",
-            "--interval", "1",
-            "--sample-size", "5",
+            "--format",
+            "json",
+            "shadow",
+            "start",
+            "--iterations",
+            "1",
+            "--interval",
+            "1",
+            "--sample-size",
+            "5",
         ])
         .assert()
         .success()
@@ -929,5 +933,8 @@ fn test_shadow_export_deterministic_with_fixtures() {
     let json1: Value = serde_json::from_slice(&output1).expect("parse 1");
     let json2: Value = serde_json::from_slice(&output2).expect("parse 2");
 
-    assert_eq!(json1, json2, "export should be deterministic with same fixtures");
+    assert_eq!(
+        json1, json2,
+        "export should be deterministic with same fixtures"
+    );
 }

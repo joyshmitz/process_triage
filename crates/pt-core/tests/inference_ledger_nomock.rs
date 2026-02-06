@@ -5,11 +5,13 @@
 //! - Evidence ledger top contributors (ordering + weights)
 //! - Property checks (normalization, monotonicity, stability)
 
-use pt_core::config::priors::Priors;
-use pt_core::inference::{compute_posterior, build_process_explanation, CpuEvidence, Evidence, EvidenceLedger};
-use pt_core::inference::ClassScores;
 use pt_common::{ProcessId, StartId};
 use pt_core::collect::{ProcessRecord, ProcessState};
+use pt_core::config::priors::Priors;
+use pt_core::inference::ClassScores;
+use pt_core::inference::{
+    build_process_explanation, compute_posterior, CpuEvidence, Evidence, EvidenceLedger,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -109,9 +111,9 @@ fn load_expected_fixture() -> FixturesExpected {
 
 fn to_evidence(fix: &EvidenceFixture) -> Evidence {
     let cpu = match &fix.cpu {
-        Some(CpuEvidenceFixture::Fraction { occupancy }) => {
-            Some(CpuEvidence::Fraction { occupancy: *occupancy })
-        }
+        Some(CpuEvidenceFixture::Fraction { occupancy }) => Some(CpuEvidence::Fraction {
+            occupancy: *occupancy,
+        }),
         Some(CpuEvidenceFixture::Binomial { k, n, eta }) => Some(CpuEvidence::Binomial {
             k: *k,
             n: *n,
@@ -180,7 +182,11 @@ fn update_expected_fixtures(input: &FixturesInput, priors: &Priors) {
 fn assert_case_matches(expected: &CaseExpected, actual: &CaseExpected) {
     let tol = 1e-6;
     assert_eq!(expected.case_id, actual.case_id);
-    assert!(approx_eq(expected.posterior.useful, actual.posterior.useful, tol));
+    assert!(approx_eq(
+        expected.posterior.useful,
+        actual.posterior.useful,
+        tol
+    ));
     assert!(approx_eq(
         expected.posterior.useful_bad,
         actual.posterior.useful_bad,
@@ -191,7 +197,11 @@ fn assert_case_matches(expected: &CaseExpected, actual: &CaseExpected) {
         actual.posterior.abandoned,
         tol
     ));
-    assert!(approx_eq(expected.posterior.zombie, actual.posterior.zombie, tol));
+    assert!(approx_eq(
+        expected.posterior.zombie,
+        actual.posterior.zombie,
+        tol
+    ));
     assert_eq!(expected.classification, actual.classification);
     assert_eq!(expected.confidence, actual.confidence);
     assert_eq!(expected.top_evidence.len(), actual.top_evidence.len());
@@ -279,14 +289,22 @@ fn test_posterior_normalization_for_fixtures() {
             + result.posterior.useful_bad
             + result.posterior.abandoned
             + result.posterior.zombie;
-        assert!(approx_eq(sum, 1.0, 1e-6), "posterior sum != 1 for {}", case.case_id);
+        assert!(
+            approx_eq(sum, 1.0, 1e-6),
+            "posterior sum != 1 for {}",
+            case.case_id
+        );
         for value in [
             result.posterior.useful,
             result.posterior.useful_bad,
             result.posterior.abandoned,
             result.posterior.zombie,
         ] {
-            assert!(value.is_finite(), "non-finite posterior for {}", case.case_id);
+            assert!(
+                value.is_finite(),
+                "non-finite posterior for {}",
+                case.case_id
+            );
         }
     }
 }
@@ -340,7 +358,9 @@ fn test_missing_evidence_graceful() {
 fn test_nan_evidence_rejected() {
     let priors = load_priors_fixture();
     let evidence = Evidence {
-        cpu: Some(CpuEvidence::Fraction { occupancy: f64::NAN }),
+        cpu: Some(CpuEvidence::Fraction {
+            occupancy: f64::NAN,
+        }),
         ..Evidence::default()
     };
     let err = compute_posterior(&priors, &evidence).unwrap_err();
@@ -350,7 +370,10 @@ fn test_nan_evidence_rejected() {
         }
         _ => {
             assert!(
-                matches!(err, pt_core::inference::PosteriorError::InvalidEvidence { .. }),
+                matches!(
+                    err,
+                    pt_core::inference::PosteriorError::InvalidEvidence { .. }
+                ),
                 "unexpected error for nan evidence"
             );
         }
@@ -363,17 +386,22 @@ fn test_build_process_explanation_clamps_cpu() {
     let proc = make_process(250.0);
     let explanation = build_process_explanation(&proc, &priors);
 
-    assert!(explanation.get("error").is_none(), "expected clamp to avoid error");
+    assert!(
+        explanation.get("error").is_none(),
+        "expected clamp to avoid error"
+    );
 }
 
 #[test]
 fn test_inference_log_fixture_schema() {
-    let log_path = fixtures_dir().join("logs").join("inference_regression.jsonl");
+    let log_path = fixtures_dir()
+        .join("logs")
+        .join("inference_regression.jsonl");
     let contents = fs::read_to_string(&log_path).expect("read inference log fixture");
 
     for (idx, line) in contents.lines().enumerate() {
-        let value: serde_json::Value = serde_json::from_str(line)
-            .expect(&format!("invalid json at line {}", idx + 1));
+        let value: serde_json::Value =
+            serde_json::from_str(line).expect(&format!("invalid json at line {}", idx + 1));
         let obj = value
             .as_object()
             .expect(&format!("log line {} not object", idx + 1));

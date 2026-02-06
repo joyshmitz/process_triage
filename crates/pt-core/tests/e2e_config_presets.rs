@@ -99,10 +99,7 @@ fn test_config_list_presets_json_schema() {
     }
 
     // Verify known preset names are present
-    let names: Vec<&str> = presets
-        .iter()
-        .filter_map(|p| p["name"].as_str())
-        .collect();
+    let names: Vec<&str> = presets.iter().filter_map(|p| p["name"].as_str()).collect();
 
     for expected in &["developer", "server", "ci", "paranoid"] {
         assert!(
@@ -220,13 +217,17 @@ fn test_config_show_preset_invalid_name_fails() {
 #[test]
 fn test_config_show_preset_invalid_name_error_message() {
     pt_core()
-        .args(["--format", "json", "config", "show-preset", "invalid_preset"])
+        .args([
+            "--format",
+            "json",
+            "config",
+            "show-preset",
+            "invalid_preset",
+        ])
         .assert()
         .failure()
         .stderr(predicates::str::contains("Unknown preset").or(
-            predicates::str::contains("unknown preset").or(
-                predicates::str::contains("Available")
-            ),
+            predicates::str::contains("unknown preset").or(predicates::str::contains("Available")),
         ));
 }
 
@@ -294,10 +295,7 @@ fn test_config_diff_preset_success() {
         );
     }
 
-    eprintln!(
-        "[INFO] diff-preset 'developer': {} differences",
-        diff_count
-    );
+    eprintln!("[INFO] diff-preset 'developer': {} differences", diff_count);
 }
 
 #[test]
@@ -331,9 +329,13 @@ fn test_config_export_preset_to_file() {
 
     pt_core()
         .args([
-            "--format", "json",
-            "config", "export-preset", "developer",
-            "--output", output_path.to_str().unwrap(),
+            "--format",
+            "json",
+            "config",
+            "export-preset",
+            "developer",
+            "--output",
+            output_path.to_str().unwrap(),
         ])
         .assert()
         .success()
@@ -344,10 +346,7 @@ fn test_config_export_preset_to_file() {
 
     let content = fs::read_to_string(&output_path).expect("read exported file");
     let json: Value = serde_json::from_str(&content).expect("exported file should be valid JSON");
-    assert!(
-        json.is_object(),
-        "exported policy should be a JSON object"
-    );
+    assert!(json.is_object(), "exported policy should be a JSON object");
 
     eprintln!(
         "[INFO] export-preset: wrote {} bytes to {}",
@@ -365,9 +364,13 @@ fn test_config_export_preset_all_presets() {
 
         pt_core()
             .args([
-                "--format", "json",
-                "config", "export-preset", preset,
-                "--output", path.to_str().unwrap(),
+                "--format",
+                "json",
+                "config",
+                "export-preset",
+                preset,
+                "--output",
+                path.to_str().unwrap(),
             ])
             .assert()
             .success();
@@ -386,9 +389,13 @@ fn test_config_export_preset_invalid_name_fails() {
 
     pt_core()
         .args([
-            "--format", "json",
-            "config", "export-preset", "nonexistent",
-            "--output", path.to_str().unwrap(),
+            "--format",
+            "json",
+            "config",
+            "export-preset",
+            "nonexistent",
+            "--output",
+            path.to_str().unwrap(),
         ])
         .assert()
         .failure()
@@ -449,9 +456,13 @@ fn test_config_validate_with_exported_preset() {
     // Export a preset, then validate it
     pt_core()
         .args([
-            "--format", "json",
-            "config", "export-preset", "developer",
-            "--output", policy_path.to_str().unwrap(),
+            "--format",
+            "json",
+            "config",
+            "export-preset",
+            "developer",
+            "--output",
+            policy_path.to_str().unwrap(),
         ])
         .assert()
         .success();
@@ -459,8 +470,10 @@ fn test_config_validate_with_exported_preset() {
     // Validate with the exported policy
     let output = pt_core()
         .args([
-            "--format", "json",
-            "config", "validate",
+            "--format",
+            "json",
+            "config",
+            "validate",
             policy_path.to_str().unwrap(),
         ])
         .assert()
@@ -485,8 +498,10 @@ fn test_config_validate_invalid_json_fails() {
 
     pt_core()
         .args([
-            "--format", "json",
-            "config", "validate",
+            "--format",
+            "json",
+            "config",
+            "validate",
             bad_policy.to_str().unwrap(),
         ])
         .assert()

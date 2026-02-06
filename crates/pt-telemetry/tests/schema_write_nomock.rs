@@ -108,11 +108,7 @@ fn create_batch_for_schema(schema: &Schema) -> RecordBatch {
 }
 
 /// Write a batch via BatchedWriter and return the parquet file path.
-fn write_and_close(
-    temp_dir: &TempDir,
-    table: TableName,
-    schema: &Schema,
-) -> std::path::PathBuf {
+fn write_and_close(temp_dir: &TempDir, table: TableName, schema: &Schema) -> std::path::PathBuf {
     let config = WriterConfig::new(
         temp_dir.path().to_path_buf(),
         "pt-20260115-143022-schm".to_string(),
@@ -328,7 +324,9 @@ fn test_signature_matches_schema_write_read_roundtrip() {
 
     assert!(read_schema.field_with_name("signature_id").is_ok());
     assert!(read_schema.field_with_name("match_confidence").is_ok());
-    assert!(read_schema.field_with_name("predicted_prob_abandoned").is_ok());
+    assert!(read_schema
+        .field_with_name("predicted_prob_abandoned")
+        .is_ok());
     assert!(read_schema.field_with_name("actual_abandoned").is_ok());
 
     let batches = read_parquet_batches(&path);
@@ -412,7 +410,10 @@ fn test_audit_multi_batch_write() {
     let total_rows: usize = batches.iter().map(|b| b.num_rows()).sum();
     assert_eq!(total_rows, 5, "should have 5 total rows across batches");
 
-    eprintln!("[INFO] Multi-batch write: 5 rows across {} batches", batches.len());
+    eprintln!(
+        "[INFO] Multi-batch write: 5 rows across {} batches",
+        batches.len()
+    );
 }
 
 // ============================================================================

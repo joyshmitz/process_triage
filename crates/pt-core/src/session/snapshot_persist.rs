@@ -220,7 +220,7 @@ pub fn redact_cmd(cmd: &str, policy: RedactionPolicy) -> String {
 // ---------------------------------------------------------------------------
 
 /// Persist an artifact envelope atomically to a file inside a session dir.
-fn persist_artifact<T: Serialize>(
+fn persist_artifact<T: serde::de::DeserializeOwned + Serialize>(
     handle: &SessionHandle,
     rel_path: &str,
     mut envelope: ArtifactEnvelope<T>,
@@ -262,10 +262,7 @@ fn load_artifact<T: serde::de::DeserializeOwned + Serialize>(
     }
 
     // Validate integrity hash.
-    let payload_json = serde_json::to_vec(&envelope.payload).map_err(|e| SessionError::Json {
-        path: path.clone(),
-        source: e,
-    })?;
+    let payload_json = canonical_payload_bytes(&envelope.payload, &path)?;
     let computed = sha256_hex(&payload_json);
     if computed != envelope.integrity_sha256 {
         return Err(SessionError::Json {
@@ -280,12 +277,86 @@ fn load_artifact<T: serde::de::DeserializeOwned + Serialize>(
     Ok(envelope)
 }
 
-fn payload_sha256<T: Serialize>(payload: &T, path: &PathBuf) -> Result<String, SessionError> {
-    let payload_json = serde_json::to_vec(payload).map_err(|e| SessionError::Json {
+/// Load an artifact envelope but skip integrity validation.
+///
+/// Useful as a compatibility escape hatch while evolving persistence formats.
+fn load_artifact_unchecked<T: serde::de::DeserializeOwned + Serialize>(
+    handle: &SessionHandle,
+    rel_path: &str,
+) -> Result<ArtifactEnvelope<T>, SessionError> {
+    let path = handle.dir.join(rel_path);
+    let content = std::fs::read_to_string(&path).map_err(|e| SessionError::Io {
         path: path.clone(),
         source: e,
     })?;
+    let envelope: ArtifactEnvelope<T> =
+        serde_json::from_str(&content).map_err(|e| SessionError::Json {
+            path: path.clone(),
+            source: e,
+        })?;
+
+    // Validate schema version compatibility.
+    if !pt_common::schema::is_compatible(&envelope.schema_version) {
+        return Err(SessionError::Json {
+            path: path.clone(),
+            source: serde_json::Error::io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "incompatible schema version: {} (expected {})",
+                    envelope.schema_version, SNAPSHOT_SCHEMA_VERSION
+                ),
+            )),
+        });
+    }
+
+    Ok(envelope)
+}
+
+fn payload_sha256<T: serde::de::DeserializeOwned + Serialize>(
+    payload: &T,
+    path: &PathBuf,
+) -> Result<String, SessionError> {
+    let payload_json = canonical_payload_bytes(payload, path)?;
     Ok(sha256_hex(&payload_json))
+}
+
+fn canonical_payload_bytes<T: Serialize>(
+    payload: &T,
+    path: &PathBuf,
+) -> Result<Vec<u8>, SessionError> {
+    let mut value = serde_json::to_value(payload).map_err(|e| SessionError::Json {
+        path: path.clone(),
+        source: e,
+    })?;
+    canonicalize_json(&mut value);
+    serde_json::to_vec(&value).map_err(|e| SessionError::Json {
+        path: path.clone(),
+        source: e,
+    })
+}
+
+fn canonicalize_json(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            // Rebuild object with sorted keys, recursively canonicalizing children.
+            let mut keys: Vec<String> = map.keys().cloned().collect();
+            keys.sort();
+            let mut new_map = serde_json::Map::with_capacity(map.len());
+            for k in keys {
+                if let Some(mut v) = map.remove(&k) {
+                    canonicalize_json(&mut v);
+                    new_map.insert(k, v);
+                }
+            }
+            *map = new_map;
+        }
+        serde_json::Value::Array(arr) => {
+            for v in arr {
+                canonicalize_json(v);
+            }
+        }
+        _ => {}
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -343,11 +414,25 @@ pub fn load_inventory(
     load_artifact(handle, INVENTORY_FILE)
 }
 
+/// Load the inventory artifact but skip integrity validation.
+pub fn load_inventory_unchecked(
+    handle: &SessionHandle,
+) -> Result<ArtifactEnvelope<InventoryArtifact>, SessionError> {
+    load_artifact_unchecked(handle, INVENTORY_FILE)
+}
+
 /// Load the inference artifact with validation.
 pub fn load_inference(
     handle: &SessionHandle,
 ) -> Result<ArtifactEnvelope<InferenceArtifact>, SessionError> {
     load_artifact(handle, INFERENCE_FILE)
+}
+
+/// Load the inference artifact but skip integrity validation.
+pub fn load_inference_unchecked(
+    handle: &SessionHandle,
+) -> Result<ArtifactEnvelope<InferenceArtifact>, SessionError> {
+    load_artifact_unchecked(handle, INFERENCE_FILE)
 }
 
 /// Load the plan artifact with validation.

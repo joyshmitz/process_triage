@@ -77,3 +77,7 @@ filetime = "0.2"
 [[bench]]
 name = "collect_parsers"
 harness = false
+
+[[bench]]
+name = "inference_posteriors"
+harness = false

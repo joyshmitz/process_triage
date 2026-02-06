@@ -43,4 +43,3 @@ fn bench_beta_kernels(c: &mut Criterion) {
 
 criterion_group!(benches, bench_beta_kernels);
 criterion_main!(benches);
-

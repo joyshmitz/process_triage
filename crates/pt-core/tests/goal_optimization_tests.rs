@@ -51,7 +51,10 @@ fn memory_pressure_risk_budget_prefers_low_risk_set() {
         let pids: Vec<u32> = plan.actions.iter().map(|a| a.pid).collect();
         pids.contains(&1) && pids.contains(&2) && !pids.contains(&3) && !plan.goal_achievable
     });
-    assert!(matched, "expected a plan that picks A+B and reports shortfall");
+    assert!(
+        matched,
+        "expected a plan that picks A+B and reports shortfall"
+    );
 }
 
 #[test]
@@ -352,14 +355,20 @@ fn pareto_frontier_excludes_dominated_sets() {
     let losses: Vec<f64> = pareto.iter().map(|alt| alt.total_loss).collect();
     let mut sorted = losses.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    assert_eq!(losses, sorted, "Pareto alternatives should be sorted by loss");
+    assert_eq!(
+        losses, sorted,
+        "Pareto alternatives should be sorted by loss"
+    );
 
     let dominated_c = pareto.iter().any(|alt| {
         alt.action_count == 1
             && (alt.total_loss - 3.0).abs() < 1e-6
             && alt.goal_achievement[0].achieved >= 6.0 - 1e-6
     });
-    assert!(!dominated_c, "dominated set should not be on Pareto frontier");
+    assert!(
+        !dominated_c,
+        "dominated set should not be on Pareto frontier"
+    );
 }
 
 #[test]
@@ -388,12 +397,14 @@ fn telemetry_emits_objective_and_convergence() {
     }];
 
     let result = optimize_greedy(&candidates, &goals);
-    assert!(result.log_events.iter().any(|e| {
-        e.event == "objective_eval" && e.candidate_id.is_some() && e.loss.is_some()
-    }));
-    assert!(result.log_events.iter().any(|e| {
-        e.event == "converged" && e.total_loss.is_some()
-    }));
+    assert!(result
+        .log_events
+        .iter()
+        .any(|e| { e.event == "objective_eval" && e.candidate_id.is_some() && e.loss.is_some() }));
+    assert!(result
+        .log_events
+        .iter()
+        .any(|e| { e.event == "converged" && e.total_loss.is_some() }));
 }
 
 #[test]
@@ -422,10 +433,7 @@ fn telemetry_emits_pareto_points() {
     }];
 
     let result = optimize_greedy(&candidates, &goals);
-    assert!(result
-        .log_events
-        .iter()
-        .any(|e| e.event == "pareto_point"));
+    assert!(result.log_events.iter().any(|e| e.event == "pareto_point"));
 }
 
 #[test]

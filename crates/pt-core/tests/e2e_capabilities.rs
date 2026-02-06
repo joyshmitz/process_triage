@@ -105,10 +105,7 @@ fn test_capabilities_session_id_format() {
         .expect("session_id should be a string");
 
     // Session ID should be non-empty and contain a prefix
-    assert!(
-        !sid.is_empty(),
-        "session_id should not be empty"
-    );
+    assert!(!sid.is_empty(), "session_id should not be empty");
     assert!(
         sid.contains("pt-"),
         "session_id '{}' should contain 'pt-' prefix",
@@ -155,14 +152,8 @@ fn test_capabilities_os_structure() {
     let os = json.get("os").expect("os should exist");
 
     // Required subfields
-    assert!(
-        os.get("family").is_some(),
-        "os should have 'family'"
-    );
-    assert!(
-        os.get("arch").is_some(),
-        "os should have 'arch'"
-    );
+    assert!(os.get("family").is_some(), "os should have 'family'");
+    assert!(os.get("arch").is_some(), "os should have 'arch'");
     assert!(
         os.get("in_container").is_some(),
         "os should have 'in_container'"
@@ -170,10 +161,7 @@ fn test_capabilities_os_structure() {
 
     // Family should be a non-empty string
     let family = os["family"].as_str().expect("family should be string");
-    assert!(
-        !family.is_empty(),
-        "os.family should not be empty"
-    );
+    assert!(!family.is_empty(), "os.family should not be empty");
 
     // Arch should be a non-empty string
     let arch = os["arch"].as_str().expect("arch should be string");
@@ -187,9 +175,7 @@ fn test_capabilities_os_structure() {
 
     eprintln!(
         "[INFO] OS: family={} arch={} container={}",
-        family,
-        arch,
-        os["in_container"]
+        family, arch, os["in_container"]
     );
 }
 
@@ -205,8 +191,20 @@ fn test_capabilities_tools_structure() {
 
     // Expected tool names
     let expected_tools = [
-        "ps", "lsof", "ss", "netstat", "perf", "strace", "dtrace",
-        "bpftrace", "systemctl", "docker", "podman", "nice", "renice", "ionice",
+        "ps",
+        "lsof",
+        "ss",
+        "netstat",
+        "perf",
+        "strace",
+        "dtrace",
+        "bpftrace",
+        "systemctl",
+        "docker",
+        "podman",
+        "nice",
+        "renice",
+        "ionice",
     ];
 
     for tool_name in expected_tools {
@@ -249,10 +247,7 @@ fn test_capabilities_tools_structure() {
         "'ps' should work on this system"
     );
 
-    eprintln!(
-        "[INFO] Tools: {} defined, ps=available",
-        tools_obj.len()
-    );
+    eprintln!("[INFO] Tools: {} defined, ps=available", tools_obj.len());
 }
 
 #[test]
@@ -267,9 +262,7 @@ fn test_capabilities_unavailable_tools_have_reason() {
                 "unavailable tool '{}' should have a 'reason' field",
                 name
             );
-            let reason = tool["reason"]
-                .as_str()
-                .expect("reason should be string");
+            let reason = tool["reason"].as_str().expect("reason should be string");
             assert!(
                 !reason.is_empty(),
                 "unavailable tool '{}' reason should not be empty",
@@ -324,8 +317,7 @@ fn test_capabilities_permissions_structure() {
 
     eprintln!(
         "[INFO] Permissions: uid={} root={}",
-        perms["effective_uid"],
-        perms["is_root"]
+        perms["effective_uid"], perms["is_root"]
     );
 }
 
@@ -479,9 +471,12 @@ fn test_check_action_supported_action() {
     // "sigterm" (mapped to kill) should be supported on any system
     let output = pt_core()
         .args([
-            "--format", "json",
-            "agent", "capabilities",
-            "--check-action", "sigterm",
+            "--format",
+            "json",
+            "agent",
+            "capabilities",
+            "--check-action",
+            "sigterm",
         ])
         .assert()
         .success()
@@ -511,9 +506,12 @@ fn test_check_action_unsupported_action_fails() {
     // An invalid/unsupported action should fail
     pt_core()
         .args([
-            "--format", "json",
-            "agent", "capabilities",
-            "--check-action", "nonexistent_action_xyz",
+            "--format",
+            "json",
+            "agent",
+            "capabilities",
+            "--check-action",
+            "nonexistent_action_xyz",
         ])
         .assert()
         .failure();
@@ -527,9 +525,12 @@ fn test_check_action_common_actions() {
     for action in common_actions {
         let result = pt_core()
             .args([
-                "--format", "json",
-                "agent", "capabilities",
-                "--check-action", action,
+                "--format",
+                "json",
+                "agent",
+                "capabilities",
+                "--check-action",
+                action,
             ])
             .output()
             .expect("run command");
@@ -537,8 +538,7 @@ fn test_check_action_common_actions() {
         // Should not hang or crash (may fail gracefully for unsupported)
         let stdout = String::from_utf8_lossy(&result.stdout);
         if result.status.success() {
-            let json: Value =
-                serde_json::from_str(stdout.trim()).expect("parse success JSON");
+            let json: Value = serde_json::from_str(stdout.trim()).expect("parse success JSON");
             assert_eq!(
                 json["action"].as_str(),
                 Some(action),
@@ -565,12 +565,8 @@ fn test_capabilities_cache_hit_returns_same_detected_at() {
     let json1 = capabilities_json();
     let json2 = capabilities_json();
 
-    let detected_at_1 = json1["detected_at"]
-        .as_str()
-        .expect("detected_at 1");
-    let detected_at_2 = json2["detected_at"]
-        .as_str()
-        .expect("detected_at 2");
+    let detected_at_1 = json1["detected_at"].as_str().expect("detected_at 1");
+    let detected_at_2 = json2["detected_at"].as_str().expect("detected_at 2");
 
     // If cache is working, detected_at should be the same (cached result).
     // Note: session_id and generated_at will differ (generated per invocation),
@@ -584,10 +580,7 @@ fn test_capabilities_cache_hit_returns_same_detected_at() {
     // session_id should differ (new session per invocation)
     let sid1 = json1["session_id"].as_str().unwrap();
     let sid2 = json2["session_id"].as_str().unwrap();
-    assert_ne!(
-        sid1, sid2,
-        "session_id should differ across invocations"
-    );
+    assert_ne!(sid1, sid2, "session_id should differ across invocations");
 
     eprintln!(
         "[INFO] Cache: detected_at={} (same both runs), sid1={} sid2={}",

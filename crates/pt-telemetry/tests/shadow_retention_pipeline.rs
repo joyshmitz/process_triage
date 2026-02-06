@@ -2,7 +2,9 @@
 
 use chrono::{Duration as ChronoDuration, Utc};
 use filetime::FileTime;
-use pt_telemetry::shadow::{BeliefState, Observation, ShadowStorage, ShadowStorageConfig, StateSnapshot};
+use pt_telemetry::shadow::{
+    BeliefState, Observation, ShadowStorage, ShadowStorageConfig, StateSnapshot,
+};
 use std::fs;
 use tempfile::TempDir;
 
@@ -64,16 +66,32 @@ fn shadow_compaction_applies_retention_tiers() {
     let now = Utc::now();
 
     storage
-        .record(make_observation(now - ChronoDuration::minutes(10), 100, "hash_hot"))
+        .record(make_observation(
+            now - ChronoDuration::minutes(10),
+            100,
+            "hash_hot",
+        ))
         .unwrap();
     storage
-        .record(make_observation(now - ChronoDuration::hours(2), 101, "hash_warm"))
+        .record(make_observation(
+            now - ChronoDuration::hours(2),
+            101,
+            "hash_warm",
+        ))
         .unwrap();
     storage
-        .record(make_observation(now - ChronoDuration::days(2), 102, "hash_cold"))
+        .record(make_observation(
+            now - ChronoDuration::days(2),
+            102,
+            "hash_cold",
+        ))
         .unwrap();
     storage
-        .record(make_observation(now - ChronoDuration::days(10), 103, "hash_archive"))
+        .record(make_observation(
+            now - ChronoDuration::days(10),
+            103,
+            "hash_archive",
+        ))
         .unwrap();
 
     storage.compact().unwrap();
@@ -113,7 +131,8 @@ fn shadow_cleanup_removes_expired_archive_files() {
     let stale_path = archive_dir.join("stale.json");
     fs::write(&stale_path, "[]").unwrap();
 
-    let stale_time = std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 60 * 24 * 40);
+    let stale_time =
+        std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 60 * 24 * 40);
     let stale_ft = FileTime::from_system_time(stale_time);
     filetime::set_file_times(&stale_path, stale_ft, stale_ft).unwrap();
 

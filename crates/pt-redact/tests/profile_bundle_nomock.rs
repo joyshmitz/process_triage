@@ -22,10 +22,7 @@ const CANARY_SECRETS: &[&str] = &[
 /// Field classes where secret detection is expected to fire.
 /// PathTmp/PathHome/PathSystem apply normalization/hashing actions
 /// that don't run the secret detector (by design: paths rarely contain tokens).
-const SECRET_FIELD_CLASSES: &[FieldClass] = &[
-    FieldClass::CmdlineArg,
-    FieldClass::FreeText,
-];
+const SECRET_FIELD_CLASSES: &[FieldClass] = &[FieldClass::CmdlineArg, FieldClass::FreeText];
 
 // ============================================================================
 // Cross-Profile Secret Leak Prevention
@@ -103,14 +100,14 @@ fn test_safe_profile_hashes_hostnames() {
     let key = KeyMaterial::from_bytes([0u8; 32], "safe-test");
     let engine = RedactionEngine::with_key(policy, key);
 
-    let result =
-        engine.redact_with_profile("myserver.example.com", FieldClass::Hostname, ExportProfile::Safe);
+    let result = engine.redact_with_profile(
+        "myserver.example.com",
+        FieldClass::Hostname,
+        ExportProfile::Safe,
+    );
 
     // Safe profile should hash hostnames
-    assert!(
-        result.was_modified,
-        "Safe profile should modify hostname"
-    );
+    assert!(result.was_modified, "Safe profile should modify hostname");
     assert!(
         !result.output.contains("myserver"),
         "Safe profile hostname output should not contain original: {}",
@@ -246,8 +243,7 @@ fn test_env_redaction_across_profiles() {
             assert_eq!(
                 value_result.output, "[REDACTED]",
                 "Env var {} should be redacted in {:?} profile",
-                name,
-                profile
+                name, profile
             );
         }
     }

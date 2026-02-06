@@ -13,17 +13,17 @@ use pt_core::collect::{quick_scan, ProcessRecord, QuickScanOptions};
 use pt_core::config::Policy;
 use pt_core::decision::{Action, DecisionOutcome, DecisionRationale, ExpectedLoss};
 use pt_core::plan::{generate_plan, DecisionBundle, DecisionCandidate};
-use pt_core::session::{SessionContext, SessionManifest, SessionMode, SessionState, SessionStore};
 use pt_core::session::resume::{
-    CurrentIdentity, ExecutionPlan, PlannedAction, RevalidationIdentity, resume_plan,
+    resume_plan, CurrentIdentity, ExecutionPlan, PlannedAction, RevalidationIdentity,
 };
+use pt_core::session::{SessionContext, SessionManifest, SessionMode, SessionState, SessionStore};
 use pt_core::test_utils::ProcessHarness;
-use pt_core::verify::{AgentPlan, BlastRadius, PlanCandidate, VerifyOutcome, verify_plan};
+use pt_core::verify::{verify_plan, AgentPlan, BlastRadius, PlanCandidate, VerifyOutcome};
 use std::env;
 use std::fs;
 use std::sync::{Mutex, OnceLock};
-use std::time::Duration;
 use std::thread;
+use std::time::Duration;
 use tempfile::TempDir;
 
 static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -157,7 +157,9 @@ fn test_session_lifecycle_persistence_nomock() {
         );
         handle.write_context(&ctx).expect("write context");
 
-        handle.update_state(SessionState::Planned).expect("state planned");
+        handle
+            .update_state(SessionState::Planned)
+            .expect("state planned");
         handle
             .update_state(SessionState::Executing)
             .expect("state executing");
@@ -213,9 +215,7 @@ fn test_verify_plan_with_real_process_nomock() {
     }
 
     let harness = ProcessHarness::default();
-    let proc = harness
-        .spawn_sleep(10)
-        .expect("spawn sleep process");
+    let proc = harness.spawn_sleep(10).expect("spawn sleep process");
     let pid = proc.pid();
 
     let record = match wait_for_record(pid) {
@@ -307,9 +307,7 @@ fn test_resume_plan_with_real_process_nomock() {
     }
 
     let harness = ProcessHarness::default();
-    let proc = harness
-        .spawn_sleep(15)
-        .expect("spawn sleep process");
+    let proc = harness.spawn_sleep(15).expect("spawn sleep process");
     let pid = proc.pid();
 
     if wait_for_record(pid).is_none() {
@@ -336,19 +334,27 @@ fn test_resume_plan_with_real_process_nomock() {
     };
     let mut plan = ExecutionPlan::new("session-resume", vec![action]);
 
-    let result = resume_plan(&mut plan, |pid| current_identity_from_proc(pid, &boot_id), |a| {
-        if a.identity.pid == pid {
-            proc.trigger_exit();
-        }
-        Ok(())
-    });
+    let result = resume_plan(
+        &mut plan,
+        |pid| current_identity_from_proc(pid, &boot_id),
+        |a| {
+            if a.identity.pid == pid {
+                proc.trigger_exit();
+            }
+            Ok(())
+        },
+    );
 
     assert_eq!(result.newly_applied, 1);
     assert!(plan.is_complete());
 
     proc.wait_for_exit(Duration::from_secs(2));
 
-    let second = resume_plan(&mut plan, |pid| current_identity_from_proc(pid, &boot_id), |_| Ok(()));
+    let second = resume_plan(
+        &mut plan,
+        |pid| current_identity_from_proc(pid, &boot_id),
+        |_| Ok(()),
+    );
     assert_eq!(second.previously_applied, 1);
     assert_eq!(second.newly_applied, 0);
 }
@@ -360,9 +366,7 @@ fn test_resume_plan_identity_mismatch_nomock() {
     }
 
     let harness = ProcessHarness::default();
-    let proc = harness
-        .spawn_sleep(10)
-        .expect("spawn sleep process");
+    let proc = harness.spawn_sleep(10).expect("spawn sleep process");
     let pid = proc.pid();
 
     if wait_for_record(pid).is_none() {
@@ -389,7 +393,11 @@ fn test_resume_plan_identity_mismatch_nomock() {
     };
     let mut plan = ExecutionPlan::new("session-mismatch", vec![action]);
 
-    let result = resume_plan(&mut plan, |pid| current_identity_from_proc(pid, &boot_id), |_| Ok(()));
+    let result = resume_plan(
+        &mut plan,
+        |pid| current_identity_from_proc(pid, &boot_id),
+        |_| Ok(()),
+    );
     assert_eq!(result.skipped_identity_mismatch, 1);
     assert_eq!(result.newly_applied, 0);
 
@@ -404,9 +412,7 @@ fn test_resume_plan_process_gone_nomock() {
     }
 
     let harness = ProcessHarness::default();
-    let proc = harness
-        .spawn_sleep(5)
-        .expect("spawn sleep process");
+    let proc = harness.spawn_sleep(5).expect("spawn sleep process");
     let pid = proc.pid();
 
     let boot_id = match read_boot_id() {
@@ -432,7 +438,11 @@ fn test_resume_plan_process_gone_nomock() {
     proc.trigger_exit();
     proc.wait_for_exit(Duration::from_secs(2));
 
-    let result = resume_plan(&mut plan, |pid| current_identity_from_proc(pid, &boot_id), |_| Ok(()));
+    let result = resume_plan(
+        &mut plan,
+        |pid| current_identity_from_proc(pid, &boot_id),
+        |_| Ok(()),
+    );
     assert_eq!(result.skipped_process_gone, 1);
     assert_eq!(result.newly_applied, 0);
 }

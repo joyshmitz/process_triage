@@ -232,10 +232,7 @@ fn test_bocpd_detects_regime_change() {
     }
 
     let baseline_avg: f64 = baseline_probs.iter().sum::<f64>() / baseline_probs.len() as f64;
-    let change_max = change_probs
-        .iter()
-        .cloned()
-        .fold(0.0_f64, f64::max);
+    let change_max = change_probs.iter().cloned().fold(0.0_f64, f64::max);
 
     assert!(change_max > baseline_avg * 2.5);
     assert!(change_max > baseline_avg + 0.02);
@@ -290,18 +287,48 @@ fn test_memory_leak_scenario_prediction() {
 #[test]
 fn test_initialization_completing_and_stable_series() {
     let init_points = vec![
-        TimePoint { t: 0.0, value: 90.0 },
-        TimePoint { t: 30.0, value: 85.0 },
-        TimePoint { t: 60.0, value: 70.0 },
-        TimePoint { t: 90.0, value: 40.0 },
-        TimePoint { t: 120.0, value: 10.0 },
+        TimePoint {
+            t: 0.0,
+            value: 90.0,
+        },
+        TimePoint {
+            t: 30.0,
+            value: 85.0,
+        },
+        TimePoint {
+            t: 60.0,
+            value: 70.0,
+        },
+        TimePoint {
+            t: 90.0,
+            value: 40.0,
+        },
+        TimePoint {
+            t: 120.0,
+            value: 10.0,
+        },
     ];
     let stable_points = vec![
-        TimePoint { t: 0.0, value: 50.0 },
-        TimePoint { t: 60.0, value: 52.0 },
-        TimePoint { t: 120.0, value: 49.0 },
-        TimePoint { t: 180.0, value: 51.0 },
-        TimePoint { t: 240.0, value: 50.0 },
+        TimePoint {
+            t: 0.0,
+            value: 50.0,
+        },
+        TimePoint {
+            t: 60.0,
+            value: 52.0,
+        },
+        TimePoint {
+            t: 120.0,
+            value: 49.0,
+        },
+        TimePoint {
+            t: 180.0,
+            value: 51.0,
+        },
+        TimePoint {
+            t: 240.0,
+            value: 50.0,
+        },
     ];
 
     let config = TrendConfig::default();
@@ -327,10 +354,7 @@ fn test_multi_metric_trajectory_and_correlation_detection() {
     let stream_a: Vec<f64> = (0..20).map(|i| i as f64).collect();
     let stream_b: Vec<f64> = (0..20).map(|i| i as f64 * 1.5 + 0.5).collect();
     let summary = summarize_copula_dependence(
-        &[
-            ("cpu".to_string(), stream_a),
-            ("mem".to_string(), stream_b),
-        ],
+        &[("cpu".to_string(), stream_a), ("mem".to_string(), stream_b)],
         &CopulaConfig::default(),
     );
 

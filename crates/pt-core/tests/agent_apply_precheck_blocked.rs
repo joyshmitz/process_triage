@@ -5,8 +5,8 @@
 use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
 use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, SessionId, StartId};
-use pt_core::config::Policy;
 use pt_core::config::policy::{PatternEntry, PatternKind};
+use pt_core::config::Policy;
 use pt_core::decision::Action;
 use pt_core::exit_codes::ExitCode;
 use pt_core::plan::{
@@ -194,9 +194,7 @@ fn agent_apply_returns_policy_blocked_for_precheck_block() {
             .get("summary")
             .expect("Missing summary in agent apply output");
         assert_eq!(
-            summary
-                .get("blocked_by_prechecks")
-                .and_then(|v| v.as_u64()),
+            summary.get("blocked_by_prechecks").and_then(|v| v.as_u64()),
             Some(1),
             "Expected blocked_by_prechecks to be 1"
         );

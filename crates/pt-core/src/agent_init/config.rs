@@ -279,7 +279,9 @@ fn configure_codex(config_dir: &Path, options: &InitOptions) -> Result<ConfigRes
             let had_tools = config.get("tools").is_some();
             config["tools"] = json!([]);
             if had_tools {
-                changes.push("Replaced invalid tools value with array for Codex configuration".to_string());
+                changes.push(
+                    "Replaced invalid tools value with array for Codex configuration".to_string(),
+                );
             } else {
                 changes.push("Created tools array for Codex configuration".to_string());
             }

@@ -180,9 +180,7 @@ fn agent_apply_dry_run_returns_actions_ok() {
             "Expected blocked_by_constraints to be 0"
         );
         assert_eq!(
-            summary
-                .get("blocked_by_prechecks")
-                .and_then(|v| v.as_u64()),
+            summary.get("blocked_by_prechecks").and_then(|v| v.as_u64()),
             Some(0),
             "Expected blocked_by_prechecks to be 0"
         );

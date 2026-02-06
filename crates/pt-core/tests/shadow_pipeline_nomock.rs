@@ -55,9 +55,24 @@ fn shadow_export_and_report_from_fixture() -> Result<(), Box<dyn Error>> {
         .success();
 
     let report_json: Value = serde_json::from_str(&fs::read_to_string(&report_path)?)?;
-    assert_eq!(report_json.get("total_predictions").and_then(|v| v.as_u64()), Some(2));
-    assert_eq!(report_json.get("resolved_predictions").and_then(|v| v.as_u64()), Some(1));
-    assert_eq!(report_json.get("pending_predictions").and_then(|v| v.as_u64()), Some(1));
+    assert_eq!(
+        report_json
+            .get("total_predictions")
+            .and_then(|v| v.as_u64()),
+        Some(2)
+    );
+    assert_eq!(
+        report_json
+            .get("resolved_predictions")
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
+    assert_eq!(
+        report_json
+            .get("pending_predictions")
+            .and_then(|v| v.as_u64()),
+        Some(1)
+    );
 
     Ok(())
 }

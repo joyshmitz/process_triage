@@ -7,8 +7,8 @@
 //! - Event-specific details
 //! - Hash chain fields for integrity
 
-use chrono::{DateTime, Utc};
 use super::AuditError;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -126,7 +126,8 @@ impl AuditEntry {
         self.entry_hash = None;
 
         // Serialize to JSON for hashing
-        let json = serde_json::to_string(self).map_err(|e| AuditError::Serialization { source: e })?;
+        let json =
+            serde_json::to_string(self).map_err(|e| AuditError::Serialization { source: e })?;
 
         // Compute SHA-256
         use sha2::{Digest, Sha256};

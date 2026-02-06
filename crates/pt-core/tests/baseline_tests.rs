@@ -1,7 +1,7 @@
 //! Integration tests for per-machine baseline computation and drift detection.
 
 use pt_core::calibrate::baseline::{
-    blend_with_global, fit_baseline, score_anomaly, BaselineConfig, BaselineSummary, BaselineStore,
+    blend_with_global, fit_baseline, score_anomaly, BaselineConfig, BaselineStore, BaselineSummary,
 };
 use pt_core::calibrate::baseline_persist::{
     BaselineEventType, BaselineManager, BaselineUpdateEvent,
@@ -21,7 +21,13 @@ fn make_summary(n: usize, mean: f64, std_dev: f64) -> BaselineSummary {
         std_dev,
         median: mean,
         mad: std_dev * 0.75,
-        percentiles: [mean - 2.0 * std_dev, mean - std_dev, mean, mean + std_dev, mean + 2.0 * std_dev],
+        percentiles: [
+            mean - 2.0 * std_dev,
+            mean - std_dev,
+            mean,
+            mean + std_dev,
+            mean + 2.0 * std_dev,
+        ],
         cold_start: n < 30,
         schema_version: 1,
     }
@@ -67,20 +73,30 @@ fn test_baseline_drift_detection_wasserstein() {
     let result = detector.detect_drift(&baseline, &current);
 
     assert!(result.drifted);
-    assert!(matches!(result.severity, DriftSeverity::Significant | DriftSeverity::Severe));
+    assert!(matches!(
+        result.severity,
+        DriftSeverity::Significant | DriftSeverity::Severe
+    ));
 }
 
 #[test]
 fn test_baseline_persistence_roundtrip_cross_reboot() {
     let mut manager = BaselineManager::new("host-old".to_string(), BaselineConfig::default());
-    manager.update_baseline("memory_baseline".to_string(), make_summary(100, 500.0, 50.0), 1000.0);
+    manager.update_baseline(
+        "memory_baseline".to_string(),
+        make_summary(100, 500.0, 50.0),
+        1000.0,
+    );
     manager.set_global(make_summary(500, 400.0, 40.0), 1000.0);
 
     let json = manager.export_json().expect("export JSON");
     let imported = BaselineManager::import_json(&json, "host-new", 2000.0).expect("import JSON");
 
     assert_eq!(imported.state.host_fingerprint, "host-new");
-    assert_eq!(imported.state.metadata.imported_from.as_deref(), Some("host-old"));
+    assert_eq!(
+        imported.state.metadata.imported_from.as_deref(),
+        Some("host-old")
+    );
     assert_eq!(imported.baseline_count(), 1);
     assert!(imported.state.global.is_some());
 }
@@ -88,7 +104,11 @@ fn test_baseline_persistence_roundtrip_cross_reboot() {
 #[test]
 fn test_baseline_reset_for_hardware_change() {
     let mut manager = BaselineManager::new("host-old".to_string(), BaselineConfig::default());
-    manager.update_baseline("cpu_baseline".to_string(), make_summary(120, 0.2, 0.05), 1000.0);
+    manager.update_baseline(
+        "cpu_baseline".to_string(),
+        make_summary(120, 0.2, 0.05),
+        1000.0,
+    );
 
     manager.reset(2000.0);
     assert_eq!(manager.baseline_count(), 0);
@@ -145,22 +165,29 @@ fn test_seasonal_pattern_anomaly() {
 #[test]
 fn test_baseline_metric_keys_present() {
     let mut store = BaselineStore::default();
-    store.baselines.insert("cpu_baseline".to_string(), make_summary(100, 0.2, 0.05));
     store
         .baselines
-        .insert("memory_baseline".to_string(), make_summary(100, 512.0, 64.0));
-    store
-        .baselines
-        .insert("lifetime_baseline".to_string(), make_summary(100, 3600.0, 300.0));
-    store
-        .baselines
-        .insert("spawn_rate_baseline".to_string(), make_summary(100, 15.0, 2.0));
-    store
-        .baselines
-        .insert("kill_rate_baseline".to_string(), make_summary(100, 14.0, 2.0));
-    store
-        .baselines
-        .insert("orphan_rate_baseline".to_string(), make_summary(100, 1.0, 0.5));
+        .insert("cpu_baseline".to_string(), make_summary(100, 0.2, 0.05));
+    store.baselines.insert(
+        "memory_baseline".to_string(),
+        make_summary(100, 512.0, 64.0),
+    );
+    store.baselines.insert(
+        "lifetime_baseline".to_string(),
+        make_summary(100, 3600.0, 300.0),
+    );
+    store.baselines.insert(
+        "spawn_rate_baseline".to_string(),
+        make_summary(100, 15.0, 2.0),
+    );
+    store.baselines.insert(
+        "kill_rate_baseline".to_string(),
+        make_summary(100, 14.0, 2.0),
+    );
+    store.baselines.insert(
+        "orphan_rate_baseline".to_string(),
+        make_summary(100, 1.0, 0.5),
+    );
 
     let manager = BaselineManager::from_store(&store, "host-metrics".to_string(), 1000.0);
     assert_eq!(manager.baseline_count(), 6);

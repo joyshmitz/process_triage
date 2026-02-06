@@ -22,8 +22,8 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 fn create_audit_batch(schema: &Schema) -> RecordBatch {
-    let audit_ts = TimestampMicrosecondArray::from(vec![Utc::now().timestamp_micros()])
-        .with_timezone("UTC");
+    let audit_ts =
+        TimestampMicrosecondArray::from(vec![Utc::now().timestamp_micros()]).with_timezone("UTC");
     let session_id = StringArray::from(vec!["pt-20260115-143022-test"]);
     let event_type = StringArray::from(vec!["bundle_test"]);
     let severity = StringArray::from(vec!["info"]);
@@ -165,8 +165,7 @@ fn test_bundle_report_redaction_telemetry_nomock() {
         .read_verified("telemetry/audit.parquet")
         .expect("read telemetry parquet");
     let parquet_file = fs::File::open(&parquet_path).expect("open parquet file");
-    let builder =
-        ParquetRecordBatchReaderBuilder::try_new(parquet_file).expect("parquet reader");
+    let builder = ParquetRecordBatchReaderBuilder::try_new(parquet_file).expect("parquet reader");
     let parquet_schema = builder.schema();
     assert_eq!(parquet_schema.as_ref(), &schema);
 

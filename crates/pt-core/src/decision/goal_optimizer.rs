@@ -190,9 +190,8 @@ impl PreferenceModel {
         } else {
             0.5
         };
-        let updated = (prior * (1.0 - self.learning_rate)
-            + observed * self.learning_rate)
-            .clamp(0.0, 1.0);
+        let updated =
+            (prior * (1.0 - self.learning_rate) + observed * self.learning_rate).clamp(0.0, 1.0);
         self.risk_tolerance = updated;
         PreferenceUpdate {
             prior,
@@ -231,7 +230,11 @@ fn optimize_greedy_internal(
 ) -> OptimizationResult {
     let mut log_events = Vec::new();
     let mut start_event = OptimizationLogEvent::new("optimizer_start", algorithm_label);
-    start_event.note = Some(format!("candidates={} goals={}", candidates.len(), goals.len()));
+    start_event.note = Some(format!(
+        "candidates={} goals={}",
+        candidates.len(),
+        goals.len()
+    ));
     log_events.push(start_event);
 
     let adjust_loss = |loss: f64| prefs.map_or(loss, |p| p.adjust_loss(loss));
@@ -495,7 +498,11 @@ pub fn optimize_dp(
 pub fn optimize_ilp(candidates: &[OptCandidate], goals: &[ResourceGoal]) -> OptimizationResult {
     let mut log_events = Vec::new();
     let mut start_event = OptimizationLogEvent::new("optimizer_start", "ilp_branch_bound");
-    start_event.note = Some(format!("candidates={} goals={}", candidates.len(), goals.len()));
+    start_event.note = Some(format!(
+        "candidates={} goals={}",
+        candidates.len(),
+        goals.len()
+    ));
     log_events.push(start_event);
 
     if goals.len() != 1 || candidates.is_empty() {
@@ -951,11 +958,7 @@ fn compute_pareto_frontier(
 
     if candidates.len() > 16 {
         let mut event = OptimizationLogEvent::new("constraint_violation", "pareto_frontier");
-        event.note = Some(format!(
-            "candidate_cap: {} -> {}",
-            candidates.len(),
-            16
-        ));
+        event.note = Some(format!("candidate_cap: {} -> {}", candidates.len(), 16));
         log_events.push(event);
         candidates.sort_by(|a, b| {
             pareto_efficiency(b, goals)
@@ -1034,7 +1037,10 @@ fn compute_pareto_frontier(
             event.total_contributions = set.total_contributions.clone();
             log_events.push(event);
             AlternativePlan {
-                description: format!("Pareto: loss {:.3}, contribution {:.3}", set.total_loss, sum_contrib),
+                description: format!(
+                    "Pareto: loss {:.3}, contribution {:.3}",
+                    set.total_loss, sum_contrib
+                ),
                 action_count: set.actions.len(),
                 total_loss: set.total_loss,
                 goal_achievement: compute_goal_achievements(goals, &set.total_contributions),

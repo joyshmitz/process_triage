@@ -224,10 +224,7 @@ fn test_bundle_multi_file_content_types() {
         reader.has_file("telemetry/proc_samples.parquet"),
         "missing proc_samples parquet"
     );
-    assert!(
-        reader.has_file("logs/events.jsonl"),
-        "missing events log"
-    );
+    assert!(reader.has_file("logs/events.jsonl"), "missing events log");
 
     // Total file count
     assert_eq!(manifest.file_count(), 5, "expected 5 files in bundle");
@@ -257,9 +254,7 @@ fn test_bundle_jsonl_log_schema_valid() {
     let (bytes, _) = build_full_bundle(ExportProfile::Safe);
     let mut reader = BundleReader::from_bytes(bytes).expect("open bundle");
 
-    let log_bytes = reader
-        .read_verified("logs/events.jsonl")
-        .expect("read log");
+    let log_bytes = reader.read_verified("logs/events.jsonl").expect("read log");
     let log_text = String::from_utf8(log_bytes).expect("log utf8");
 
     let mut line_count = 0;
@@ -294,8 +289,8 @@ fn test_bundle_encrypted_roundtrip_all_profiles() {
         let passphrase = "test-passphrase-for-nomock";
 
         // Build and encrypt
-        let mut writer = BundleWriter::new("session-enc", "host-enc", profile)
-            .with_pt_version("2.0.0");
+        let mut writer =
+            BundleWriter::new("session-enc", "host-enc", profile).with_pt_version("2.0.0");
         writer
             .add_summary(&json!({"encrypted": true, "profile": format!("{:?}", profile)}))
             .expect("add summary");
@@ -333,7 +328,10 @@ fn test_bundle_encrypted_roundtrip_all_profiles() {
 
         // No passphrase should fail
         let err = BundleReader::open(&bundle_path);
-        assert!(err.is_err(), "Opening encrypted without passphrase should fail");
+        assert!(
+            err.is_err(),
+            "Opening encrypted without passphrase should fail"
+        );
 
         eprintln!(
             "[INFO] Encrypted roundtrip {:?}: {} files, {} bytes",
@@ -355,7 +353,11 @@ fn test_bundle_artifact_manifest_completeness() {
     // Every file must have non-empty sha256, non-zero bytes, and valid path
     for entry in manifest.files.iter() {
         assert!(!entry.path.is_empty(), "path should not be empty");
-        assert!(!entry.sha256.is_empty(), "sha256 should not be empty for {}", entry.path);
+        assert!(
+            !entry.sha256.is_empty(),
+            "sha256 should not be empty for {}",
+            entry.path
+        );
         assert!(entry.bytes > 0, "bytes should be > 0 for {}", entry.path);
         assert!(
             !entry.path.starts_with('/'),

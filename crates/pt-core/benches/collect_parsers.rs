@@ -16,17 +16,14 @@ fn bench_parse_proc_stat_content(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("collect_parsers");
 
-    for (name, s) in [
-        ("simple_comm", stat),
-        ("spaces_in_comm", stat_with_spaces),
-    ] {
+    for (name, s) in [("simple_comm", stat), ("spaces_in_comm", stat_with_spaces)] {
         group.bench_with_input(
             BenchmarkId::new("parse_proc_stat_content", name),
             &s,
             |b, input| {
                 b.iter(|| {
-                    let parsed = parse_proc_stat_content(black_box(input))
-                        .expect("stat should parse");
+                    let parsed =
+                        parse_proc_stat_content(black_box(input)).expect("stat should parse");
                     black_box(parsed);
                 });
             },
@@ -56,5 +53,9 @@ cancelled_write_bytes: 0
     });
 }
 
-criterion_group!(benches, bench_parse_proc_stat_content, bench_parse_io_content);
+criterion_group!(
+    benches,
+    bench_parse_proc_stat_content,
+    bench_parse_io_content
+);
 criterion_main!(benches);

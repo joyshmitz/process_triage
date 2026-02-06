@@ -26,8 +26,8 @@ fn test_scan_minimal_field_selection() {
     let input = load_json_fixture("scan_input.json");
     let expected = load_json_fixture("scan_expected_minimal.json");
 
-    let selector = FieldSelector::parse("processes,pid,classification,summary")
-    .expect("parse selector");
+    let selector =
+        FieldSelector::parse("processes,pid,classification,summary").expect("parse selector");
 
     let filtered = selector.filter_value(input);
     assert_eq!(filtered, expected);
@@ -47,8 +47,8 @@ fn test_plan_minimal_field_selection() {
     let input = load_json_fixture("plan_input.json");
     let expected = load_json_fixture("plan_expected_minimal.json");
 
-    let selector = FieldSelector::parse("candidates,pid,classification,summary")
-    .expect("parse selector");
+    let selector =
+        FieldSelector::parse("candidates,pid,classification,summary").expect("parse selector");
 
     let filtered = selector.filter_value(input);
     assert_eq!(filtered, expected);
@@ -68,8 +68,8 @@ fn test_explain_minimal_field_selection() {
     let input = load_json_fixture("explain_input.json");
     let expected = load_json_fixture("explain_expected_minimal.json");
 
-    let selector = FieldSelector::parse("results,pid,classification,summary")
-    .expect("parse selector");
+    let selector =
+        FieldSelector::parse("results,pid,classification,summary").expect("parse selector");
 
     let filtered = selector.filter_value(input);
     assert_eq!(filtered, expected);

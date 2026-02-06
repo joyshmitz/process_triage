@@ -606,9 +606,7 @@ mod tests {
         assert_eq!(bounds.trials, 2);
         assert_eq!(bounds.errors, 1);
         assert!((bounds.observed_rate - 0.5).abs() < 1e-6);
-        assert!(bounds
-            .trial_definition
-            .contains("predictions >= 0.50"));
+        assert!(bounds.trial_definition.contains("predictions >= 0.50"));
     }
 
     #[test]

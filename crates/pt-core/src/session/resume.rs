@@ -142,7 +142,9 @@ impl ExecutionPlan {
             .filter(|e| {
                 matches!(
                     e.status,
-                    ExecutionStatus::Applied | ExecutionStatus::Skipped | ExecutionStatus::IdentityMismatch
+                    ExecutionStatus::Applied
+                        | ExecutionStatus::Skipped
+                        | ExecutionStatus::IdentityMismatch
                 )
             })
             .map(|e| (e.identity.clone(), e))

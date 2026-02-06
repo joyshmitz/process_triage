@@ -30,8 +30,8 @@ use tempfile::TempDir;
 
 /// Create a realistic audit batch for pipeline testing.
 fn create_audit_batch(schema: &Schema, session_id: &str) -> RecordBatch {
-    let audit_ts = TimestampMicrosecondArray::from(vec![Utc::now().timestamp_micros()])
-        .with_timezone("UTC");
+    let audit_ts =
+        TimestampMicrosecondArray::from(vec![Utc::now().timestamp_micros()]).with_timezone("UTC");
     let sess = StringArray::from(vec![session_id]);
     let event_type = StringArray::from(vec!["pipeline_e2e"]);
     let severity = StringArray::from(vec!["info"]);
@@ -116,14 +116,9 @@ fn run_full_pipeline(
     // Step 1: Write real telemetry (audit table)
     let schema = audit_schema();
     let telemetry_dir = temp_dir.path().join(format!("telemetry-{}", case_id));
-    let writer_config = WriterConfig::new(
-        telemetry_dir,
-        session_id.clone(),
-        host_id.to_string(),
-    )
-    .with_batch_size(1);
-    let mut writer =
-        BatchedWriter::new(TableName::Audit, Arc::new(schema.clone()), writer_config);
+    let writer_config = WriterConfig::new(telemetry_dir, session_id.clone(), host_id.to_string())
+        .with_batch_size(1);
+    let mut writer = BatchedWriter::new(TableName::Audit, Arc::new(schema.clone()), writer_config);
     writer
         .write(create_audit_batch(&schema, &session_id))
         .expect("write audit batch");
@@ -165,10 +160,7 @@ fn run_full_pipeline(
             ]
         }),
     ];
-    let log_jsonl: String = log_entries
-        .iter()
-        .map(|e| format!("{}\n", e))
-        .collect();
+    let log_jsonl: String = log_entries.iter().map(|e| format!("{}\n", e)).collect();
 
     // Step 4: Create bundle
     let summary = json!({
@@ -191,11 +183,10 @@ fn run_full_pipeline(
         "schema_version": "1.0.0"
     });
 
-    let mut bundle_writer =
-        BundleWriter::new(&session_id, host_id, profile)
-            .with_pt_version("2.0.0-e2e-test")
-            .with_redaction_policy("1.0.0", "sha256-e2e-test-hash")
-            .with_description(format!("E2E pipeline test: {}", case_id));
+    let mut bundle_writer = BundleWriter::new(&session_id, host_id, profile)
+        .with_pt_version("2.0.0-e2e-test")
+        .with_redaction_policy("1.0.0", "sha256-e2e-test-hash")
+        .with_description(format!("E2E pipeline test: {}", case_id));
     bundle_writer.add_summary(&summary).expect("add summary");
     bundle_writer.add_plan(&plan).expect("add plan");
     bundle_writer.add_telemetry("audit", parquet_bytes);
@@ -249,10 +240,7 @@ fn test_pipeline_all_profiles_produce_bundle_and_report() {
         // Manifest metadata correct
         assert_eq!(manifest.export_profile, profile);
         assert_eq!(manifest.bundle_version, BUNDLE_SCHEMA_VERSION);
-        assert_eq!(
-            manifest.pt_version,
-            Some("2.0.0-e2e-test".to_string())
-        );
+        assert_eq!(manifest.pt_version, Some("2.0.0-e2e-test".to_string()));
 
         // Report is valid HTML
         assert!(
@@ -286,9 +274,7 @@ fn test_pipeline_jsonl_logs_pass_schema_validation() {
     let (bundle_bytes, _, _) = run_full_pipeline(ExportProfile::Safe, &temp_dir, "jsonl-schema");
 
     let mut reader = BundleReader::from_bytes(bundle_bytes).expect("open bundle");
-    let log_bytes = reader
-        .read_verified("logs/events.jsonl")
-        .expect("read log");
+    let log_bytes = reader.read_verified("logs/events.jsonl").expect("read log");
     let log_text = String::from_utf8(log_bytes).expect("log utf8");
 
     let mut line_count = 0;
@@ -314,9 +300,10 @@ fn test_pipeline_jsonl_logs_pass_schema_validation() {
 
     // Verify log entries have expected events
     let log_text = {
-        let mut reader =
-            BundleReader::from_bytes(run_full_pipeline(ExportProfile::Safe, &temp_dir, "jsonl-events").0)
-                .expect("open");
+        let mut reader = BundleReader::from_bytes(
+            run_full_pipeline(ExportProfile::Safe, &temp_dir, "jsonl-events").0,
+        )
+        .expect("open");
         String::from_utf8(reader.read_verified("logs/events.jsonl").unwrap()).unwrap()
     };
     assert!(
@@ -338,9 +325,7 @@ fn test_pipeline_jsonl_artifact_paths_match_bundle() {
         run_full_pipeline(ExportProfile::Safe, &temp_dir, "artifact-match");
 
     let mut reader = BundleReader::from_bytes(bundle_bytes).expect("open bundle");
-    let log_bytes = reader
-        .read_verified("logs/events.jsonl")
-        .expect("read log");
+    let log_bytes = reader.read_verified("logs/events.jsonl").expect("read log");
     let log_text = String::from_utf8(log_bytes).expect("log utf8");
 
     // Collect all artifact paths from JSONL
@@ -394,7 +379,10 @@ fn test_pipeline_report_includes_required_sections() {
     // Required HTML structure
     assert!(html.contains("<head>"), "report needs <head>");
     assert!(html.contains("<body"), "report needs <body>");
-    assert!(html.contains("<meta charset=\"UTF-8\">"), "report needs UTF-8 charset");
+    assert!(
+        html.contains("<meta charset=\"UTF-8\">"),
+        "report needs UTF-8 charset"
+    );
     assert!(html.contains("viewport"), "report needs viewport meta");
 
     // Required report sections
@@ -440,9 +428,8 @@ fn test_pipeline_report_theme_variants() {
         let session_id = format!("pt-20260205-theme-{:?}", theme);
 
         // Build a minimal bundle
-        let mut bundle_writer =
-            BundleWriter::new(&session_id, "theme-host", ExportProfile::Safe)
-                .with_pt_version("2.0.0");
+        let mut bundle_writer = BundleWriter::new(&session_id, "theme-host", ExportProfile::Safe)
+            .with_pt_version("2.0.0");
         bundle_writer
             .add_summary(&json!({"total_processes": 10, "candidates": 1}))
             .expect("add summary");
@@ -561,10 +548,7 @@ fn test_pipeline_manifest_completeness() {
         "manifest should contain telemetry/audit.parquet"
     );
     assert!(
-        manifest
-            .files
-            .iter()
-            .any(|f| f.path == "logs/events.jsonl"),
+        manifest.files.iter().any(|f| f.path == "logs/events.jsonl"),
         "manifest should contain logs/events.jsonl"
     );
 
@@ -576,11 +560,7 @@ fn test_pipeline_manifest_completeness() {
             "sha256 should not be empty for {}",
             entry.path
         );
-        assert!(
-            entry.bytes > 0,
-            "bytes should be > 0 for {}",
-            entry.path
-        );
+        assert!(entry.bytes > 0, "bytes should be > 0 for {}", entry.path);
         assert!(
             entry.mime_type.is_some(),
             "mime_type should be set for {}",
@@ -608,9 +588,9 @@ fn test_pipeline_checksums_verify_on_readback() {
 
     // Verify each file individually
     for entry in manifest.files.iter() {
-        let data = reader.read_verified(&entry.path).unwrap_or_else(|e| {
-            panic!("Checksum failed for {}: {}", entry.path, e)
-        });
+        let data = reader
+            .read_verified(&entry.path)
+            .unwrap_or_else(|e| panic!("Checksum failed for {}: {}", entry.path, e));
 
         assert_eq!(
             data.len() as u64,
@@ -652,8 +632,7 @@ fn test_pipeline_encrypted_bundle_produces_valid_report() {
         "enc-host".to_string(),
     )
     .with_batch_size(1);
-    let mut writer =
-        BatchedWriter::new(TableName::Audit, Arc::new(schema.clone()), writer_config);
+    let mut writer = BatchedWriter::new(TableName::Audit, Arc::new(schema.clone()), writer_config);
     writer
         .write(create_audit_batch(&schema, session_id))
         .expect("write batch");
@@ -661,8 +640,7 @@ fn test_pipeline_encrypted_bundle_produces_valid_report() {
     let parquet_bytes = fs::read(&parquet_path).expect("read parquet");
 
     let mut bundle_writer =
-        BundleWriter::new(session_id, "enc-host", ExportProfile::Safe)
-            .with_pt_version("2.0.0");
+        BundleWriter::new(session_id, "enc-host", ExportProfile::Safe).with_pt_version("2.0.0");
     bundle_writer
         .add_summary(&json!({"encrypted_pipeline": true, "candidates": 3}))
         .expect("add summary");
@@ -727,12 +705,8 @@ fn test_pipeline_multiple_telemetry_tables_in_bundle() {
     // Write audit telemetry
     let audit_s = audit_schema();
     let audit_dir = temp_dir.path().join("telemetry-audit");
-    let audit_config = WriterConfig::new(
-        audit_dir,
-        session_id.to_string(),
-        host_id.to_string(),
-    )
-    .with_batch_size(1);
+    let audit_config = WriterConfig::new(audit_dir, session_id.to_string(), host_id.to_string())
+        .with_batch_size(1);
     let mut audit_writer =
         BatchedWriter::new(TableName::Audit, Arc::new(audit_s.clone()), audit_config);
     audit_writer
@@ -742,10 +716,9 @@ fn test_pipeline_multiple_telemetry_tables_in_bundle() {
     let audit_bytes = fs::read(&audit_path).expect("read audit");
 
     // Build bundle with multiple telemetry files
-    let mut bundle_writer =
-        BundleWriter::new(session_id, host_id, ExportProfile::Safe)
-            .with_pt_version("2.0.0")
-            .with_redaction_policy("1.0.0", "sha256-multi-test");
+    let mut bundle_writer = BundleWriter::new(session_id, host_id, ExportProfile::Safe)
+        .with_pt_version("2.0.0")
+        .with_redaction_policy("1.0.0", "sha256-multi-test");
     bundle_writer
         .add_summary(&json!({
             "total_processes": 500,

@@ -74,9 +74,10 @@ fn test_encrypt_decrypt_roundtrip_preserves_all_content() {
     let bundle_path = temp_dir.path().join("session.ptb");
 
     // Write encrypted bundle directly via BundleWriter
-    let mut writer = BundleWriter::new("pt-20260205-enc-test", "host-enc-test", ExportProfile::Safe)
-        .with_pt_version("2.0.0-test")
-        .with_redaction_policy("1.0.0", "sha256-test-key");
+    let mut writer =
+        BundleWriter::new("pt-20260205-enc-test", "host-enc-test", ExportProfile::Safe)
+            .with_pt_version("2.0.0-test")
+            .with_redaction_policy("1.0.0", "sha256-test-key");
 
     writer
         .add_summary(&json!({"total_processes": 100, "candidates": 4}))
@@ -131,8 +132,7 @@ fn test_encrypt_decrypt_with_various_passphrases() {
         let temp_dir = TempDir::new().expect("temp dir");
         let bundle_path = temp_dir.path().join("session.ptb");
 
-        let mut writer =
-            BundleWriter::new("session-passphrase", "host-pp", ExportProfile::Safe);
+        let mut writer = BundleWriter::new("session-passphrase", "host-pp", ExportProfile::Safe);
         writer
             .add_summary(&json!({"test": "passphrase"}))
             .expect("add summary");
@@ -152,10 +152,7 @@ fn test_encrypt_decrypt_with_various_passphrases() {
         );
     }
 
-    eprintln!(
-        "[INFO] Tested {} different passphrases",
-        passphrases.len()
-    );
+    eprintln!("[INFO] Tested {} different passphrases", passphrases.len());
 }
 
 #[test]
@@ -313,10 +310,7 @@ fn test_truncated_bundle_detected() {
     // Truncate to just 100 bytes
     let truncated = bytes[..100].to_vec();
     let result = BundleReader::from_bytes(truncated);
-    assert!(
-        result.is_err(),
-        "Truncated bundle should fail to open"
-    );
+    assert!(result.is_err(), "Truncated bundle should fail to open");
 }
 
 #[test]
@@ -369,10 +363,7 @@ fn test_truncated_encrypted_header_detected() {
     std::fs::write(&bundle_path, &raw[..10]).expect("write truncated");
 
     let result = BundleReader::open_with_passphrase(&bundle_path, Some(passphrase));
-    assert!(
-        result.is_err(),
-        "Truncated encrypted bundle should fail"
-    );
+    assert!(result.is_err(), "Truncated encrypted bundle should fail");
 }
 
 #[test]
@@ -398,15 +389,26 @@ fn test_checksum_verification_detects_tampered_content() {
 
     // All files should verify
     let failures = reader1.verify_all();
-    assert!(failures.is_empty(), "Original bundle should verify: {:?}", failures);
+    assert!(
+        failures.is_empty(),
+        "Original bundle should verify: {:?}",
+        failures
+    );
 
     // Verify each file has non-empty checksums
     for entry in manifest1.files.iter() {
-        assert!(!entry.sha256.is_empty(), "sha256 should not be empty for {}", entry.path);
+        assert!(
+            !entry.sha256.is_empty(),
+            "sha256 should not be empty for {}",
+            entry.path
+        );
         assert!(entry.bytes > 0, "bytes should be > 0 for {}", entry.path);
     }
 
-    eprintln!("[INFO] Checksum verification: {} files validated", manifest1.file_count());
+    eprintln!(
+        "[INFO] Checksum verification: {} files validated",
+        manifest1.file_count()
+    );
 }
 
 // ============================================================================
@@ -431,7 +433,10 @@ fn test_manifest_checksums_match_file_content() {
         );
     }
 
-    eprintln!("[INFO] All {} manifest entries verified", manifest.file_count());
+    eprintln!(
+        "[INFO] All {} manifest entries verified",
+        manifest.file_count()
+    );
 }
 
 #[test]
@@ -463,8 +468,7 @@ fn test_manifest_redaction_metadata_preserved_through_encryption() {
         .write_encrypted(&bundle_path, passphrase)
         .expect("write encrypted");
 
-    let reader =
-        BundleReader::open_with_passphrase(&bundle_path, Some(passphrase)).expect("open");
+    let reader = BundleReader::open_with_passphrase(&bundle_path, Some(passphrase)).expect("open");
 
     assert_eq!(
         reader.manifest().redaction_policy_version,
@@ -494,9 +498,8 @@ fn test_passphrase_on_unencrypted_bundle_still_opens() {
 
     // Opening an unencrypted bundle with a passphrase should still work
     // (passphrase is just ignored since file isn't encrypted)
-    let reader =
-        BundleReader::open_with_passphrase(&bundle_path, Some("unnecessary-passphrase"))
-            .expect("open plain with passphrase");
+    let reader = BundleReader::open_with_passphrase(&bundle_path, Some("unnecessary-passphrase"))
+        .expect("open plain with passphrase");
     assert_eq!(reader.session_id(), "session-plain");
 }
 
@@ -600,16 +603,14 @@ fn test_encrypted_bundle_preserves_jsonl_log_schema() {
     let (plain_bytes, _) = build_test_bundle(ExportProfile::Safe);
 
     // Manually encrypt the plain bytes
-    let encrypted = pt_bundle::encryption::encrypt_bytes(&plain_bytes, passphrase)
-        .expect("encrypt");
+    let encrypted =
+        pt_bundle::encryption::encrypt_bytes(&plain_bytes, passphrase).expect("encrypt");
     std::fs::write(&bundle_path, &encrypted).expect("write");
 
     let mut reader =
         BundleReader::open_with_passphrase(&bundle_path, Some(passphrase)).expect("open");
 
-    let log_bytes = reader
-        .read_verified("logs/events.jsonl")
-        .expect("read log");
+    let log_bytes = reader.read_verified("logs/events.jsonl").expect("read log");
     let log_text = String::from_utf8(log_bytes).expect("utf8");
 
     let required_fields = [
@@ -642,9 +643,9 @@ fn test_encrypted_bundle_preserves_jsonl_log_schema() {
         // Validate artifacts is an array of objects with path + kind
         if let Some(artifacts) = map.get("artifacts").and_then(|v| v.as_array()) {
             for (i, artifact) in artifacts.iter().enumerate() {
-                let a = artifact.as_object().unwrap_or_else(|| {
-                    panic!("artifact[{}] should be object", i)
-                });
+                let a = artifact
+                    .as_object()
+                    .unwrap_or_else(|| panic!("artifact[{}] should be object", i));
                 assert!(a.contains_key("path"), "artifact[{}] missing 'path'", i);
                 assert!(a.contains_key("kind"), "artifact[{}] missing 'kind'", i);
             }

@@ -261,9 +261,6 @@ mod tests {
 
         let result = verify_binary(&script_path, Some("1.2.3")).unwrap();
         assert!(!result.passed);
-        assert!(result
-            .error
-            .unwrap_or_default()
-            .contains("unparseable"));
+        assert!(result.error.unwrap_or_default().contains("unparseable"));
     }
 }

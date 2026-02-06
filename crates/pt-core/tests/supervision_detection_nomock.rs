@@ -12,11 +12,11 @@ use pt_core::supervision::{
 #[cfg(target_os = "linux")]
 use pt_core::collect::container::detect_container_from_cgroup;
 #[cfg(target_os = "linux")]
+use pt_core::collect::container::ContainerRuntime;
+#[cfg(target_os = "linux")]
 use pt_core::collect::systemd::parse_systemctl_output;
 #[cfg(target_os = "linux")]
 use pt_core::collect::systemd::{SystemdActiveState, SystemdUnitType};
-#[cfg(target_os = "linux")]
-use pt_core::collect::container::ContainerRuntime;
 
 #[derive(Debug, Deserialize)]
 struct FixtureFile {
@@ -122,7 +122,11 @@ fn parse_runtime(value: &str) -> ContainerRuntime {
 fn test_systemd_fixture_cases() {
     let fixtures = load_cases();
 
-    for case in fixtures.cases.iter().filter(|c| matches!(c.kind, CaseKind::SystemdShow)) {
+    for case in fixtures
+        .cases
+        .iter()
+        .filter(|c| matches!(c.kind, CaseKind::SystemdShow))
+    {
         let pid = case.input.pid.expect("systemd case requires pid");
         let output = case
             .input
@@ -143,7 +147,11 @@ fn test_systemd_fixture_cases() {
             assert_eq!(unit.active_state, expected, "{} active state", case.id);
         }
         if let Some(expected_main) = case.expected.is_main_process {
-            assert_eq!(unit.is_main_process, expected_main, "{} is_main_process", case.id);
+            assert_eq!(
+                unit.is_main_process, expected_main,
+                "{} is_main_process",
+                case.id
+            );
         }
     }
 }
@@ -153,7 +161,11 @@ fn test_systemd_fixture_cases() {
 fn test_container_fixture_cases() {
     let fixtures = load_cases();
 
-    for case in fixtures.cases.iter().filter(|c| matches!(c.kind, CaseKind::CgroupPath)) {
+    for case in fixtures
+        .cases
+        .iter()
+        .filter(|c| matches!(c.kind, CaseKind::CgroupPath))
+    {
         let path = case
             .input
             .cgroup_path
@@ -166,7 +178,11 @@ fn test_container_fixture_cases() {
             assert_eq!(info.runtime, expected, "{} runtime", case.id);
         }
         if let Some(expected_in_container) = case.expected.in_container {
-            assert_eq!(info.in_container, expected_in_container, "{} in_container", case.id);
+            assert_eq!(
+                info.in_container, expected_in_container,
+                "{} in_container",
+                case.id
+            );
         }
         if let Some(ref expected_short) = case.expected.container_id_short {
             assert_eq!(
@@ -191,16 +207,19 @@ fn test_environ_fixture_cases() {
     let fixtures = load_cases();
     let analyzer = EnvironAnalyzer::new();
 
-    for case in fixtures.cases.iter().filter(|c| matches!(c.kind, CaseKind::EnvMap)) {
-        let env = case
-            .input
-            .env
-            .as_ref()
-            .expect("env case requires env map");
+    for case in fixtures
+        .cases
+        .iter()
+        .filter(|c| matches!(c.kind, CaseKind::EnvMap))
+    {
+        let env = case.input.env.as_ref().expect("env case requires env map");
         let result = analyzer.analyze_env(env);
 
         if let Some(ref expected_name) = case.expected.supervisor_name {
-            assert_eq!(result.supervisor_name.as_deref(), Some(expected_name.as_str()));
+            assert_eq!(
+                result.supervisor_name.as_deref(),
+                Some(expected_name.as_str())
+            );
         }
         if let Some(ref expected_category) = case.expected.category {
             let expected = parse_category(expected_category);
@@ -239,7 +258,10 @@ fn test_nomock_environ_supervision_spawned_process() {
     let env = match read_environ(pid) {
         Ok(env) => env,
         Err(err) => {
-            eprintln!("Skipping no-mock env test: failed to read environ ({:?})", err);
+            eprintln!(
+                "Skipping no-mock env test: failed to read environ ({:?})",
+                err
+            );
             let _ = child.kill();
             let _ = child.wait();
             return;
@@ -263,17 +285,26 @@ fn test_nomock_environ_supervision_spawned_process() {
 
 #[test]
 fn test_supervision_log_fixture_schema() {
-    let log_path = fixtures_dir().join("logs").join("supervision_detection.jsonl");
+    let log_path = fixtures_dir()
+        .join("logs")
+        .join("supervision_detection.jsonl");
     let contents = fs::read_to_string(&log_path).expect("read supervision log fixture");
 
     for (idx, line) in contents.lines().enumerate() {
-        let value: serde_json::Value = serde_json::from_str(line)
-            .expect(&format!("invalid json at line {}", idx + 1));
+        let value: serde_json::Value =
+            serde_json::from_str(line).expect(&format!("invalid json at line {}", idx + 1));
         let obj = value
             .as_object()
             .expect(&format!("log line {} not object", idx + 1));
 
-        for key in ["event", "timestamp", "supervisor_type", "pid", "duration_ms", "artifacts"] {
+        for key in [
+            "event",
+            "timestamp",
+            "supervisor_type",
+            "pid",
+            "duration_ms",
+            "artifacts",
+        ] {
             assert!(
                 obj.contains_key(key),
                 "log line {} missing {}",
@@ -296,12 +327,8 @@ fn test_fixture_manifest_validates() {
     let manifest = fixtures_dir().join("fixture_manifest.json");
     let status = std::process::Command::new("python3")
         .args([
-            script
-                .to_str()
-                .expect("validator script path"),
-            manifest
-                .to_str()
-                .expect("manifest path"),
+            script.to_str().expect("validator script path"),
+            manifest.to_str().expect("manifest path"),
         ])
         .status()
         .expect("run fixture manifest validator");

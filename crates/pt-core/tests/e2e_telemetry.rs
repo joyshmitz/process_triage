@@ -112,8 +112,14 @@ fn test_telemetry_status_json_schema() {
     );
 
     let status = &json["status"];
-    assert!(status.get("total_bytes").is_some(), "status should have total_bytes");
-    assert!(status.get("total_files").is_some(), "status should have total_files");
+    assert!(
+        status.get("total_bytes").is_some(),
+        "status should have total_bytes"
+    );
+    assert!(
+        status.get("total_files").is_some(),
+        "status should have total_files"
+    );
     assert!(
         status.get("by_table").is_some(),
         "status should have by_table"
@@ -261,9 +267,15 @@ fn test_telemetry_prune_keep_everything() {
         .clone();
 
     let json: Value = serde_json::from_slice(&output).expect("parse JSON output");
-    assert_eq!(json["event_count"], 0, "keep_everything should prune nothing");
+    assert_eq!(
+        json["event_count"], 0,
+        "keep_everything should prune nothing"
+    );
 
-    assert!(file.exists(), "file should be preserved with keep_everything");
+    assert!(
+        file.exists(),
+        "file should be preserved with keep_everything"
+    );
 }
 
 // ============================================================================
@@ -382,8 +394,11 @@ fn test_telemetry_status_prune_status_workflow_via_cli() {
     // Step 1: Status before prune
     let output_before = pt_core()
         .args([
-            "--format", "json",
-            "telemetry", "--telemetry-dir", dir_str,
+            "--format",
+            "json",
+            "telemetry",
+            "--telemetry-dir",
+            dir_str,
             "status",
         ])
         .assert()
@@ -401,9 +416,14 @@ fn test_telemetry_status_prune_status_workflow_via_cli() {
     // Step 2: Prune
     let prune_output = pt_core()
         .args([
-            "--format", "json",
-            "telemetry", "--telemetry-dir", dir_str,
-            "prune", "--keep", "30d",
+            "--format",
+            "json",
+            "telemetry",
+            "--telemetry-dir",
+            dir_str,
+            "prune",
+            "--keep",
+            "30d",
         ])
         .assert()
         .success()
@@ -418,8 +438,11 @@ fn test_telemetry_status_prune_status_workflow_via_cli() {
     // Step 3: Status after prune
     let output_after = pt_core()
         .args([
-            "--format", "json",
-            "telemetry", "--telemetry-dir", dir_str,
+            "--format",
+            "json",
+            "telemetry",
+            "--telemetry-dir",
+            dir_str,
             "status",
         ])
         .assert()
@@ -468,11 +491,16 @@ fn test_telemetry_prune_with_custom_config() {
 
     let output = pt_core()
         .args([
-            "--format", "json",
+            "--format",
+            "json",
             "telemetry",
-            "--telemetry-dir", root.to_str().unwrap(),
-            "--retention-config", config_path.to_str().unwrap(),
-            "prune", "--keep", "60d",
+            "--telemetry-dir",
+            root.to_str().unwrap(),
+            "--retention-config",
+            config_path.to_str().unwrap(),
+            "prune",
+            "--keep",
+            "60d",
         ])
         .assert()
         .success()
@@ -507,11 +535,16 @@ fn test_telemetry_prune_with_aggressive_config() {
 
     let output = pt_core()
         .args([
-            "--format", "json",
+            "--format",
+            "json",
             "telemetry",
-            "--telemetry-dir", root.to_str().unwrap(),
-            "--retention-config", config_path.to_str().unwrap(),
-            "prune", "--keep", "5d",
+            "--telemetry-dir",
+            root.to_str().unwrap(),
+            "--retention-config",
+            config_path.to_str().unwrap(),
+            "prune",
+            "--keep",
+            "5d",
         ])
         .assert()
         .success()

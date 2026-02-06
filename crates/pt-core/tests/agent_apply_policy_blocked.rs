@@ -146,9 +146,7 @@ fn agent_apply_returns_policy_blocked_for_blocked_plan() {
             .get("summary")
             .expect("Missing summary in agent apply output");
         assert_eq!(
-            summary
-                .get("blocked_by_prechecks")
-                .and_then(|v| v.as_u64()),
+            summary.get("blocked_by_prechecks").and_then(|v| v.as_u64()),
             Some(1),
             "Expected blocked_by_prechecks to be 1"
         );

@@ -381,16 +381,12 @@ fn parse_plan_start_id(raw: &str) -> PlanStartId {
     let parts: Vec<&str> = raw.split(':').collect();
     match parts.len() {
         2 => {
-            if let (Ok(pid), Ok(start_time)) =
-                (parts[0].parse::<u32>(), parts[1].parse::<u64>())
-            {
+            if let (Ok(pid), Ok(start_time)) = (parts[0].parse::<u32>(), parts[1].parse::<u64>()) {
                 return PlanStartId::Legacy { pid, start_time };
             }
         }
         3 => {
-            if let (Ok(_start_time), Ok(pid)) =
-                (parts[1].parse::<u64>(), parts[2].parse::<u32>())
-            {
+            if let (Ok(_start_time), Ok(pid)) = (parts[1].parse::<u64>(), parts[2].parse::<u32>()) {
                 return PlanStartId::Full {
                     raw: raw.to_string(),
                     pid,

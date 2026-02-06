@@ -73,11 +73,7 @@ fn read_retention_log(log_dir: &Path) -> Vec<RetentionEvent> {
     let entries: Vec<_> = fs::read_dir(log_dir)
         .expect("read log dir")
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .is_some_and(|ext| ext == "jsonl")
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
         .collect();
 
     let mut events = Vec::new();
@@ -89,8 +85,7 @@ fn read_retention_log(log_dir: &Path) -> Vec<RetentionEvent> {
             if line.trim().is_empty() {
                 continue;
             }
-            let event: RetentionEvent =
-                serde_json::from_str(&line).expect("parse retention event");
+            let event: RetentionEvent = serde_json::from_str(&line).expect("parse retention event");
             events.push(event);
         }
     }
@@ -206,8 +201,7 @@ fn test_prune_is_idempotent() {
     assert!(!old_file.exists(), "file should be deleted");
 
     // Second enforce — should be a no-op
-    let mut enforcer =
-        RetentionEnforcer::with_host_id(root.to_path_buf(), config, host_id);
+    let mut enforcer = RetentionEnforcer::with_host_id(root.to_path_buf(), config, host_id);
     let events_2 = enforcer.enforce().expect("second enforce");
     assert_eq!(
         events_2.len(),
@@ -279,18 +273,14 @@ fn test_custom_ttl_boundary_precision() {
     let root = dir.path();
 
     // Use custom TTL of 10 days for proc_samples
-    let keep_file =
-        root.join("proc_samples/year=2025/month=01/day=01/host_id=test/keep.parquet");
-    let prune_file =
-        root.join("proc_samples/year=2025/month=01/day=02/host_id=test/prune.parquet");
+    let keep_file = root.join("proc_samples/year=2025/month=01/day=01/host_id=test/keep.parquet");
+    let prune_file = root.join("proc_samples/year=2025/month=01/day=02/host_id=test/prune.parquet");
 
     create_fake_parquet(&keep_file, 1024, 8).expect("keep file");
     create_fake_parquet(&prune_file, 1024, 12).expect("prune file");
 
     let mut config = RetentionConfig::default();
-    config
-        .ttl_days
-        .insert("proc_samples".to_string(), 10);
+    config.ttl_days.insert("proc_samples".to_string(), 10);
 
     let enforcer =
         RetentionEnforcer::with_host_id(root.to_path_buf(), config, "custom-ttl-host".to_string());
@@ -320,11 +310,11 @@ fn test_mixed_table_ttl_overrides_prune_correctly() {
     // runs: override to 50d TTL
     // outcomes: default 365d TTL
     let files = [
-        ("proc_samples", "ps1.parquet", 1024, 3),  // keep (3d < 5d)
-        ("proc_samples", "ps2.parquet", 1024, 7),  // prune (7d > 5d)
-        ("runs", "r1.parquet", 1024, 30),           // keep (30d < 50d)
-        ("runs", "r2.parquet", 1024, 55),           // prune (55d > 50d)
-        ("outcomes", "o1.parquet", 1024, 200),      // keep (200d < 365d)
+        ("proc_samples", "ps1.parquet", 1024, 3), // keep (3d < 5d)
+        ("proc_samples", "ps2.parquet", 1024, 7), // prune (7d > 5d)
+        ("runs", "r1.parquet", 1024, 30),         // keep (30d < 50d)
+        ("runs", "r2.parquet", 1024, 55),         // prune (55d > 50d)
+        ("outcomes", "o1.parquet", 1024, 200),    // keep (200d < 365d)
     ];
 
     for (table, name, size, age) in &files {
@@ -350,10 +340,7 @@ fn test_mixed_table_ttl_overrides_prune_correctly() {
         pruned_tables.contains(&"proc_samples"),
         "should prune proc_samples"
     );
-    assert!(
-        pruned_tables.contains(&"runs"),
-        "should prune runs"
-    );
+    assert!(pruned_tables.contains(&"runs"), "should prune runs");
 
     // Verify kept files still exist
     assert!(
@@ -420,8 +407,7 @@ fn test_status_fields_consistency_with_fixture_data() {
 
     // Verify budget percentage calculation
     if status.disk_budget_bytes > 0 {
-        let expected_pct =
-            (status.total_bytes as f64 / status.disk_budget_bytes as f64) * 100.0;
+        let expected_pct = (status.total_bytes as f64 / status.disk_budget_bytes as f64) * 100.0;
         assert!(
             (status.budget_used_pct - expected_pct).abs() < 0.01,
             "budget_used_pct should be accurate: got {}, expected {}",
@@ -443,10 +429,7 @@ fn test_status_fields_consistency_with_fixture_data() {
 
     eprintln!(
         "[INFO] Status consistency: {} files, {} bytes, {:.4}% budget, {} TTL-eligible",
-        status.total_files,
-        status.total_bytes,
-        status.budget_used_pct,
-        status.ttl_eligible_files
+        status.total_files, status.total_bytes, status.budget_used_pct, status.ttl_eligible_files
     );
 }
 
@@ -521,8 +504,7 @@ fn test_sequential_prune_cycles_deterministic() {
         root.join("proc_samples/year=2025/month=01/day=02/host_id=test/cycle2a.parquet");
     let old_file_3 =
         root.join("proc_features/year=2025/month=01/day=01/host_id=test/cycle2b.parquet");
-    let young_file =
-        root.join("proc_samples/year=2025/month=01/day=03/host_id=test/young.parquet");
+    let young_file = root.join("proc_samples/year=2025/month=01/day=03/host_id=test/young.parquet");
 
     create_fake_parquet(&old_file_2, 2048, 40).expect("cycle2a file");
     create_fake_parquet(&old_file_3, 4096, 35).expect("cycle2b file");
@@ -627,7 +609,11 @@ fn test_jsonl_emitted_per_pruned_file() {
         }
     }
 
-    eprintln!("[INFO] JSONL per-case: {} events logged for {} prunes", logged.len(), events.len());
+    eprintln!(
+        "[INFO] JSONL per-case: {} events logged for {} prunes",
+        logged.len(),
+        events.len()
+    );
 }
 
 #[test]
@@ -665,12 +651,13 @@ fn test_dry_run_jsonl_events_marked_correctly() {
 #[test]
 fn test_failure_invalid_config_table_name() {
     let mut config = RetentionConfig::default();
-    config
-        .ttl_days
-        .insert("nonexistent_table".to_string(), 30);
+    config.ttl_days.insert("nonexistent_table".to_string(), 30);
 
     let result = config.validate();
-    assert!(result.is_err(), "config with invalid table should fail validation");
+    assert!(
+        result.is_err(),
+        "config with invalid table should fail validation"
+    );
 
     match result.unwrap_err() {
         RetentionError::InvalidConfig(msg) => {
@@ -692,7 +679,10 @@ fn test_failure_invalid_table_budget_name() {
         .insert("bogus_table".to_string(), 1024);
 
     let result = config.validate();
-    assert!(result.is_err(), "config with invalid budget table should fail validation");
+    assert!(
+        result.is_err(),
+        "config with invalid budget table should fail validation"
+    );
 
     match result.unwrap_err() {
         RetentionError::InvalidConfig(msg) => {
@@ -728,11 +718,8 @@ fn test_failure_nonexistent_telemetry_dir() {
 fn test_failure_empty_telemetry_dir_zeros() {
     let dir = tempdir().expect("tempdir");
     let config = RetentionConfig::default();
-    let enforcer = RetentionEnforcer::with_host_id(
-        dir.path().to_path_buf(),
-        config,
-        "empty-host".to_string(),
-    );
+    let enforcer =
+        RetentionEnforcer::with_host_id(dir.path().to_path_buf(), config, "empty-host".to_string());
 
     let status = enforcer.status().expect("status");
     assert_eq!(status.total_files, 0);
@@ -754,7 +741,10 @@ fn test_failure_empty_telemetry_dir_zeros() {
         "empty-host".to_string(),
     );
     let events = enforcer.enforce().expect("enforce empty");
-    assert!(events.is_empty(), "prune on empty dir should produce 0 events");
+    assert!(
+        events.is_empty(),
+        "prune on empty dir should produce 0 events"
+    );
 }
 
 // ============================================================================
@@ -782,8 +772,7 @@ fn test_preview_projected_usage_matches_actual() {
     let _ = enforcer.enforce().expect("enforce");
 
     // Get status after
-    let enforcer =
-        RetentionEnforcer::with_host_id(root.to_path_buf(), config, host_id);
+    let enforcer = RetentionEnforcer::with_host_id(root.to_path_buf(), config, host_id);
     let status_after = enforcer.status().expect("status after");
 
     assert_eq!(
@@ -806,8 +795,7 @@ fn test_preview_by_table_breakdown_matches_enforcement() {
         RetentionEnforcer::with_host_id(root.to_path_buf(), config.clone(), host_id.clone());
     let preview = enforcer.preview().expect("preview");
 
-    let mut enforcer =
-        RetentionEnforcer::with_host_id(root.to_path_buf(), config, host_id);
+    let mut enforcer = RetentionEnforcer::with_host_id(root.to_path_buf(), config, host_id);
     let events = enforcer.enforce().expect("enforce");
 
     // Count events per table

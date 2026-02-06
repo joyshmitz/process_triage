@@ -153,10 +153,7 @@ fn test_resolve_config_cli_over_env() {
             "PROCESS_TRIAGE_POLICY",
             env_dir.join("policy.json").display().to_string(),
         );
-        env::set_var(
-            "PROCESS_TRIAGE_CONFIG_DIR",
-            env_dir.display().to_string(),
-        );
+        env::set_var("PROCESS_TRIAGE_CONFIG_DIR", env_dir.display().to_string());
 
         let cli_priors = cli_dir.join("priors.json");
         let cli_policy = cli_dir.join("policy.json");
@@ -240,7 +237,5 @@ fn test_presets_are_deterministic() {
     assert_eq!(first_json, second_json);
 
     let presets = list_presets();
-    assert!(presets
-        .iter()
-        .any(|p| p.name == PresetName::Ci.as_str()));
+    assert!(presets.iter().any(|p| p.name == PresetName::Ci.as_str()));
 }

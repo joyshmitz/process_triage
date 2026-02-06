@@ -799,9 +799,7 @@ mod tests {
         assert_eq!(action.routing, ActionRouting::ZombieToParent);
         assert!(action.original_zombie_target.is_some());
         assert_eq!(action.original_zombie_target.as_ref().unwrap().pid.0, 42);
-        assert!(action
-            .pre_checks
-            .contains(&PreCheck::CheckAgentSupervision));
+        assert!(action.pre_checks.contains(&PreCheck::CheckAgentSupervision));
     }
 
     #[test]
@@ -1001,9 +999,7 @@ mod tests {
         let plan = generate_plan(&bundle);
 
         let action = &plan.actions[0];
-        assert!(action
-            .pre_checks
-            .contains(&PreCheck::CheckAgentSupervision));
+        assert!(action.pre_checks.contains(&PreCheck::CheckAgentSupervision));
     }
 
     #[test]
@@ -1017,8 +1013,6 @@ mod tests {
         let plan = generate_plan(&bundle);
 
         let action = &plan.actions[0];
-        assert!(action
-            .pre_checks
-            .contains(&PreCheck::CheckAgentSupervision));
+        assert!(action.pre_checks.contains(&PreCheck::CheckAgentSupervision));
     }
 }

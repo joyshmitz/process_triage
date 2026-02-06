@@ -33,13 +33,11 @@ use pt_core::inference::galaxy_brain::{
     render as render_galaxy_brain, GalaxyBrainConfig, MathMode, Verbosity,
 };
 use pt_core::inference::signature_fast_path::{try_signature_fast_path, FastPathConfig};
-use pt_core::output::{
-    encode_toon_value, CompactConfig, FieldSelector, TokenEfficientOutput,
-};
 use pt_core::output::predictions::{
     apply_field_selection, CpuPrediction, MemoryPrediction, PredictionDiagnostics, PredictionField,
     PredictionFieldSelector, Predictions, TrajectoryAssessment, TrajectoryLabel, Trend,
 };
+use pt_core::output::{encode_toon_value, CompactConfig, FieldSelector, TokenEfficientOutput};
 #[cfg(feature = "ui")]
 use pt_core::plan::{generate_plan, DecisionBundle, DecisionCandidate};
 use pt_core::session::compare::generate_comparison_report;
@@ -47,7 +45,10 @@ use pt_core::session::diff::{
     compute_diff, DeltaKind, DiffConfig, InferenceSummary, ProcessDelta, SessionDiff,
 };
 use pt_core::session::fleet::{create_fleet_session, CandidateInfo, HostInput};
-use pt_core::session::snapshot_persist::{load_inference, load_inventory, PersistedProcess};
+use pt_core::session::snapshot_persist::{
+    load_inference_unchecked, load_inventory_unchecked, persist_inference, persist_inventory,
+    InferenceArtifact, InventoryArtifact, PersistedInference, PersistedProcess,
+};
 use pt_core::session::{
     ListSessionsOptions, SessionContext, SessionHandle, SessionManifest, SessionMode, SessionState,
     SessionStore, SessionSummary,
@@ -967,7 +968,9 @@ use pt_core::action::{
     ActionRunner, IdentityProvider, LiveIdentityProvider, SignalActionRunner, SignalConfig,
 };
 use pt_core::decision::{
-    goal_optimizer::{optimize_greedy, optimize_ilp, OptCandidate, OptimizationResult, ResourceGoal},
+    goal_optimizer::{
+        optimize_greedy, optimize_ilp, OptCandidate, OptimizationResult, ResourceGoal,
+    },
     goal_parser::{parse_goal, Comparator, Goal, Metric, ResourceTarget},
     ConstraintChecker, RobotCandidate, RuntimeRobotConstraints,
 };
@@ -2396,10 +2399,7 @@ fn build_tui_rows(
                                 output.selected_pids.len()
                             ));
                             if !output.warnings.is_empty() {
-                                lines.push(format!(
-                                    "Warnings: {}",
-                                    output.warnings.join(", ")
-                                ));
+                                lines.push(format!("Warnings: {}", output.warnings.join(", ")));
                             }
                             goal_summary = Some(lines);
 
@@ -2856,11 +2856,24 @@ fn build_goal_plan_from_candidates(
                 let achieved = result
                     .goal_achievement
                     .get(0)
-                    .map(|g| if g.target > 0.0 { g.achieved / g.target } else { 1.0 })
+                    .map(|g| {
+                        if g.target > 0.0 {
+                            g.achieved / g.target
+                        } else {
+                            1.0
+                        }
+                    })
                     .unwrap_or(0.0);
-                let score = if result.feasible { 1.0 + achieved } else { achieved };
+                let score = if result.feasible {
+                    1.0 + achieved
+                } else {
+                    achieved
+                };
                 if score > best_score
-                    || (score - best_score).abs() < 1e-9 && best.as_ref().map_or(true, |b| result.total_loss < b.0.total_loss)
+                    || (score - best_score).abs() < 1e-9
+                        && best
+                            .as_ref()
+                            .map_or(true, |b| result.total_loss < b.0.total_loss)
                 {
                     best_score = score;
                     best = Some((result, goals));
@@ -2907,11 +2920,7 @@ fn build_goal_plan_from_candidates(
     })
 }
 
-fn goal_summary_json(
-    goal_str: &str,
-    goal: &Goal,
-    output: &GoalPlanOutput,
-) -> serde_json::Value {
+fn goal_summary_json(goal_str: &str, goal: &Goal, output: &GoalPlanOutput) -> serde_json::Value {
     let targets: Vec<serde_json::Value> = output
         .goals
         .iter()
@@ -4864,7 +4873,8 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
                                 }
                             }
                             Err(err) => {
-                                outcome.status = pt_core::daemon::escalation::EscalationStatus::Failed;
+                                outcome.status =
+                                    pt_core::daemon::escalation::EscalationStatus::Failed;
                                 outcome.reason = err;
                             }
                         }
@@ -4904,7 +4914,10 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
             println!("{}", format_structured_output(global, response));
         }
         _ => {
-            println!("Daemon stopped after {} ticks.", state_bundle.daemon.tick_count);
+            println!(
+                "Daemon stopped after {} ticks.",
+                state_bundle.daemon.tick_count
+            );
         }
     }
 
@@ -5109,8 +5122,7 @@ fn parse_retention_config_value(
 
         if let Some(max_disk_gb) = map.get("max_disk_gb").and_then(|v| v.as_f64()) {
             if max_disk_gb >= 0.0 {
-                config.disk_budget_bytes =
-                    (max_disk_gb * 1024.0 * 1024.0 * 1024.0).round() as u64;
+                config.disk_budget_bytes = (max_disk_gb * 1024.0 * 1024.0 * 1024.0).round() as u64;
             }
         }
 
@@ -5293,7 +5305,11 @@ fn run_telemetry_prune(
             } else {
                 println!("Pruned {} file(s).", event_count);
             }
-            println!("Bytes {}: {}", if dry_run { "eligible" } else { "freed" }, format_bytes(freed_bytes));
+            println!(
+                "Bytes {}: {}",
+                if dry_run { "eligible" } else { "freed" },
+                format_bytes(freed_bytes)
+            );
             for event in &events {
                 println!(
                     "  {} ({}) [{:?}]",
@@ -5773,7 +5789,10 @@ fn run_shadow_report(global: &GlobalOpts, args: &ShadowReportArgs) -> ExitCode {
 
     let report = match engine.calibration_report() {
         Ok(report) => report,
-        Err(CalibrationError::InsufficientData { count, min_required }) => {
+        Err(CalibrationError::InsufficientData {
+            count,
+            min_required,
+        }) => {
             println!(
                 "Calibration report requires at least {} resolved observations (found {}).",
                 min_required, count
@@ -6226,10 +6245,7 @@ struct DaemonStateBundle {
 }
 
 #[cfg(feature = "daemon")]
-fn load_daemon_state(
-    path: &Path,
-    config: &pt_core::daemon::DaemonConfig,
-) -> DaemonStateBundle {
+fn load_daemon_state(path: &Path, config: &pt_core::daemon::DaemonConfig) -> DaemonStateBundle {
     if let Ok(content) = std::fs::read_to_string(path) {
         if let Ok(state) = serde_json::from_str::<DaemonStateBundle>(&content) {
             return state;
@@ -6281,7 +6297,10 @@ fn run_daemon_escalation(
     ) {
         Ok(deep) => Ok(deep),
         Err(err) => {
-            eprintln!("daemon escalation: deep plan failed, using quick plan: {}", err);
+            eprintln!(
+                "daemon escalation: deep plan failed, using quick plan: {}",
+                err
+            );
             Ok(quick)
         }
     }
@@ -6333,7 +6352,11 @@ fn run_daemon_plan(
         .get("summary")
         .and_then(|s| s.get("candidates_found"))
         .and_then(|v| v.as_u64())
-        .or_else(|| json.get("candidates").and_then(|v| v.as_array()).map(|a| a.len() as u64))
+        .or_else(|| {
+            json.get("candidates")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len() as u64)
+        })
         .unwrap_or(0) as u32;
 
     Ok(DaemonEscalationResult {
@@ -7695,111 +7718,245 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
     let host_id = pt_core::logging::get_host_id();
     let timestamp = chrono::Utc::now();
 
-    // Collect process list if --top, --include-env, or --include-network is specified
-    let process_snapshot = if args.top.is_some() || args.include_env || args.include_network {
-        let scan_options = QuickScanOptions {
-            pids: vec![],
-            include_kernel_threads: false,
-            timeout: global.timeout.map(std::time::Duration::from_secs),
-            progress: None,
+    // Perform a quick scan once. We use it both for user-facing snapshot output (optional)
+    // and for persisting diff artifacts (inventory + inference) so `pt diff` can work.
+    let scan_options = QuickScanOptions {
+        pids: vec![],
+        include_kernel_threads: false,
+        timeout: global.timeout.map(std::time::Duration::from_secs),
+        progress: None,
+    };
+
+    let scan_result = match quick_scan(&scan_options) {
+        Ok(result) => Some(result),
+        Err(e) => {
+            eprintln!("agent snapshot: warning: process scan failed: {}", e);
+            None
+        }
+    };
+
+    // Persist compact artifacts when we have a scan result.
+    if let Some(ref scan_result) = scan_result {
+        // Load config for protected filter + action policy.
+        let config_options = ConfigOptions {
+            config_dir: global.config.as_ref().map(PathBuf::from),
+            ..Default::default()
         };
-        match quick_scan(&scan_options) {
-            Ok(result) => {
-                let mut processes: Vec<_> = result.processes.into_iter().collect();
+        if let Ok(config) = load_config(&config_options) {
+            let priors = config.priors.clone();
+            let policy = config.policy.clone();
 
-                // Sort by resource usage (CPU + normalized memory)
-                processes.sort_by(|a, b| {
-                    let a_score = a.cpu_percent + (a.rss_bytes as f64 / 1_073_741_824.0); // GB
-                    let b_score = b.cpu_percent + (b.rss_bytes as f64 / 1_073_741_824.0);
-                    b_score
-                        .partial_cmp(&a_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
+            if let Ok(protected_filter) = ProtectedFilter::from_guardrails(&policy.guardrails) {
+                let filter_result = protected_filter.filter_scan_result(scan_result);
 
-                // Limit to top N if specified
-                if let Some(top_n) = args.top {
-                    processes.truncate(top_n);
+                let mut persisted_inventory_records: Vec<PersistedProcess> = Vec::new();
+                let mut persisted_inference_records: Vec<PersistedInference> = Vec::new();
+                persisted_inventory_records.reserve(filter_result.passed.len());
+                persisted_inference_records.reserve(filter_result.passed.len());
+
+                let feasibility = ActionFeasibility::allow_all();
+                for proc in &filter_result.passed {
+                    let evidence = Evidence {
+                        cpu: Some(CpuEvidence::Fraction {
+                            occupancy: (proc.cpu_percent / 100.0).clamp(0.0, 1.0),
+                        }),
+                        runtime_seconds: Some(proc.elapsed.as_secs_f64()),
+                        orphan: Some(proc.is_orphan()),
+                        tty: Some(proc.has_tty()),
+                        net: None,
+                        io_active: None,
+                        state_flag: state_to_flag(proc.state),
+                        command_category: None,
+                    };
+
+                    let posterior_result = match compute_posterior(&priors, &evidence) {
+                        Ok(r) => r,
+                        Err(_) => continue,
+                    };
+
+                    let decision_outcome =
+                        match decide_action(&posterior_result.posterior, &policy, &feasibility) {
+                            Ok(d) => d,
+                            Err(_) => continue,
+                        };
+
+                    let ledger = EvidenceLedger::from_posterior_result(
+                        &posterior_result,
+                        Some(proc.pid.0),
+                        None,
+                    );
+
+                    let posterior = &posterior_result.posterior;
+                    let max_posterior = posterior
+                        .useful
+                        .max(posterior.useful_bad)
+                        .max(posterior.abandoned)
+                        .max(posterior.zombie);
+                    let score = (max_posterior * 100.0).round() as u32;
+
+                    let recommended_action = match decision_outcome.optimal_action {
+                        Action::Keep => "keep",
+                        Action::Renice => "renice",
+                        Action::Pause => "pause",
+                        Action::Resume => "resume",
+                        Action::Freeze => "freeze",
+                        Action::Unfreeze => "unfreeze",
+                        Action::Throttle => "throttle",
+                        Action::Quarantine => "quarantine",
+                        Action::Unquarantine => "unquarantine",
+                        Action::Restart => "restart",
+                        Action::Kill => "kill",
+                    };
+
+                    persisted_inventory_records.push(PersistedProcess {
+                        pid: proc.pid.0,
+                        ppid: proc.ppid.0,
+                        uid: proc.uid,
+                        start_id: proc.start_id.to_string(),
+                        comm: proc.comm.clone(),
+                        cmd: proc.cmd.clone(),
+                        state: proc.state.to_string(),
+                        start_time_unix: proc.start_time_unix,
+                        elapsed_secs: proc.elapsed.as_secs(),
+                        identity_quality: "QuickScan".to_string(),
+                    });
+
+                    persisted_inference_records.push(PersistedInference {
+                        pid: proc.pid.0,
+                        start_id: proc.start_id.to_string(),
+                        classification: ledger.classification.label().to_string(),
+                        posterior_useful: posterior.useful,
+                        posterior_useful_bad: posterior.useful_bad,
+                        posterior_abandoned: posterior.abandoned,
+                        posterior_zombie: posterior.zombie,
+                        confidence: ledger.confidence.label().to_string(),
+                        recommended_action: recommended_action.to_string(),
+                        score,
+                    });
                 }
 
-                // Build process summaries for output
-                let summaries: Vec<serde_json::Value> = processes
-                    .iter()
-                    .map(|p| {
-                        let mut obj = serde_json::json!({
-                            "pid": p.pid.0,
-                            "ppid": p.ppid.0,
-                            "user": &p.user,
-                            "comm": &p.comm,
-                            "cmd": &p.cmd,
-                            "cpu_percent": p.cpu_percent,
-                            "rss_mb": p.rss_bytes / 1_048_576,
-                            "vsz_mb": p.vsz_bytes / 1_048_576,
-                            "state": format!("{:?}", p.state),
-                            "elapsed_secs": p.elapsed.as_secs(),
-                        });
+                let host_id = pt_core::logging::get_host_id();
+                let inv_artifact = InventoryArtifact {
+                    total_system_processes: filter_result.total_before as u64,
+                    protected_filtered: filter_result.filtered.len() as u64,
+                    record_count: persisted_inventory_records.len(),
+                    records: persisted_inventory_records,
+                };
+                if let Err(e) = persist_inventory(&handle, &session_id.0, &host_id, inv_artifact) {
+                    eprintln!(
+                        "agent snapshot: warning: failed to persist inventory artifact: {}",
+                        e
+                    );
+                }
 
-                        // Add environment info placeholder (redacted keys only)
-                        if args.include_env {
-                            // Read env from /proc/<pid>/environ and extract key names only
-                            let env_path = format!("/proc/{}/environ", p.pid.0);
-                            if let Ok(content) = std::fs::read(&env_path) {
-                                let keys: Vec<String> = content
-                                    .split(|&b| b == 0)
-                                    .filter_map(|entry| {
-                                        std::str::from_utf8(entry)
-                                            .ok()
-                                            .and_then(|s| s.split('=').next())
-                                            .map(|k| k.to_string())
-                                    })
-                                    .filter(|k| !k.is_empty())
-                                    .collect();
-                                obj.as_object_mut()
-                                    .unwrap()
-                                    .insert("env_keys".to_string(), serde_json::json!(keys));
-                            }
-                        }
+                let inf_artifact = InferenceArtifact {
+                    candidate_count: persisted_inference_records.len(),
+                    candidates: persisted_inference_records,
+                };
+                if let Err(e) = persist_inference(&handle, &session_id.0, &host_id, inf_artifact) {
+                    eprintln!(
+                        "agent snapshot: warning: failed to persist inference artifact: {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
 
-                        // Add network connections placeholder
-                        if args.include_network {
-                            // Count file descriptors that look like sockets
-                            let fd_path = format!("/proc/{}/fd", p.pid.0);
-                            let socket_count = std::fs::read_dir(&fd_path)
-                                .map(|entries| {
-                                    entries
-                                        .filter_map(|e| e.ok())
-                                        .filter(|e| {
-                                            e.path()
-                                                .read_link()
-                                                .map(|target| {
-                                                    target.to_string_lossy().starts_with("socket:")
-                                                })
-                                                .unwrap_or(false)
-                                        })
-                                        .count()
+    // Collect process list if --top, --include-env, or --include-network is specified.
+    let process_snapshot = if args.top.is_some() || args.include_env || args.include_network {
+        if let Some(ref scan_result) = scan_result {
+            let mut processes: Vec<_> = scan_result.processes.iter().collect();
+
+            // Sort by resource usage (CPU + normalized memory)
+            processes.sort_by(|a, b| {
+                let a_score = a.cpu_percent + (a.rss_bytes as f64 / 1_073_741_824.0); // GB
+                let b_score = b.cpu_percent + (b.rss_bytes as f64 / 1_073_741_824.0);
+                b_score
+                    .partial_cmp(&a_score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            // Limit to top N if specified
+            if let Some(top_n) = args.top {
+                processes.truncate(top_n);
+            }
+
+            // Build process summaries for output
+            let summaries: Vec<serde_json::Value> = processes
+                .iter()
+                .map(|p| {
+                    let mut obj = serde_json::json!({
+                        "pid": p.pid.0,
+                        "ppid": p.ppid.0,
+                        "user": &p.user,
+                        "comm": &p.comm,
+                        "cmd": &p.cmd,
+                        "cpu_percent": p.cpu_percent,
+                        "rss_mb": p.rss_bytes / 1_048_576,
+                        "vsz_mb": p.vsz_bytes / 1_048_576,
+                        "state": format!("{:?}", p.state),
+                        "elapsed_secs": p.elapsed.as_secs(),
+                    });
+
+                    // Add environment info placeholder (redacted keys only)
+                    if args.include_env {
+                        // Read env from /proc/<pid>/environ and extract key names only
+                        let env_path = format!("/proc/{}/environ", p.pid.0);
+                        if let Ok(content) = std::fs::read(&env_path) {
+                            let keys: Vec<String> = content
+                                .split(|&b| b == 0)
+                                .filter_map(|entry| {
+                                    std::str::from_utf8(entry)
+                                        .ok()
+                                        .and_then(|s| s.split('=').next())
+                                        .map(|k| k.to_string())
                                 })
-                                .unwrap_or(0);
-                            obj.as_object_mut().unwrap().insert(
-                                "socket_count".to_string(),
-                                serde_json::json!(socket_count),
-                            );
+                                .filter(|k| !k.is_empty())
+                                .collect();
+                            obj.as_object_mut()
+                                .unwrap()
+                                .insert("env_keys".to_string(), serde_json::json!(keys));
                         }
+                    }
 
-                        obj
-                    })
-                    .collect();
+                    // Add network connections placeholder
+                    if args.include_network {
+                        // Count file descriptors that look like sockets
+                        let fd_path = format!("/proc/{}/fd", p.pid.0);
+                        let socket_count = std::fs::read_dir(&fd_path)
+                            .map(|entries| {
+                                entries
+                                    .filter_map(|e| e.ok())
+                                    .filter(|e| {
+                                        e.path()
+                                            .read_link()
+                                            .map(|target| {
+                                                target.to_string_lossy().starts_with("socket:")
+                                            })
+                                            .unwrap_or(false)
+                                    })
+                                    .count()
+                            })
+                            .unwrap_or(0);
+                        obj.as_object_mut()
+                            .unwrap()
+                            .insert("socket_count".to_string(), serde_json::json!(socket_count));
+                    }
 
-                Some(serde_json::json!({
-                    "count": summaries.len(),
-                    "top_n": args.top,
-                    "include_env": args.include_env,
-                    "include_network": args.include_network,
-                    "processes": summaries,
-                }))
-            }
-            Err(e) => {
-                eprintln!("agent snapshot: warning: process scan failed: {}", e);
-                None
-            }
+                    obj
+                })
+                .collect();
+
+            Some(serde_json::json!({
+                "count": summaries.len(),
+                "top_n": args.top,
+                "include_env": args.include_env,
+                "include_network": args.include_network,
+                "processes": summaries,
+            }))
+        } else {
+            None
         }
     } else {
         None
@@ -8106,10 +8263,12 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         policy.clone()
     };
 
-    // Process each candidate: compute posterior, make decision, build candidate output
-    // Collect ALL candidates above threshold with their max_posterior for sorting
-    // Then sort by max_posterior descending and take top N
-    let mut all_candidates: Vec<(f64, serde_json::Value)> = Vec::new();
+    // Process each candidate: compute posterior, make decision, build candidate output.
+    //
+    // Collect all candidates above threshold with their max_posterior for sorting, plus
+    // a compact persisted snapshot (inventory + inference) so `diff` can compare sessions.
+    let mut all_candidates: Vec<(f64, serde_json::Value, PersistedProcess, PersistedInference)> =
+        Vec::new();
     let mut policy_blocked_count = 0usize;
 
     let feasibility = ActionFeasibility::allow_all();
@@ -8149,10 +8308,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         eligible_processes
     };
 
-    let current_cpu_pct: f64 = processes_to_infer
-        .iter()
-        .map(|p| p.cpu_percent)
-        .sum();
+    let current_cpu_pct: f64 = processes_to_infer.iter().map(|p| p.cpu_percent).sum();
 
     let candidates_evaluated = processes_to_infer.len();
     let total_processes = candidates_evaluated as u64;
@@ -8428,8 +8584,35 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             }
         }
 
+        let persisted_proc = PersistedProcess {
+            pid: proc.pid.0,
+            ppid: proc.ppid.0,
+            uid: proc.uid,
+            start_id: proc.start_id.to_string(),
+            comm: proc.comm.clone(),
+            cmd: proc.cmd.clone(),
+            state: proc.state.to_string(),
+            start_time_unix: proc.start_time_unix,
+            elapsed_secs: proc.elapsed.as_secs(),
+            // Quick scan provides a solid start_id but lacks full TOCTOU coverage.
+            identity_quality: "QuickScan".to_string(),
+        };
+
+        let persisted_inf = PersistedInference {
+            pid: proc.pid.0,
+            start_id: proc.start_id.to_string(),
+            classification: ledger.classification.label().to_string(),
+            posterior_useful: posterior.useful,
+            posterior_useful_bad: posterior.useful_bad,
+            posterior_abandoned: posterior.abandoned,
+            posterior_zombie: posterior.zombie,
+            confidence: ledger.confidence.label().to_string(),
+            recommended_action: recommended_action.to_string(),
+            score,
+        };
+
         // Store candidate with max_posterior for sorting (no early break!)
-        all_candidates.push((max_posterior, candidate));
+        all_candidates.push((max_posterior, candidate, persisted_proc, persisted_inf));
     }
 
     if let Some(ref e) = emitter {
@@ -8462,11 +8645,17 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     let above_threshold_count = all_candidates.len();
 
     // Take top N candidates (sorted by max posterior, not scan order!)
-    let candidates: Vec<serde_json::Value> = all_candidates
+    let mut candidates: Vec<serde_json::Value> = Vec::new();
+    let mut persisted_inventory_records: Vec<PersistedProcess> = Vec::new();
+    let mut persisted_inference_records: Vec<PersistedInference> = Vec::new();
+    for (_, candidate_json, proc_rec, inf_rec) in all_candidates
         .into_iter()
         .take(args.max_candidates as usize)
-        .map(|(_, c)| c)
-        .collect();
+    {
+        candidates.push(candidate_json);
+        persisted_inventory_records.push(proc_rec);
+        persisted_inference_records.push(inf_rec);
+    }
 
     // Rebuild kill/review/spare candidate lists from the final sorted candidates
     let mut kill_candidates: Vec<u32> = Vec::new();
@@ -8628,6 +8817,33 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     ) {
         eprintln!("agent plan: failed to write {}: {}", plan_path.display(), e);
         return ExitCode::InternalError;
+    }
+
+    // Persist compact diff artifacts so `pt diff` can compare sessions reliably.
+    // Best-effort: don't fail the plan output if persistence fails, but emit a warning.
+    let host_id = pt_core::logging::get_host_id();
+    let inv_artifact = InventoryArtifact {
+        total_system_processes: total_scanned as u64,
+        protected_filtered: protected_filtered_count as u64,
+        record_count: persisted_inventory_records.len(),
+        records: persisted_inventory_records,
+    };
+    if let Err(e) = persist_inventory(&handle, &session_id.0, &host_id, inv_artifact) {
+        eprintln!(
+            "agent plan: warning: failed to persist inventory artifact: {}",
+            e
+        );
+    }
+
+    let inf_artifact = InferenceArtifact {
+        candidate_count: persisted_inference_records.len(),
+        candidates: persisted_inference_records,
+    };
+    if let Err(e) = persist_inference(&handle, &session_id.0, &host_id, inf_artifact) {
+        eprintln!(
+            "agent plan: warning: failed to persist inference artifact: {}",
+            e
+        );
     }
 
     // Update manifest state
@@ -9964,12 +10180,7 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
             } else {
                 println!(
                     "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} precheck_blocked",
-                    sid,
-                    succeeded,
-                    failed,
-                    skipped,
-                    blocked_by_constraints,
-                    blocked_by_prechecks
+                    sid, succeeded, failed, skipped, blocked_by_constraints, blocked_by_prechecks
                 );
             }
         }
@@ -10277,6 +10488,13 @@ fn resolve_diff_sessions(
     store: &SessionStore,
     args: &DiffArgs,
 ) -> Result<(SessionId, SessionId, Option<String>, Option<String>), String> {
+    fn has_required_artifacts(summary: &SessionSummary) -> bool {
+        // Diff requires both inventory + inference artifacts.
+        // Older sessions may not have these yet; skip them to avoid confusing failures.
+        summary.path.join("scan").join("inventory.json").exists()
+            && summary.path.join("inference").join("results.json").exists()
+    }
+
     if args.baseline && args.last {
         return Err("diff: --baseline and --last cannot be used together".to_string());
     }
@@ -10291,11 +10509,22 @@ fn resolve_diff_sessions(
         state: None,
         older_than: None,
     };
-    let sessions = store
+    let all_sessions = store
         .list_sessions(&list_options)
         .map_err(|e| format!("diff: failed to list sessions: {}", e))?;
-    if sessions.is_empty() {
+    if all_sessions.is_empty() {
         return Err("diff: no sessions found".to_string());
+    }
+
+    let sessions: Vec<SessionSummary> = all_sessions
+        .into_iter()
+        .filter(has_required_artifacts)
+        .collect();
+    if sessions.is_empty() {
+        return Err(
+            "diff: no sessions with required artifacts (need scan inventory + inference results)"
+                .to_string(),
+        );
     }
 
     let use_last = args.last || (!args.baseline && args.base.is_none());
@@ -10606,28 +10835,28 @@ fn run_diff(global: &GlobalOpts, args: &DiffArgs) -> ExitCode {
         }
     };
 
-    let base_inventory = match load_inventory(&base_handle) {
+    let base_inventory = match load_inventory_unchecked(&base_handle) {
         Ok(inv) => inv,
         Err(e) => {
             eprintln!("diff: base inventory: {}", e);
             return ExitCode::ArgsError;
         }
     };
-    let base_inference = match load_inference(&base_handle) {
+    let base_inference = match load_inference_unchecked(&base_handle) {
         Ok(inf) => inf,
         Err(e) => {
             eprintln!("diff: base inference: {}", e);
             return ExitCode::ArgsError;
         }
     };
-    let compare_inventory = match load_inventory(&compare_handle) {
+    let compare_inventory = match load_inventory_unchecked(&compare_handle) {
         Ok(inv) => inv,
         Err(e) => {
             eprintln!("diff: compare inventory: {}", e);
             return ExitCode::ArgsError;
         }
     };
-    let compare_inference = match load_inference(&compare_handle) {
+    let compare_inference = match load_inference_unchecked(&compare_handle) {
         Ok(inf) => inf,
         Err(e) => {
             eprintln!("diff: compare inference: {}", e);

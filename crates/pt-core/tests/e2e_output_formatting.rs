@@ -105,10 +105,7 @@ fn test_format_toon_produces_valid_toon() {
     );
 
     // TOON should contain key/value pairs
-    assert!(
-        !text.is_empty(),
-        "TOON output should not be empty"
-    );
+    assert!(!text.is_empty(), "TOON output should not be empty");
 
     // TOON should be parseable back to a value via toon_rust
     // (We can't use toon_rust directly in integration tests, but we
@@ -118,10 +115,7 @@ fn test_format_toon_produces_valid_toon() {
         "TOON output should have meaningful content"
     );
 
-    eprintln!(
-        "[INFO] TOON output: {} bytes vs JSON",
-        text.len()
-    );
+    eprintln!("[INFO] TOON output: {} bytes vs JSON", text.len());
 }
 
 #[test]
@@ -260,7 +254,10 @@ fn test_fields_standard_includes_standard_keys() {
     let raw = capabilities_raw(&["--format", "json", "--fields", "standard"]);
     let text = String::from_utf8(raw).expect("utf8");
     let json: Value = serde_json::from_str(text.trim()).expect("parse standard JSON");
-    assert!(json.is_object(), "standard preset should produce valid JSON object");
+    assert!(
+        json.is_object(),
+        "standard preset should produce valid JSON object"
+    );
 }
 
 #[test]
@@ -299,10 +296,7 @@ fn test_fields_custom_csv_selects_specific_keys() {
         obj.contains_key("schema_version"),
         "filtered output should include schema_version"
     );
-    assert!(
-        obj.contains_key("os"),
-        "filtered output should include os"
-    );
+    assert!(obj.contains_key("os"), "filtered output should include os");
 
     // Should NOT have other top-level fields
     let key_count = obj.len();
@@ -412,8 +406,7 @@ fn test_max_tokens_small_budget_produces_metadata_wrapper() {
 
         eprintln!(
             "[INFO] Truncation: continuation={}, remaining={}",
-            meta["continuation_token"],
-            meta["remaining_count"]
+            meta["continuation_token"], meta["remaining_count"]
         );
     } else {
         eprintln!("[INFO] No truncation needed even with small budget (no truncatable arrays)");
@@ -427,9 +420,11 @@ fn test_max_tokens_small_budget_produces_metadata_wrapper() {
 #[test]
 fn test_compact_plus_fields_combined() {
     let raw = capabilities_raw(&[
-        "--format", "json",
+        "--format",
+        "json",
         "--compact",
-        "--fields", "schema_version,os",
+        "--fields",
+        "schema_version,os",
     ]);
     let text = String::from_utf8(raw).expect("utf8");
     let json: Value = serde_json::from_str(text.trim()).expect("parse combined JSON");
@@ -500,9 +495,11 @@ fn test_fields_plus_estimate_tokens() {
     let full_tokens = full_est["estimated_tokens"].as_u64().unwrap();
 
     let raw_minimal = capabilities_raw(&[
-        "--format", "json",
+        "--format",
+        "json",
         "--estimate-tokens",
-        "--fields", "schema_version",
+        "--fields",
+        "schema_version",
     ]);
     let min_est: Value =
         serde_json::from_str(&String::from_utf8(raw_minimal).unwrap()).expect("parse");
@@ -538,7 +535,8 @@ fn test_invalid_fields_empty_string_handled() {
     // Empty fields string should be handled gracefully (treated as default)
     let raw = capabilities_raw(&["--format", "json", "--fields", ""]);
     let text = String::from_utf8(raw).expect("utf8");
-    let json: Value = serde_json::from_str(text.trim()).expect("empty fields should produce valid JSON");
+    let json: Value =
+        serde_json::from_str(text.trim()).expect("empty fields should produce valid JSON");
     assert!(json.is_object(), "empty fields should produce valid object");
 }
 

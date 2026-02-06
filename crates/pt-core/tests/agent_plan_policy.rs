@@ -61,9 +61,7 @@ fn agent_plan_emits_policy_fields() {
             candidate.get("policy_blocked").is_some(),
             "Missing candidate.policy_blocked"
         );
-        let policy = candidate
-            .get("policy")
-            .expect("Missing candidate.policy");
+        let policy = candidate.get("policy").expect("Missing candidate.policy");
         assert!(policy.is_object(), "candidate.policy should be an object");
         assert!(
             policy.get("allowed").is_some(),
