@@ -10,13 +10,14 @@ This documentation describes both **currently available features** and **planned
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| `pt robot plan` | ✅ Implemented | `--deep`, `--min-age`, `--format`, `--only`, `--limit` |
-| `pt robot apply` | ✅ Implemented | `--recommended`, `--pids`, `--yes`, `--format` |
-| `pt robot explain` | ✅ Implemented | `--pid`, `--deep`, `--format` |
-| Session management (`--session`) | 🚧 Planned | Session-based workflow not yet available |
-| Safety gates (`--min-posterior`, `--max-kills`) | 🚧 Planned | Currently uses default policy |
+| `pt robot plan` | ✅ Implemented | `--deep`, `--min-age`, `--format`, `--only`, `--max-candidates`, token-efficient globals (`--fields`, `--compact`, `--max-tokens`, `--estimate-tokens`) |
+| `pt robot apply` | ✅ Implemented | `--recommended`, `--pids`, `--targets`, `--yes`, `--resume`, safety gates (`--min-posterior`, `--max-kills`, `--max-blast-radius`, `--max-total-blast-radius`, `--require-known-signature`) |
+| `pt robot explain` | ✅ Implemented | `--session` plus `--pids` or `--target` |
+| Session management (`--session`) | ✅ Implemented | `pt agent snapshot`, `pt agent sessions`, `pt agent plan --session`, `pt agent apply --session`, `pt agent verify --session`, `pt agent diff` |
+| Safety gates (`--min-posterior`, `--max-kills`) | ✅ Implemented | Enforced at apply time; policy defaults still apply |
 | Pattern filtering (`--patterns`) | 🚧 Planned | Filter by process name patterns |
-| `pt export`, `pt report` | 🚧 Planned | Export and HTML report generation |
+| `pt export` | ✅ Implemented | Use `pt bundle create` or `pt agent export` |
+| `pt report` | ⚠️ Partial | `pt report` is a stub; `pt agent report` requires build with `report` feature |
 
 **For immediate use**: Focus on the "Currently Implemented" workflows in the [Quickstart](#quickstart-workflows) section. Sections marked with 🚧 describe planned features.
 
@@ -100,7 +101,7 @@ These workflows work with the current implementation:
 
 ```bash
 # Scan and report in JSON, no actions taken
-pt robot plan --format json --limit 10
+pt robot plan --format json --max-candidates 10
 
 # With deep inspection (more evidence, slower)
 pt robot plan --deep --format json
@@ -120,7 +121,8 @@ pt robot apply --pids 1234,5678 --yes --format json
 
 ```bash
 # Get detailed analysis of a single process
-pt robot explain --pid 1234 --format json
+SESSION=$(pt robot plan --format json | jq -r .session_id)
+pt robot explain --session "$SESSION" --pids 1234 --format json
 ```
 
 #### Tail Progress Events (JSONL)
@@ -136,11 +138,9 @@ Progress events are persisted under the session directory:
 ~/.local/share/process_triage/sessions/<session_id>/logs/session.jsonl
 ```
 
-### 🚧 Planned: Session-Based Workflows
+### Session-Based Workflows (Implemented)
 
-The following session-based workflows are part of the target contract but not yet implemented:
-
-#### Session-Based Cleanup (Planned)
+#### Session-Based Cleanup
 
 ```bash
 # Generate plan and capture session ID
@@ -149,7 +149,7 @@ pt agent apply --session "$SESSION" --recommended --yes
 pt agent verify --session "$SESSION"
 ```
 
-#### High-Confidence Autonomous Cleanup (Planned)
+#### High-Confidence Autonomous Cleanup
 
 ```bash
 # Only act on very confident classifications
@@ -158,17 +158,17 @@ pt agent apply --session "$SESSION" \
   --recommended --yes \
   --min-posterior 0.99 \
   --max-kills 5 \
-  --max-blast-radius 2GB
+  --max-blast-radius 2048
 ```
 
-#### Resuming an Interrupted Session (Planned)
+#### Resuming an Interrupted Session
 
 ```bash
 # Check status of existing session
-pt agent status --session pt-20260115-143022-a7xq
+pt agent sessions --session pt-20260115-143022-a7xq
 
 # Resume from where it left off
-pt agent apply --session pt-20260115-143022-a7xq --resume
+pt agent apply --session pt-20260115-143022-a7xq --resume --recommended --yes
 ```
 
 ---
