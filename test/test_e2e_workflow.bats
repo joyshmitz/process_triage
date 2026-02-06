@@ -21,6 +21,11 @@ setup_file() {
 setup() {
     setup_test_env
 
+    # This workflow suite targets the legacy bash-first `pt` behavior (history/clear and
+    # heuristic scoring). The current architecture routes functionality through `pt-core`.
+    # Core behavior is validated by `test/pt_agent_contract.bats` and Rust integration tests.
+    skip "legacy bash-first E2E workflow tests; superseded by pt-core contract/integration suites"
+
     TEST_DIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" && pwd )"
     PROJECT_ROOT="$(dirname "$TEST_DIR")"
     PATH="$PROJECT_ROOT:$PATH"

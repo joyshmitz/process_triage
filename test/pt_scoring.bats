@@ -7,6 +7,10 @@ setup() {
     test_start "scoring" "validate heuristic scoring + tiering"
     setup_test_env
 
+    # Legacy bash-first heuristic scoring was removed when pt became a thin wrapper
+    # around `pt-core`. Keep the file as a historical marker, but don't fail CI.
+    skip "legacy bash scoring engine removed; use pt-core inference/decision tests instead"
+
     TEST_DIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" && pwd )"
     PROJECT_ROOT="$(dirname "$TEST_DIR")"
     PATH="$PROJECT_ROOT:$PATH"

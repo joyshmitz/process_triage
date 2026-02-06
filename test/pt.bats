@@ -2,6 +2,8 @@
 # Process Triage - BATS Test Suite
 
 setup() {
+    skip "legacy wrapper CLI smoke tests; pt-core contract + e2e suites supersede this file"
+
     TEST_DIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" && pwd )"
     PROJECT_ROOT="$(dirname "$TEST_DIR")"
     PATH="$PROJECT_ROOT:$PATH"

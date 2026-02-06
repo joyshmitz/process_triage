@@ -7,6 +7,11 @@ setup() {
     test_start "decision memory" "validate save/get/cache helpers"
     setup_test_env
 
+    # Legacy bash decision-memory helpers were removed when pt became a thin wrapper
+    # around `pt-core`. Decision history is now implemented in Rust and covered by
+    # `pt-core` unit/integration tests.
+    skip "legacy bash decision memory removed; use pt-core history/decision tests instead"
+
     TEST_DIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" && pwd )"
     PROJECT_ROOT="$(dirname "$TEST_DIR")"
     PATH="$PROJECT_ROOT:$PATH"

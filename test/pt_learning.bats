@@ -7,6 +7,11 @@ setup() {
     test_start "learning tests" "validate decision memory save/load"
     setup_test_env
 
+    # These tests were written for the legacy bash-first learning/memory layer.
+    # Learning/history is now implemented in `pt-core` and validated via the Rust
+    # test suite + agent contract tests.
+    skip "legacy bash learning/memory tests; superseded by pt-core tests"
+
     TEST_DIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" && pwd )"
     PROJECT_ROOT="$(dirname "$TEST_DIR")"
     PATH="$PROJECT_ROOT:$PATH"

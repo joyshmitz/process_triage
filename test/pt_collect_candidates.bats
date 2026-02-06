@@ -7,6 +7,10 @@ setup() {
     test_start "collect_candidates" "mock ps-based candidate filtering"
     setup_test_env
 
+    # Legacy bash-first candidate collection was removed when pt became a thin wrapper
+    # around `pt-core` (Rust). Keep this file for historical context only.
+    skip "legacy bash candidate collection removed; use pt-core collect/protection tests instead"
+
     TEST_DIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" && pwd )"
     PROJECT_ROOT="$(dirname "$TEST_DIR")"
 

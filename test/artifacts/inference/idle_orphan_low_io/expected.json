@@ -1,0 +1,31 @@
+{
+  "case_id": "idle_orphan_low_io",
+  "posterior": {
+    "useful": 1.3580509094554107E-14,
+    "useful_bad": 2.416421326496237E-20,
+    "abandoned": 0.537422692603861,
+    "zombie": 0.4625773073961246
+  },
+  "classification": "abandoned",
+  "confidence": "low",
+  "top_evidence": [
+    {
+      "feature": "cpu",
+      "direction": "supports abandoned",
+      "strength": "decisive",
+      "delta_bits": 22.78868139295719
+    },
+    {
+      "feature": "runtime",
+      "direction": "supports abandoned",
+      "strength": "decisive",
+      "delta_bits": 15.003833868629053
+    },
+    {
+      "feature": "orphan",
+      "direction": "supports abandoned",
+      "strength": "decisive",
+      "delta_bits": 3.9772799234999168
+    }
+  ]
+}

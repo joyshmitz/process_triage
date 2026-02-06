@@ -10,6 +10,7 @@ normalize_cmd() {
 
 setup() {
     test_start "pattern normalization tests" "validate normalize_pattern behavior"
+    skip "legacy bash normalize_pattern removed; normalization now lives in crates/pt-redact (canonicalize.rs) with Rust unit tests"
 }
 
 teardown() {

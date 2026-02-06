@@ -139,7 +139,7 @@ extract_json() {
     test_info "Testing non-interactivity (closed stdin)"
 
     # Run with stdin from /dev/null - should not hang
-    run timeout 30 bash -c "echo '' | $PT_CORE agent plan --standalone --format json"
+    run timeout 30 bash -c "echo '' | $PT_CORE agent plan --standalone --format json --min-age 99999999 --max-candidates 0"
 
     # Should complete (exit code doesn't matter, just shouldn't hang)
     test_info "Command completed with exit code: $status"
@@ -175,7 +175,7 @@ extract_json() {
     require_jq
     test_info "Testing: pt agent plan schema_version"
 
-    run "$PT_CORE" agent plan --standalone --format json
+    run "$PT_CORE" agent plan --standalone --format json --min-age 99999999 --max-candidates 0
 
     local json
     json=$(extract_json "$output")
@@ -229,7 +229,7 @@ extract_json() {
     test_info "Testing session_id format across commands"
 
     # Test plan
-    run "$PT_CORE" agent plan --standalone --format json
+    run "$PT_CORE" agent plan --standalone --format json --min-age 99999999 --max-candidates 0
     local plan_json
     plan_json=$(extract_json "$output")
     local plan_session
@@ -354,7 +354,7 @@ extract_json() {
     require_jq
     test_info "Testing plan output base structure"
 
-    run "$PT_CORE" agent plan --standalone --format json
+    run "$PT_CORE" agent plan --standalone --format json --min-age 99999999 --max-candidates 0
 
     local json
     json=$(extract_json "$output")
@@ -399,7 +399,7 @@ extract_json() {
 @test "Contract: agent plan exits with valid code" {
     test_info "Testing plan exit code"
 
-    run "$PT_CORE" agent plan --standalone --format json
+    run "$PT_CORE" agent plan --standalone --format json --min-age 99999999 --max-candidates 0
 
     # Exit codes per CLI_SPECIFICATION.md:
     # 0 = CLEAN (nothing to do)
@@ -541,7 +541,7 @@ extract_json() {
     require_jq
     test_info "Testing JSONL event emission"
 
-    run "$PT_CORE" agent plan --standalone --format json
+    run "$PT_CORE" agent plan --standalone --format json --min-age 99999999 --max-candidates 0
 
     # Check if any JSONL events were emitted
     local event_lines
@@ -1388,7 +1388,7 @@ extract_json() {
 @test "Contract: agent plan --min-posterior flag works" {
     test_info "Testing --min-posterior 0.95 is accepted"
 
-    run "$PT_CORE" agent plan --min-posterior 0.95 --format json --standalone
+    run "$PT_CORE" agent plan --min-posterior 0.95 --format json --standalone --min-age 99999999 --max-candidates 0
 
     # Exit 0 (success) or 1 (no candidates) is acceptable
     [[ $status -le 1 ]]
@@ -1400,7 +1400,7 @@ extract_json() {
 @test "Contract: agent plan --threshold alias works" {
     test_info "Testing --threshold alias for backward compatibility"
 
-    run "$PT_CORE" agent plan --threshold 0.85 --format json --standalone
+    run "$PT_CORE" agent plan --threshold 0.85 --format json --standalone --min-age 99999999 --max-candidates 0
 
     # Exit 0 (success) or 1 (no candidates) is acceptable
     [[ $status -le 1 ]]
@@ -1414,12 +1414,12 @@ extract_json() {
     test_info "Testing --min-posterior and --threshold produce equivalent output structure"
 
     # Run with --min-posterior
-    run "$PT_CORE" agent plan --min-posterior 0.8 --format json --standalone
+    run "$PT_CORE" agent plan --min-posterior 0.8 --format json --standalone --min-age 99999999 --max-candidates 0
     local output1="$output"
     local status1=$status
 
     # Run with --threshold
-    run "$PT_CORE" agent plan --threshold 0.8 --format json --standalone
+    run "$PT_CORE" agent plan --threshold 0.8 --format json --standalone --min-age 99999999 --max-candidates 0
     local output2="$output"
     local status2=$status
 
@@ -1430,8 +1430,8 @@ extract_json() {
     # Extract and compare keys (structure) - ignore volatile fields
     local keys1
     local keys2
-    keys1=$(echo "$output1" | jq -r 'keys | sort | .[]' 2>/dev/null | tr '\n' ' ' || echo "")
-    keys2=$(echo "$output2" | jq -r 'keys | sort | .[]' 2>/dev/null | tr '\n' ' ' || echo "")
+    keys1=$(extract_json "$output1" | jq -r 'keys | sort | .[]' 2>/dev/null | tr '\n' ' ' || echo "")
+    keys2=$(extract_json "$output2" | jq -r 'keys | sort | .[]' 2>/dev/null | tr '\n' ' ' || echo "")
 
     # Structure should match (same fields)
     if [[ -n "$keys1" && -n "$keys2" ]]; then

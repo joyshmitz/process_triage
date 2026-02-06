@@ -16,6 +16,10 @@ setup_file() {
 setup() {
     setup_test_env
 
+    # The current wrapper-level update surface is `pt update` (delegates to install.sh).
+    # This file targets an older in-place self-update implementation (`update --check/--force`).
+    skip "legacy wrapper self-update tests; install.sh + rollback suites cover update behavior"
+
     export PROCESS_TRIAGE_CONFIG="$CONFIG_DIR"
 
     export PT_TEST_SCRIPT="${TEST_DIR}/pt_test_copy"

@@ -169,12 +169,13 @@ setup_test_env() {
     test_suffix="${test_suffix//[^a-zA-Z0-9_-]/_}"
     export TEST_DIR="${BATS_TEST_TMPDIR}/test_env_${test_suffix}_$$"
     export CONFIG_DIR="${TEST_DIR}/config"
+    export DATA_DIR="${TEST_DIR}/data"
     export MOCK_BIN="${TEST_DIR}/mock_bin"
     if [[ -z "${TEST_LOG_FILE:-}" ]]; then
         export TEST_LOG_FILE="${TEST_DIR}/test.jsonl"
     fi
 
-    mkdir -p "$CONFIG_DIR" "$MOCK_BIN"
+    mkdir -p "$CONFIG_DIR" "$DATA_DIR" "$MOCK_BIN"
 
     test_debug "Setting up test environment..."
     test_event_json "test_env_setup" "" "$TEST_DIR"
@@ -187,9 +188,49 @@ setup_test_env() {
     export CI=true
     export NO_COLOR=1
 
+    # Isolate pt-core session artifacts and lockfiles away from the real home dir.
+    # pt-core resolves these via PROCESS_TRIAGE_DATA and XDG_DATA_HOME.
+    export PROCESS_TRIAGE_DATA="$DATA_DIR"
+
+    # Make the bash `pt` wrapper usable in tests by pointing it at a real pt-core binary.
+    # Prefer debug for fast build times; release builds in this repo use fat LTO and are
+    # too slow for per-test setup.
+    if [[ -z "${PROJECT_ROOT:-}" ]]; then
+        PROJECT_ROOT="$(cd "$(dirname "${BATS_TEST_FILENAME:-.}")/.." && pwd)"
+        export PROJECT_ROOT
+    fi
+    local pt_core_debug="${PROJECT_ROOT}/target/debug/pt-core"
+    if [[ -x "$pt_core_debug" ]]; then
+        export PT_CORE_PATH="$pt_core_debug"
+    else
+        test_info "Building pt-core (debug) for tests..."
+        (cd "$PROJECT_ROOT" && cargo build -p pt-core >/dev/null 2>&1) || {
+            test_error "ERROR: Failed to build pt-core for tests"
+            return 1
+        }
+        if [[ -x "$pt_core_debug" ]]; then
+            export PT_CORE_PATH="$pt_core_debug"
+        fi
+    fi
+
+    # Many BATS tests historically pin to target/release/pt-core. Building a full
+    # release binary is expensive in this repo (fat LTO); to keep the suite fast,
+    # create a lightweight shim if the release binary doesn't exist yet.
+    local pt_core_release="${PROJECT_ROOT}/target/release/pt-core"
+    if [[ -x "$pt_core_debug" && ! -x "$pt_core_release" ]]; then
+        mkdir -p "${PROJECT_ROOT}/target/release"
+        cat > "$pt_core_release" <<EOF
+#!/usr/bin/env bash
+exec "${pt_core_debug}" "\$@"
+EOF
+        chmod +x "$pt_core_release"
+    fi
+
     test_debug "TEST_DIR=$TEST_DIR"
     test_debug "CONFIG_DIR=$CONFIG_DIR"
+    test_debug "DATA_DIR=$DATA_DIR"
     test_debug "MOCK_BIN=$MOCK_BIN"
+    test_debug "PT_CORE_PATH=${PT_CORE_PATH:-}"
 
     test_info "Test environment ready"
 }

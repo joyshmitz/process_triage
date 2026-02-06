@@ -1,0 +1,31 @@
+{
+  "case_id": "active_tty_net",
+  "posterior": {
+    "useful": 0.9945676641389708,
+    "useful_bad": 0.005432217123659855,
+    "abandoned": 1.187373700952328E-7,
+    "zombie": 2.567777444534649E-64
+  },
+  "classification": "useful",
+  "confidence": "very_high",
+  "top_evidence": [
+    {
+      "feature": "cpu",
+      "direction": "supports useful",
+      "strength": "decisive",
+      "delta_bits": -12.054095520550755
+    },
+    {
+      "feature": "io_active",
+      "direction": "supports useful",
+      "strength": "strong",
+      "delta_bits": -3.044394119358454
+    },
+    {
+      "feature": "tty",
+      "direction": "supports useful",
+      "strength": "strong",
+      "delta_bits": -2.8479969065549504
+    }
+  ]
+}

@@ -41,12 +41,14 @@ import json
 import hashlib
 import os
 from pathlib import Path
+from shutil import copytree
 from tempfile import mkdtemp
 root = Path(os.environ["PROJECT_ROOT"])
-source = root / "test" / "fixtures" / "manifest_examples" / "tui" / "manifest.json"
 workspace = Path(mkdtemp(prefix="e2e_manifest_"))
+source_dir = root / "test" / "fixtures" / "manifest_examples" / "tui"
+copytree(source_dir, workspace, dirs_exist_ok=True)
 manifest_path = workspace / "manifest.json"
-manifest = json.loads(source.read_text(encoding="utf-8"))
+manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 manifest["schema_version"] = "1.1.0"
 clone = dict(manifest)
 clone.pop("manifest_sha256", None)

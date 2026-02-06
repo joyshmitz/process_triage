@@ -1,0 +1,31 @@
+{
+  "case_id": "mixed_idle_with_tty",
+  "posterior": {
+    "useful": 0.03493015770182757,
+    "useful_bad": 8.815742428234433E-8,
+    "abandoned": 0.9650357848427937,
+    "zombie": 0.000033969297953539424
+  },
+  "classification": "abandoned",
+  "confidence": "high",
+  "top_evidence": [
+    {
+      "feature": "cpu",
+      "direction": "supports abandoned",
+      "strength": "decisive",
+      "delta_bits": 8.813451394658067
+    },
+    {
+      "feature": "tty",
+      "direction": "supports useful",
+      "strength": "strong",
+      "delta_bits": -2.8479969065549504
+    },
+    {
+      "feature": "orphan",
+      "direction": "supports useful",
+      "strength": "substantial",
+      "delta_bits": -1.929610672108602
+    }
+  ]
+}

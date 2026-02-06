@@ -7,6 +7,10 @@ setup() {
     test_start "robot mode tests" "validate pt robot/agent interface"
     setup_test_env
 
+    # This file targets an older wrapper-side robot schema. The authoritative agent/robot
+    # CLI contract is now covered by `test/pt_agent_contract.bats`.
+    skip "legacy wrapper robot-mode tests; superseded by pt-core agent contract tests"
+
     TEST_DIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" && pwd )"
     PROJECT_ROOT="$(dirname "$TEST_DIR")"
     PATH="$PROJECT_ROOT:$PATH"

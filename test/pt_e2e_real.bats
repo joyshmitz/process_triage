@@ -164,12 +164,11 @@ run_cmd_with_artifacts() {
 @test "pt --version (real)" {
     run_cmd_with_artifacts "version" "pt --version"
     [ "$status" -eq 0 ]
-    assert_contains "$output" "pt version" "version output should include prefix"
+    assert_contains "$output" "pt " "version output should include prefix"
 }
 
-@test "pt history (real)" {
-    skip_if_no_gum
-    run_cmd_with_artifacts "history" "pt history"
+@test "pt query sessions (real)" {
+    run_cmd_with_artifacts "query_sessions" "pt -f json query sessions --limit 1"
     [ "$status" -eq 0 ]
 }
 

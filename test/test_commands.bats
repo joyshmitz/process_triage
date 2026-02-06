@@ -70,6 +70,13 @@ EOF_CLEAR
 setup() {
     setup_test_env
 
+    # This suite targets the legacy bash-first CLI that mocked `ps`/`gum` and implemented
+    # scan/history/clear directly in the wrapper. The current architecture is:
+    # `pt` (thin bash wrapper) -> `pt-core` (Rust, /proc-based scanning).
+    #
+    # CLI surface and non-interactivity are enforced by `test/pt_agent_contract.bats`.
+    skip "legacy wrapper command tests; superseded by pt-core contract + e2e suites"
+
     export PROCESS_TRIAGE_CONFIG="$CONFIG_DIR"
 
     create_mock_gum

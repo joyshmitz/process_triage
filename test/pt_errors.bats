@@ -7,6 +7,11 @@ setup() {
     test_start "error tests" "validate error handling and edge cases"
     setup_test_env
 
+    # This file was written against an older bash-first wrapper interface.
+    # The authoritative CLI/error surface is now enforced by pt-core contract tests:
+    # `test/pt_agent_contract.bats` plus Rust unit/integration tests.
+    skip "legacy bash wrapper error-surface tests; superseded by pt-core contract tests"
+
     TEST_DIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" && pwd )"
     PROJECT_ROOT="$(dirname "$TEST_DIR")"
     PATH="$PROJECT_ROOT:$PATH"

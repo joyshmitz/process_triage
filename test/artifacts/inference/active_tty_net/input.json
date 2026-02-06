@@ -1,0 +1,14 @@
+{
+  "case_id": "active_tty_net",
+  "evidence": {
+    "cpu": {
+      "type": "fraction",
+      "occupancy": 0.75
+    },
+    "runtime_seconds": 600,
+    "orphan": false,
+    "tty": true,
+    "net": true,
+    "io_active": true
+  }
+}

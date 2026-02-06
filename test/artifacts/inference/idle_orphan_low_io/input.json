@@ -1,0 +1,14 @@
+{
+  "case_id": "idle_orphan_low_io",
+  "evidence": {
+    "cpu": {
+      "type": "fraction",
+      "occupancy": 0.01
+    },
+    "runtime_seconds": 172800,
+    "orphan": true,
+    "tty": false,
+    "net": false,
+    "io_active": false
+  }
+}
