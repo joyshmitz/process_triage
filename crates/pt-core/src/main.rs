@@ -844,6 +844,10 @@ struct AgentPlanArgs {
     #[arg(long)]
     session: Option<String>,
 
+    /// Label for this plan session (e.g. "baseline" for diff --baseline)
+    #[arg(long)]
+    label: Option<String>,
+
     /// Maximum candidates to return
     #[arg(long, default_value = "20")]
     max_candidates: u32,
@@ -8131,7 +8135,8 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         }
         None => {
             let sid = SessionId::new();
-            let manifest = SessionManifest::new(&sid, None, SessionMode::RobotPlan, None);
+            let manifest =
+                SessionManifest::new(&sid, None, SessionMode::RobotPlan, args.label.clone());
             let handle = match store.create(&manifest) {
                 Ok(handle) => handle,
                 Err(e) => {
@@ -8761,6 +8766,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         "schema_version": SCHEMA_VERSION,
         "timestamp": chrono::Utc::now().to_rfc3339(),
         "session_id": session_id.0,
+        "label": args.label,
         "generated_at": chrono::Utc::now().to_rfc3339(),
         "host_id": pt_core::logging::get_host_id(),
         "host": host_info,

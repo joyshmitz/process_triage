@@ -19,7 +19,6 @@ use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
 use predicates::prelude::*;
 use serde_json::Value;
-use std::path::PathBuf;
 use std::time::Duration;
 use tempfile::tempdir;
 
@@ -101,20 +100,39 @@ fn create_plan_session(data_dir: &str) -> String {
     text[idx..end].to_string()
 }
 
-/// Patch a session's manifest.json to set its label (for baseline tests).
-fn label_session(data_dir: &str, session_id: &str, label: &str) {
-    let manifest_path = PathBuf::from(data_dir)
-        .join("sessions")
-        .join(session_id)
-        .join("manifest.json");
-    let content = std::fs::read_to_string(&manifest_path).expect("read manifest.json");
-    let mut manifest: Value = serde_json::from_str(&content).expect("parse manifest.json");
-    manifest["label"] = Value::String(label.to_string());
-    std::fs::write(
-        &manifest_path,
-        serde_json::to_string_pretty(&manifest).unwrap(),
-    )
-    .expect("write manifest.json");
+/// Create an agent plan session with a label and return its session ID.
+fn create_labeled_plan_session(data_dir: &str, label: &str) -> String {
+    let mut cmd = pt_core_with_data(data_dir);
+    cmd.timeout(Duration::from_secs(300));
+
+    let output = cmd
+        .args([
+            "--format",
+            "json",
+            "agent",
+            "plan",
+            "--sample-size",
+            "5",
+            "--min-posterior",
+            "0.0",
+            "--label",
+            label,
+        ])
+        .assert()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8_lossy(&output);
+    let idx = text
+        .find("pt-")
+        .expect("session id should be present in output");
+    let end = idx + 23;
+    assert!(
+        text.len() >= end,
+        "session id should be 23 chars (output too short)"
+    );
+    text[idx..end].to_string()
 }
 
 // ============================================================================
@@ -355,6 +373,61 @@ fn test_diff_explicit_session_ids() {
 }
 
 // ============================================================================
+// Agent Plan: --label Flag
+// ============================================================================
+
+#[test]
+fn test_agent_plan_label_in_json_output() {
+    let dir = tempdir().expect("tempdir");
+    let data_dir = dir.path().to_str().unwrap();
+
+    let output = pt_core_with_data(data_dir)
+        .timeout(Duration::from_secs(300))
+        .args([
+            "--format", "json",
+            "agent", "plan",
+            "--sample-size", "5",
+            "--min-posterior", "0.0",
+            "--label", "my-label",
+        ])
+        .assert()
+        .get_output()
+        .stdout
+        .clone();
+
+    let text = String::from_utf8_lossy(&output);
+    // agent plan JSON should include the label field
+    assert!(
+        text.contains("\"label\"") && text.contains("my-label"),
+        "agent plan output should include the label"
+    );
+}
+
+#[test]
+fn test_agent_plan_label_persists_in_session() {
+    let dir = tempdir().expect("tempdir");
+    let data_dir = dir.path().to_str().unwrap();
+
+    let sid = create_labeled_plan_session(data_dir, "test-label");
+
+    // Check sessions list shows the label
+    let output = pt_core_with_data(data_dir)
+        .args(["--format", "json", "agent", "sessions", "--session", &sid])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: Value = serde_json::from_slice(&output).expect("parse JSON");
+    assert_eq!(
+        json["label"].as_str().unwrap_or(""),
+        "test-label",
+        "session detail should show the label"
+    );
+}
+
+// ============================================================================
 // Diff: --baseline Flag
 // ============================================================================
 
@@ -363,10 +436,8 @@ fn test_diff_baseline_uses_labeled_session() {
     let dir = tempdir().expect("tempdir");
     let data_dir = dir.path().to_str().unwrap();
 
-    // Create a plan session and label it as baseline via manifest patching
-    // (agent plan doesn't support --label, so we patch manifest.json directly)
-    let baseline_id = create_plan_session(data_dir);
-    label_session(data_dir, &baseline_id, "baseline");
+    // Create a plan session labeled "baseline" using --label flag
+    let _baseline_id = create_labeled_plan_session(data_dir, "baseline");
     // Create a second plan session (no label)
     let _current_id = create_plan_session(data_dir);
 
