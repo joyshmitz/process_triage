@@ -17,6 +17,11 @@ fn write_daemon_json_config(config_dir: &Path, content: &str) {
     fs::write(config_dir.join("daemon.json"), content).expect("write daemon.json");
 }
 
+fn write_config_file(config_dir: &Path, name: &str, content: &str) {
+    fs::create_dir_all(config_dir).expect("create config dir");
+    fs::write(config_dir.join(name), content).expect("write config file");
+}
+
 fn daemon_pid_path(data_dir: &Path) -> PathBuf {
     data_dir.join("daemon").join("daemon.pid")
 }
@@ -282,4 +287,169 @@ fn daemon_overhead_budget_exceeded_is_persisted_and_skips_inbox_writes() {
         !inbox_items_path(data_dir.path()).exists(),
         "no inbox items should be written when overhead budget is exceeded"
     );
+}
+
+#[test]
+fn daemon_escalation_writes_dormant_inbox_item_and_session_log() {
+    let data_dir = TempDir::new().expect("temp data dir");
+    let config_dir = TempDir::new().expect("temp config dir");
+
+    // Ensure daemon escalation can successfully run `pt-core agent plan` by
+    // providing a minimal config set (policy + priors).
+    write_config_file(
+        config_dir.path(),
+        "priors.json",
+        r#"{
+  "schema_version": "1.0.0",
+  "description": "E2E daemon priors fixture",
+  "classes": {
+    "useful": {
+      "prior_prob": 0.70,
+      "cpu_beta": { "alpha": 5.0, "beta": 3.0 },
+      "orphan_beta": { "alpha": 1.0, "beta": 20.0 },
+      "tty_beta": { "alpha": 5.0, "beta": 3.0 },
+      "net_beta": { "alpha": 4.0, "beta": 4.0 }
+    },
+    "useful_bad": {
+      "prior_prob": 0.10,
+      "cpu_beta": { "alpha": 7.0, "beta": 2.0 },
+      "orphan_beta": { "alpha": 2.0, "beta": 8.0 },
+      "tty_beta": { "alpha": 4.0, "beta": 4.0 },
+      "net_beta": { "alpha": 3.0, "beta": 5.0 }
+    },
+    "abandoned": {
+      "prior_prob": 0.15,
+      "cpu_beta": { "alpha": 1.0, "beta": 8.0 },
+      "orphan_beta": { "alpha": 6.0, "beta": 2.0 },
+      "tty_beta": { "alpha": 1.0, "beta": 8.0 },
+      "net_beta": { "alpha": 1.0, "beta": 6.0 }
+    },
+    "zombie": {
+      "prior_prob": 0.05,
+      "cpu_beta": { "alpha": 1.0, "beta": 100.0 },
+      "orphan_beta": { "alpha": 10.0, "beta": 1.0 },
+      "tty_beta": { "alpha": 1.0, "beta": 20.0 },
+      "net_beta": { "alpha": 1.0, "beta": 50.0 }
+    }
+  }
+}"#,
+    );
+
+    write_config_file(
+        config_dir.path(),
+        "policy.json",
+        r#"{
+  "schema_version": "1.0.0",
+  "policy_id": "fixture-valid",
+  "description": "E2E daemon policy fixture",
+  "loss_matrix": {
+    "useful": { "keep": 0, "kill": 100 },
+    "useful_bad": { "keep": 10, "kill": 20 },
+    "abandoned": { "keep": 30, "kill": 1 },
+    "zombie": { "keep": 50, "kill": 1 }
+  },
+  "guardrails": {
+    "protected_patterns": [
+      { "pattern": ".*", "kind": "regex", "case_insensitive": true, "notes": "protect all for fast E2E" }
+    ],
+    "never_kill_ppid": [1],
+    "max_kills_per_run": 5,
+    "min_process_age_seconds": 0
+  },
+  "robot_mode": {
+    "enabled": false,
+    "min_posterior": 0.99,
+    "max_blast_radius_mb": 4096,
+    "max_kills": 5,
+    "require_known_signature": false
+  },
+  "fdr_control": {
+    "enabled": true,
+    "method": "bh",
+    "alpha": 0.05
+  },
+  "data_loss_gates": {
+    "block_if_open_write_fds": true,
+    "block_if_locked_files": true,
+    "block_if_active_tty": true
+  }
+}"#,
+    );
+
+    write_daemon_json_config(
+        config_dir.path(),
+        r#"{
+  "tick_interval_secs": 1,
+  "max_cpu_percent": 1000.0,
+  "max_rss_mb": 4096,
+  "triggers": {
+    "ewma_alpha": 0.3,
+    "load_threshold": -1.0,
+    "memory_threshold": 2.0,
+    "orphan_threshold": 999999,
+    "sustained_ticks": 1,
+    "cooldown_ticks": 100
+  },
+  "escalation": {
+    "min_interval_secs": 0,
+    "allow_auto_mitigation": false,
+    "max_deep_scan_targets": 1
+  },
+  "notifications": {
+    "enabled": false,
+    "desktop": false,
+    "notify_cmd": null,
+    "notify_arg": []
+  }
+}"#,
+    );
+
+    let mut child = start_daemon_foreground(config_dir.path(), data_dir.path());
+
+    let inbox_path = inbox_items_path(data_dir.path());
+    wait_for(Duration::from_secs(30), || {
+        inbox_path.exists()
+            && read_jsonl_items(&inbox_path).iter().any(|v| {
+                v.get("type")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t == "dormant_escalation")
+                    .unwrap_or(false)
+            })
+    });
+
+    // Resolve the session id from the inbox item and ensure the session JSONL log was created.
+    let items = read_jsonl_items(&inbox_path);
+    let session_id = items
+        .iter()
+        .find(|v| v.get("type").and_then(|t| t.as_str()) == Some("dormant_escalation"))
+        .and_then(|v| v.get("session_id").and_then(|s| s.as_str()))
+        .expect("dormant_escalation item should include session_id")
+        .to_string();
+
+    let session_log = data_dir
+        .path()
+        .join("sessions")
+        .join(&session_id)
+        .join("logs")
+        .join("session.jsonl");
+
+    wait_for(Duration::from_secs(30), || session_log.exists());
+
+    // Spot-check that the session log contains at least one valid JSONL entry.
+    let first_line = fs::read_to_string(&session_log)
+        .expect("read session.jsonl")
+        .lines()
+        .next()
+        .expect("session.jsonl should not be empty")
+        .to_string();
+    let v: Value = serde_json::from_str(&first_line).expect("valid JSONL line");
+    assert!(
+        v.get("event").is_some() && v.get("timestamp").is_some(),
+        "expected progress event fields in session.jsonl"
+    );
+
+    send_sigterm(&child);
+    wait_for(Duration::from_secs(30), || {
+        child.try_wait().unwrap().is_some()
+    });
 }

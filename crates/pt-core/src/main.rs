@@ -4882,27 +4882,25 @@ fn run_daemon_foreground(global: &GlobalOpts, config: &pt_core::daemon::DaemonCo
                         match run_daemon_escalation(global, fired, esc_config) {
                             Ok(result) => {
                                 outcome.session_id = Some(result.session_id.clone());
-                                if result.candidates_found > 0 {
-                                    if let Some(store) = escalation_inbox.as_mut() {
-                                        let item = InboxItem::dormant_escalation(
-                                            result.session_id,
-                                            summary.clone(),
-                                            summary,
-                                            result.candidates_found,
+                                if let Some(store) = escalation_inbox.as_mut() {
+                                    let item = InboxItem::dormant_escalation(
+                                        result.session_id,
+                                        summary.clone(),
+                                        summary,
+                                        result.candidates_found,
+                                    );
+                                    let _ = store.add(&item);
+                                    // Emit L1 notification immediately for new inbox item.
+                                    if config.notifications.enabled {
+                                        daemon_submit_inbox_item_trigger(
+                                            &config,
+                                            &mut notify_mgr,
+                                            &item,
+                                            now_secs,
                                         );
-                                        let _ = store.add(&item);
-                                        // Emit L1 notification immediately for new inbox item.
-                                        if config.notifications.enabled {
-                                            daemon_submit_inbox_item_trigger(
-                                                &config,
-                                                &mut notify_mgr,
-                                                &item,
-                                                now_secs,
-                                            );
-                                            let notifs = notify_mgr.flush(now_secs);
-                                            for n in notifs {
-                                                daemon_deliver_notification(&config, &n);
-                                            }
+                                        let notifs = notify_mgr.flush(now_secs);
+                                        for n in notifs {
+                                            daemon_deliver_notification(&config, &n);
                                         }
                                     }
                                 }
