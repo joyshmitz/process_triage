@@ -196,6 +196,12 @@ jobs:
         env:
           RUST_BACKTRACE: 1
 
+      - name: Run tests (pt-core daemon feature)
+        if: runner.os == 'Linux'
+        run: cargo test -p pt-core --verbose --features daemon
+        env:
+          RUST_BACKTRACE: 1
+
       - name: Run doc tests
         run: cargo test --workspace --doc --verbose
         env:
