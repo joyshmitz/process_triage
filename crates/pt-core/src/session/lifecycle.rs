@@ -207,6 +207,15 @@ pub fn extend_session(
     }
 
     let mut lifecycle = read_lifecycle(handle)?;
+    if lifecycle.ttl_seconds.is_none() {
+        return Err(SessionError::Io {
+            path: handle.dir.clone(),
+            source: std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "cannot extend session without an existing TTL",
+            ),
+        });
+    }
     let now = Utc::now();
 
     // Extend from the later of now or current expiry.
@@ -449,6 +458,17 @@ mod tests {
 
         assert!(remaining_after > remaining_before + 1700);
         assert_eq!(status_after.extend_count, 1);
+    }
+
+    #[test]
+    fn test_extend_without_ttl_fails() {
+        let (_tmp, store) = test_store();
+        let mut opts = default_options();
+        opts.ttl_seconds = None;
+
+        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let result = extend_session(&handle, 600);
+        assert!(result.is_err());
     }
 
     #[test]

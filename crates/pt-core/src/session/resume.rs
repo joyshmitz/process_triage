@@ -46,7 +46,7 @@ pub struct ExecutionEntry {
 pub enum ExecutionStatus {
     /// Successfully applied.
     Applied,
-    /// Skipped (already applied in prior run).
+    /// Skipped (process gone; nothing to apply).
     Skipped,
     /// Failed to apply.
     Failed,
@@ -117,12 +117,12 @@ impl ExecutionPlan {
             .collect()
     }
 
-    /// Get the list of pending actions (not yet applied or skipped).
+    /// Get the list of pending actions (not yet applied or terminally skipped).
     pub fn pending_actions(&self) -> Vec<&PlannedAction> {
-        let applied = self.applied_set();
+        let completed = self.completed_set();
         self.actions
             .iter()
-            .filter(|a| !applied.contains_key(&a.identity))
+            .filter(|a| !completed.contains_key(&a.identity))
             .collect()
     }
 
@@ -131,9 +131,22 @@ impl ExecutionPlan {
         self.log.push(entry);
     }
 
-    /// Check if all actions are complete (applied, skipped, or failed).
+    /// Check if all actions are complete (applied or terminally skipped).
     pub fn is_complete(&self) -> bool {
         self.pending_actions().is_empty()
+    }
+
+    fn completed_set(&self) -> HashMap<RevalidationIdentity, &ExecutionEntry> {
+        self.log
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e.status,
+                    ExecutionStatus::Applied | ExecutionStatus::Skipped | ExecutionStatus::IdentityMismatch
+                )
+            })
+            .map(|e| (e.identity.clone(), e))
+            .collect()
     }
 }
 
@@ -383,6 +396,21 @@ mod tests {
         });
         assert_eq!(plan.pending_actions().len(), 1);
         assert_eq!(plan.applied_set().len(), 1);
+    }
+
+    #[test]
+    fn test_execution_plan_terminal_skip_not_pending() {
+        let mut plan = ExecutionPlan::new("s1", vec![action(1)]);
+        plan.record(ExecutionEntry {
+            identity: id(1),
+            action: "kill".to_string(),
+            status: ExecutionStatus::IdentityMismatch,
+            timestamp: "2026-01-01T00:00:00Z".to_string(),
+            error: Some("PidReused".to_string()),
+        });
+
+        assert_eq!(plan.pending_actions().len(), 0);
+        assert!(plan.is_complete());
     }
 
     #[test]
