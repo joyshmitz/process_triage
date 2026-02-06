@@ -387,11 +387,41 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn test_store() -> (TempDir, SessionStore) {
+    use std::ffi::OsString;
+    use std::sync::{Mutex, MutexGuard, OnceLock};
+
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    struct TestStore {
+        _guard: MutexGuard<'static, ()>,
+        _tmp: TempDir,
+        store: SessionStore,
+        prev_data: Option<OsString>,
+    }
+
+    impl Drop for TestStore {
+        fn drop(&mut self) {
+            match &self.prev_data {
+                Some(v) => std::env::set_var("PROCESS_TRIAGE_DATA", v),
+                None => std::env::remove_var("PROCESS_TRIAGE_DATA"),
+            }
+        }
+    }
+
+    fn test_store() -> TestStore {
+        let guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let prev_data = std::env::var_os("PROCESS_TRIAGE_DATA");
+
         let tmp = TempDir::new().unwrap();
         std::env::set_var("PROCESS_TRIAGE_DATA", tmp.path());
         let store = SessionStore::from_env().unwrap();
-        (tmp, store)
+
+        TestStore {
+            _guard: guard,
+            _tmp: tmp,
+            store,
+            prev_data,
+        }
     }
 
     fn default_options() -> CreateSessionOptions {
@@ -411,9 +441,10 @@ mod tests {
 
     #[test]
     fn test_create_and_status() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let opts = default_options();
-        let (sid, handle) = create_session(&store, &opts).unwrap();
+        let (sid, handle) = create_session(store, &opts).unwrap();
 
         assert!(!sid.0.is_empty());
 
@@ -430,11 +461,12 @@ mod tests {
 
     #[test]
     fn test_create_no_ttl() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let mut opts = default_options();
         opts.ttl_seconds = None;
 
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
         let status = session_status(&handle).unwrap();
 
         assert!(!status.is_expired);
@@ -444,9 +476,10 @@ mod tests {
 
     #[test]
     fn test_extend_session() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let opts = default_options();
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
 
         let status_before = session_status(&handle).unwrap();
         let remaining_before = status_before.remaining_seconds.unwrap();
@@ -462,20 +495,22 @@ mod tests {
 
     #[test]
     fn test_extend_without_ttl_fails() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let mut opts = default_options();
         opts.ttl_seconds = None;
 
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
         let result = extend_session(&handle, 600);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_extend_completed_session_fails() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let opts = default_options();
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
 
         end_session(&handle, Some("done")).unwrap();
 
@@ -485,9 +520,10 @@ mod tests {
 
     #[test]
     fn test_end_session() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let opts = default_options();
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
 
         let summary = end_session(&handle, Some("workflow complete")).unwrap();
         assert_eq!(summary.final_state, SessionState::Completed);
@@ -500,9 +536,10 @@ mod tests {
 
     #[test]
     fn test_end_already_terminal() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let opts = default_options();
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
 
         handle.update_state(SessionState::Failed).unwrap();
 
@@ -512,21 +549,22 @@ mod tests {
 
     #[test]
     fn test_expire_sessions() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
 
         // Create a session with 0-second TTL (already expired).
         let mut opts = default_options();
         opts.ttl_seconds = Some(0);
-        let (sid1, _h1) = create_session(&store, &opts).unwrap();
+        let (sid1, _h1) = create_session(store, &opts).unwrap();
 
         // Create a session with long TTL (not expired).
         opts.ttl_seconds = Some(86400);
-        let (sid2, _h2) = create_session(&store, &opts).unwrap();
+        let (sid2, _h2) = create_session(store, &opts).unwrap();
 
         // Small delay to ensure the 0-second TTL is past.
         std::thread::sleep(std::time::Duration::from_millis(10));
 
-        let result = expire_sessions(&store).unwrap();
+        let result = expire_sessions(store).unwrap();
         assert_eq!(result.expired_count, 1);
         assert!(result.expired_sessions.contains(&sid1.0));
         assert!(!result.expired_sessions.contains(&sid2.0));
@@ -534,9 +572,10 @@ mod tests {
 
     #[test]
     fn test_lifecycle_roundtrip() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let opts = default_options();
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
 
         let info = read_lifecycle(&handle).unwrap();
         assert_eq!(info.extend_count, 0);
@@ -551,9 +590,10 @@ mod tests {
 
     #[test]
     fn test_multiple_extends() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let opts = default_options();
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
 
         extend_session(&handle, 600).unwrap();
         extend_session(&handle, 600).unwrap();
@@ -567,15 +607,16 @@ mod tests {
 
     #[test]
     fn test_session_with_parent() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let opts = default_options();
-        let (parent_id, _parent_handle) = create_session(&store, &opts).unwrap();
+        let (parent_id, _parent_handle) = create_session(store, &opts).unwrap();
 
         let child_opts = CreateSessionOptions {
             parent_session_id: Some(parent_id.clone()),
             ..default_options()
         };
-        let (_child_id, child_handle) = create_session(&store, &child_opts).unwrap();
+        let (_child_id, child_handle) = create_session(store, &child_opts).unwrap();
 
         let manifest = child_handle.read_manifest().unwrap();
         assert_eq!(
@@ -586,11 +627,12 @@ mod tests {
 
     #[test]
     fn test_no_agent_metadata() {
-        let (_tmp, store) = test_store();
+        let ts = test_store();
+        let store = &ts.store;
         let mut opts = default_options();
         opts.agent_metadata = None;
 
-        let (_sid, handle) = create_session(&store, &opts).unwrap();
+        let (_sid, handle) = create_session(store, &opts).unwrap();
         let status = session_status(&handle).unwrap();
         assert!(status.agent_metadata.is_none());
     }
