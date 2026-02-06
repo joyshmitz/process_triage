@@ -13,7 +13,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::ledger::{BayesFactorEntry, Classification, Confidence, EvidenceLedger};
+use super::ledger::{BayesFactorEntry, EvidenceLedger};
+#[cfg(test)]
+use super::ledger::{Classification, Confidence};
 use super::posterior::{ClassScores, PosteriorResult};
 
 // ---------------------------------------------------------------------------

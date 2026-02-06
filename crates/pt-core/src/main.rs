@@ -32,7 +32,7 @@ use pt_core::fleet::discovery::{
 use pt_core::inference::galaxy_brain::{
     render as render_galaxy_brain, GalaxyBrainConfig, MathMode, Verbosity,
 };
-use pt_core::inference::signature_fast_path::{try_signature_fast_path, FastPathConfig};
+
 use pt_core::output::predictions::{
     apply_field_selection, CpuPrediction, MemoryPrediction, PredictionDiagnostics, PredictionField,
     PredictionFieldSelector, Predictions, TrajectoryAssessment, TrajectoryLabel, Trend,
@@ -54,9 +54,6 @@ use pt_core::session::{
     SessionStore, SessionSummary,
 };
 use pt_core::shadow::ShadowRecorder;
-use pt_core::signature_cli::load_user_signatures;
-use pt_core::supervision::pattern_persistence::DisabledPatterns;
-use pt_core::supervision::signature::{ProcessMatchContext, SignatureDatabase};
 #[cfg(target_os = "linux")]
 use pt_core::supervision::{
     detect_supervision, is_human_supervised, AppActionType, AppSupervisionAnalyzer,
@@ -1682,7 +1679,7 @@ fn parse_output_format(value: &str) -> Option<OutputFormat> {
 // Command implementations (stubs)
 // ============================================================================
 
-fn run_interactive(global: &GlobalOpts, args: &RunArgs) -> ExitCode {
+fn run_interactive(global: &GlobalOpts, _args: &RunArgs) -> ExitCode {
     let _lock = match acquire_global_lock(global, "run") {
         Ok(lock) => lock,
         Err(code) => return code,
@@ -2666,6 +2663,7 @@ fn bytes_to_human(bytes: u64) -> String {
     }
 }
 
+#[allow(dead_code)]
 struct GoalPlanOutput {
     goals: Vec<ResourceGoal>,
     result: OptimizationResult,
@@ -2753,6 +2751,7 @@ fn build_resource_goals(
     Ok((goals, warnings))
 }
 
+#[allow(dead_code)]
 fn parse_kill_loss(candidate: &serde_json::Value) -> f64 {
     candidate
         .get("expected_loss")
@@ -2770,6 +2769,7 @@ fn parse_kill_loss(candidate: &serde_json::Value) -> f64 {
         .unwrap_or(0.0)
 }
 
+#[allow(dead_code)]
 fn build_opt_candidates_for_goals(
     candidates: &[serde_json::Value],
     goals: &[ResourceGoal],
@@ -2814,6 +2814,7 @@ fn build_opt_candidates_for_goals(
         .collect()
 }
 
+#[allow(dead_code)]
 fn goal_progress_json(result: &OptimizationResult) -> serde_json::Value {
     let entries: Vec<serde_json::Value> = result
         .goal_achievement
@@ -2837,8 +2838,9 @@ fn goal_progress_json(result: &OptimizationResult) -> serde_json::Value {
     serde_json::json!({ "entries": entries })
 }
 
+#[allow(dead_code)]
 fn build_goal_plan_from_candidates(
-    goal_str: &str,
+    _goal_str: &str,
     goal: &Goal,
     current_cpu_pct: f64,
     candidates: &[serde_json::Value],
@@ -2924,6 +2926,7 @@ fn build_goal_plan_from_candidates(
     })
 }
 
+#[allow(dead_code)]
 fn goal_summary_json(goal_str: &str, goal: &Goal, output: &GoalPlanOutput) -> serde_json::Value {
     let targets: Vec<serde_json::Value> = output
         .goals
@@ -8313,7 +8316,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         eligible_processes
     };
 
-    let current_cpu_pct: f64 = processes_to_infer.iter().map(|p| p.cpu_percent).sum();
+    let _current_cpu_pct: f64 = processes_to_infer.iter().map(|p| p.cpu_percent).sum();
 
     let candidates_evaluated = processes_to_infer.len();
     let total_processes = candidates_evaluated as u64;

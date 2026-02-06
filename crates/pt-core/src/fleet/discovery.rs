@@ -101,6 +101,7 @@ pub(crate) enum DiscoveryConfigFormat {
 }
 
 impl DiscoveryConfigFormat {
+    #[allow(dead_code)]
     fn as_str(&self) -> &'static str {
         match self {
             Self::Toml => "toml",
@@ -260,6 +261,7 @@ pub struct DnsDiscoveryProvider {
     service: String,
     domain: Option<String>,
     use_srv: bool,
+    #[allow(dead_code)]
     port: Option<u16>,
 }
 

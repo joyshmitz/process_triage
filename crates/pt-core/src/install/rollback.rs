@@ -349,6 +349,7 @@ impl UpdateResult {
 }
 
 /// Write manual recovery instructions to a file
+#[allow(dead_code)]
 pub fn write_recovery_instructions(path: &Path, details: &str) -> io::Result<()> {
     let mut file = File::create(path)?;
     writeln!(file, "# Process Triage Recovery Instructions")?;

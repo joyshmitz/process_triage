@@ -611,7 +611,7 @@ mod tests {
 
     #[test]
     fn test_confusion_matrix() {
-        let mut cm = ConfusionMatrix {
+        let cm = ConfusionMatrix {
             true_positives: 80,
             false_positives: 20,
             true_negatives: 70,
