@@ -22,6 +22,8 @@ deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678  pt-core-linux-
 cafebabe1234567890abcdef1234567890abcdef1234567890abcdef12345678  pt-core-linux-aarch64-1.0.0.tar.gz
 1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef  pt-core-macos-x86_64-1.0.0.tar.gz
 abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  pt-core-macos-aarch64-1.0.0.tar.gz
+1111111111111111111111111111111111111111111111111111111111111111  pt-core-windows-x86_64-1.0.0.zip
+2222222222222222222222222222222222222222222222222222222222222222  pt-core-windows-aarch64-1.0.0.zip
 EOF
 }
 
@@ -133,6 +135,48 @@ teardown() {
     assert_equals "1.0.0" "$output" "Should have correct version"
 
     test_end "Package: gen manifest" "pass"
+}
+
+@test "Package: generate_packages.sh generates Winget manifests when Windows assets exist" {
+    test_start "Package: gen winget" "verify winget generation"
+
+    run "${SCRIPT_DIR}/generate_packages.sh" "1.0.0" "$MOCK_CHECKSUMS" "$PACKAGE_TEST_DIR"
+
+    assert_equals "0" "$status" "Script should succeed"
+
+    [[ -f "${PACKAGE_TEST_DIR}/pt.winget.yaml" ]]
+    [[ -f "${PACKAGE_TEST_DIR}/pt.winget.installer.yaml" ]]
+    [[ -f "${PACKAGE_TEST_DIR}/pt.winget.locale.en-US.yaml" ]]
+
+    run cat "${PACKAGE_TEST_DIR}/pt.winget.installer.yaml"
+    assert_contains "$output" "Architecture: x64" "Should include x64 installer"
+    assert_contains "$output" "Architecture: arm64" "Should include arm64 installer"
+    assert_contains "$output" "InstallerSha256: 1111111111111111111111111111111111111111111111111111111111111111" "Should include x64 hash"
+    assert_not_contains "$output" "{{" "Should not contain template placeholders"
+
+    test_end "Package: gen winget" "pass"
+}
+
+@test "Package: generate_packages.sh skips Winget when Windows assets are absent" {
+    test_start "Package: gen winget skip" "verify optional winget behavior"
+
+    local linux_only_checksums="${PACKAGE_TEST_DIR}/checksums-linux-only.sha256"
+    cat > "$linux_only_checksums" << 'EOF'
+deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678  pt-core-linux-x86_64-1.0.0.tar.gz
+cafebabe1234567890abcdef1234567890abcdef1234567890abcdef12345678  pt-core-linux-aarch64-1.0.0.tar.gz
+1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef  pt-core-macos-x86_64-1.0.0.tar.gz
+abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890  pt-core-macos-aarch64-1.0.0.tar.gz
+EOF
+
+    local output_dir="${PACKAGE_TEST_DIR}/no-winget"
+    run "${SCRIPT_DIR}/generate_packages.sh" "1.0.0" "$linux_only_checksums" "$output_dir"
+
+    assert_equals "0" "$status" "Script should still succeed without Windows assets"
+    [[ ! -f "${output_dir}/pt.winget.yaml" ]]
+    [[ ! -f "${output_dir}/pt.winget.installer.yaml" ]]
+    [[ ! -f "${output_dir}/pt.winget.locale.en-US.yaml" ]]
+
+    test_end "Package: gen winget skip" "pass"
 }
 
 @test "Package: generate_packages.sh fails on missing checksums" {

@@ -11,22 +11,22 @@ class Pt < Formula
 
   on_macos do
     on_arm do
-      url "https://github.com/Dicklesworthstone/process_triage/releases/download/v{{VERSION}}/pt-core-macos-aarch64-{{VERSION}}.tar.gz"
+      url "{{URL_MACOS_AARCH64}}"
       sha256 "{{SHA256_MACOS_AARCH64}}"
     end
     on_intel do
-      url "https://github.com/Dicklesworthstone/process_triage/releases/download/v{{VERSION}}/pt-core-macos-x86_64-{{VERSION}}.tar.gz"
+      url "{{URL_MACOS_X86_64}}"
       sha256 "{{SHA256_MACOS_X86_64}}"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/Dicklesworthstone/process_triage/releases/download/v{{VERSION}}/pt-core-linux-aarch64-{{VERSION}}.tar.gz"
+      url "{{URL_LINUX_AARCH64}}"
       sha256 "{{SHA256_LINUX_AARCH64}}"
     end
     on_intel do
-      url "https://github.com/Dicklesworthstone/process_triage/releases/download/v{{VERSION}}/pt-core-linux-x86_64-{{VERSION}}.tar.gz"
+      url "{{URL_LINUX_X86_64}}"
       sha256 "{{SHA256_LINUX_X86_64}}"
     end
   end

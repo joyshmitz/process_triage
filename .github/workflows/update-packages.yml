@@ -264,6 +264,35 @@ jobs:
           jq -e '.architecture."64bit".hash' packages/pt.json > /dev/null
           echo "All required fields present"
 
+      - name: Validate Winget manifests (optional)
+        run: |
+          if [[ ! -f packages/pt.winget.yaml ]]; then
+            echo "Winget manifests not generated for this release (Windows artifacts missing)"
+            exit 0
+          fi
+
+          for file in \
+            packages/pt.winget.yaml \
+            packages/pt.winget.installer.yaml \
+            packages/pt.winget.locale.en-US.yaml
+          do
+            if [[ ! -f "$file" ]]; then
+              echo "::error::Missing expected Winget file: $file"
+              exit 1
+            fi
+            if grep -q '{{' "$file"; then
+              echo "::error::Unreplaced placeholder found in $file"
+              exit 1
+            fi
+          done
+
+          grep -q '^PackageIdentifier: ProcessTriage\.pt$' packages/pt.winget.yaml
+          grep -q '^ManifestType: version$' packages/pt.winget.yaml
+          grep -q '^ManifestType: installer$' packages/pt.winget.installer.yaml
+          grep -q '^Architecture: x64$' packages/pt.winget.installer.yaml
+          grep -q '^ManifestType: defaultLocale$' packages/pt.winget.locale.en-US.yaml
+          echo "Winget manifests: OK"
+
       - name: Validate URLs are reachable
         run: |
           version="${{ needs.generate-packages.outputs.version }}"

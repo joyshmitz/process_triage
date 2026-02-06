@@ -6,7 +6,7 @@
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/Dicklesworthstone/process_triage/releases/download/v{{VERSION}}/pt-core-linux-x86_64-{{VERSION}}.tar.gz",
+            "url": "{{URL_LINUX_X86_64}}",
             "hash": "{{SHA256_LINUX_X86_64}}",
             "extract_dir": ""
         }
@@ -18,7 +18,7 @@
     "autoupdate": {
         "architecture": {
             "64bit": {
-                "url": "https://github.com/Dicklesworthstone/process_triage/releases/download/v$version/pt-core-linux-x86_64-$version.tar.gz"
+                "url": "{{AUTOUPDATE_URL_LINUX_X86_64}}"
             }
         }
     },
