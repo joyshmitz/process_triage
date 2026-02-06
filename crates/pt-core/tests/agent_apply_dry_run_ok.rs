@@ -187,6 +187,31 @@ fn agent_apply_dry_run_returns_actions_ok() {
             "Expected blocked_by_prechecks to be 0"
         );
 
+        let goal_progress = json
+            .get("goal_progress")
+            .expect("Missing goal_progress section");
+        let metrics = goal_progress
+            .get("metrics")
+            .expect("Missing goal_progress.metrics");
+        let memory_metric = metrics
+            .get("memory")
+            .expect("Missing goal_progress.metrics.memory");
+        assert!(
+            memory_metric.get("observed_progress").is_some(),
+            "Expected memory observed_progress in goal progress report"
+        );
+        assert!(
+            memory_metric.get("discrepancy").is_some(),
+            "Expected memory discrepancy in goal progress report"
+        );
+        assert!(
+            memory_metric
+                .get("classification")
+                .and_then(|v| v.as_str())
+                .is_some(),
+            "Expected memory classification in goal progress report"
+        );
+
         let outcomes = json
             .get("outcomes")
             .and_then(|v| v.as_array())
@@ -196,6 +221,10 @@ fn agent_apply_dry_run_returns_actions_ok() {
             outcomes[0].get("status").and_then(|v| v.as_str()),
             Some("dry_run"),
             "Expected dry_run status"
+        );
+        assert!(
+            outcomes[0].get("goal_progress").is_some(),
+            "Expected per-outcome goal_progress discrepancy fields"
         );
     });
 }

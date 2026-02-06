@@ -71,7 +71,7 @@ use pt_telemetry::writer::default_telemetry_dir;
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "ui")]
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -2451,7 +2451,13 @@ fn build_tui_rows(
     }
 }
 
+#[cfg(target_os = "linux")]
+use pt_core::collect::{parse_fd, parse_proc_net_tcp, parse_proc_net_udp, NetworkSnapshot};
 use pt_core::collect::{quick_scan, ProcessRecord, QuickScanOptions, ScanResult};
+use pt_core::decision::goal_progress::{
+    self, ActionOutcome as GoalActionOutcome, GoalMetric, GoalProgressReport, MetricSnapshot,
+    ProgressConfig,
+};
 use pt_core::decision::{
     apply_load_to_loss_matrix, compute_load_adjustment, decide_action, Action, ActionFeasibility,
     LoadSignals,
@@ -9790,6 +9796,137 @@ fn precheck_label_for_apply(check: &pt_core::plan::PreCheck) -> &'static str {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn read_mem_available_bytes_for_goal_progress() -> u64 {
+    std::fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|content| {
+            content.lines().find_map(|line| {
+                line.strip_prefix("MemAvailable:")
+                    .and_then(|rest| rest.split_whitespace().next())
+                    .and_then(|value| value.parse::<u64>().ok())
+            })
+        })
+        .map(|kb| kb.saturating_mul(1024))
+        .unwrap_or(0)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn read_mem_available_bytes_for_goal_progress() -> u64 {
+    0
+}
+
+#[cfg(target_os = "linux")]
+fn collect_occupied_ports_for_goal_progress() -> Vec<u16> {
+    let mut ports = BTreeSet::new();
+
+    if let Some(entries) = parse_proc_net_tcp("/proc/net/tcp", false) {
+        for entry in entries.into_iter().filter(|e| e.state.is_listen()) {
+            ports.insert(entry.local_port);
+        }
+    }
+    if let Some(entries) = parse_proc_net_tcp("/proc/net/tcp6", true) {
+        for entry in entries.into_iter().filter(|e| e.state.is_listen()) {
+            ports.insert(entry.local_port);
+        }
+    }
+    if let Some(entries) = parse_proc_net_udp("/proc/net/udp", false) {
+        for entry in entries
+            .into_iter()
+            .filter(|e| e.local_port > 0 && e.remote_port == 0)
+        {
+            ports.insert(entry.local_port);
+        }
+    }
+    if let Some(entries) = parse_proc_net_udp("/proc/net/udp6", true) {
+        for entry in entries
+            .into_iter()
+            .filter(|e| e.local_port > 0 && e.remote_port == 0)
+        {
+            ports.insert(entry.local_port);
+        }
+    }
+
+    ports.into_iter().collect()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn collect_occupied_ports_for_goal_progress() -> Vec<u16> {
+    Vec::new()
+}
+
+#[cfg(target_os = "linux")]
+fn collect_total_fds_for_goal_progress(processes: &[ProcessRecord]) -> u64 {
+    processes
+        .iter()
+        .filter_map(|proc| parse_fd(proc.pid.0).map(|fd| fd.count as u64))
+        .sum()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn collect_total_fds_for_goal_progress(_processes: &[ProcessRecord]) -> u64 {
+    0
+}
+
+fn capture_metric_snapshot_for_goal_progress(processes: &[ProcessRecord]) -> MetricSnapshot {
+    let total_cpu_frac = processes
+        .iter()
+        .map(|proc| (proc.cpu_percent / 100.0).max(0.0))
+        .sum();
+
+    MetricSnapshot {
+        available_memory_bytes: read_mem_available_bytes_for_goal_progress(),
+        total_cpu_frac,
+        occupied_ports: collect_occupied_ports_for_goal_progress(),
+        total_fds: collect_total_fds_for_goal_progress(processes),
+        timestamp: chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+    }
+}
+
+fn normalize_command_signature_for_goal_progress(cmd: &str) -> String {
+    cmd.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn detect_respawn_for_goal_progress(
+    action: &PlanAction,
+    action_success: bool,
+    before_by_pid: &HashMap<u32, &ProcessRecord>,
+    after_by_pid: &HashMap<u32, &ProcessRecord>,
+    after_processes: &[ProcessRecord],
+) -> bool {
+    if !action_success {
+        return false;
+    }
+
+    let pid = action.target.pid.0;
+    let Some(before_proc) = before_by_pid.get(&pid).copied() else {
+        return false;
+    };
+
+    if let Some(after_proc) = after_by_pid.get(&pid).copied() {
+        return after_proc.start_id.0 != before_proc.start_id.0;
+    }
+
+    let before_cmd = normalize_command_signature_for_goal_progress(&before_proc.cmd);
+    after_processes.iter().any(|proc| {
+        proc.uid == before_proc.uid
+            && proc.pid.0 != pid
+            && proc.start_time_unix >= before_proc.start_time_unix
+            && normalize_command_signature_for_goal_progress(&proc.cmd) == before_cmd
+    })
+}
+
+fn goal_report_brief_json(report: &GoalProgressReport) -> serde_json::Value {
+    serde_json::json!({
+        "expected": report.expected_progress,
+        "observed": report.observed_progress,
+        "discrepancy": report.discrepancy,
+        "discrepancy_fraction": report.discrepancy_fraction,
+        "classification": report.classification.to_string(),
+        "suspected_causes": report.suspected_causes.iter().map(|cause| cause.cause.clone()).collect::<Vec<_>>(),
+    })
+}
+
 fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
     let _lock = match acquire_global_lock(global, "agent apply") {
         Ok(lock) => lock,
@@ -9955,6 +10092,107 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         }
         output_apply_nothing(global, &sid);
         return ExitCode::Clean;
+    }
+
+    let goal_progress_scan_options = QuickScanOptions {
+        pids: vec![],
+        include_kernel_threads: false,
+        timeout: global.timeout.map(std::time::Duration::from_secs),
+        progress: None,
+    };
+
+    let before_scan_processes = quick_scan(&goal_progress_scan_options)
+        .map(|scan| scan.processes)
+        .unwrap_or_else(|_| Vec::new());
+    let before_snapshot = capture_metric_snapshot_for_goal_progress(&before_scan_processes);
+    let before_by_pid: HashMap<u32, &ProcessRecord> = before_scan_processes
+        .iter()
+        .map(|proc| (proc.pid.0, proc))
+        .collect();
+
+    #[cfg(target_os = "linux")]
+    let before_network_snapshot = NetworkSnapshot::collect();
+
+    let mut expected_by_action: HashMap<String, (f64, f64, f64, f64, String)> = HashMap::new();
+    for action in &actions_to_apply {
+        let pid = action.target.pid.0;
+        let before_proc = before_by_pid.get(&pid).copied();
+        let label = before_proc
+            .map(|proc| proc.cmd.clone())
+            .unwrap_or_else(|| format!("pid {}", pid));
+
+        let memory_expected = if matches!(
+            action.action,
+            Action::Kill | Action::Restart | Action::Pause
+        ) {
+            action
+                .rationale
+                .memory_mb
+                .unwrap_or(0.0)
+                .max(0.0)
+                .mul_add(1_048_576.0, 0.0)
+        } else {
+            0.0
+        };
+        let cpu_expected = if matches!(
+            action.action,
+            Action::Kill
+                | Action::Restart
+                | Action::Pause
+                | Action::Freeze
+                | Action::Quarantine
+                | Action::Throttle
+        ) {
+            before_proc
+                .map(|proc| (proc.cpu_percent / 100.0).max(0.0))
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+
+        #[cfg(target_os = "linux")]
+        let port_expected = if matches!(
+            action.action,
+            Action::Kill | Action::Restart | Action::Pause | Action::Freeze
+        ) {
+            before_network_snapshot
+                .get_process_info(pid)
+                .map(|info| {
+                    info.listen_ports
+                        .iter()
+                        .map(|port| port.port)
+                        .collect::<HashSet<_>>()
+                        .len() as f64
+                })
+                .unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        #[cfg(not(target_os = "linux"))]
+        let port_expected = 0.0;
+
+        #[cfg(target_os = "linux")]
+        let fd_expected = if matches!(
+            action.action,
+            Action::Kill | Action::Restart | Action::Pause | Action::Freeze
+        ) {
+            parse_fd(pid).map(|fd| fd.count as f64).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        #[cfg(not(target_os = "linux"))]
+        let fd_expected = 0.0;
+
+        expected_by_action.insert(
+            action.action_id.clone(),
+            (
+                memory_expected,
+                cpu_expected,
+                port_expected,
+                fd_expected,
+                label,
+            ),
+        );
     }
 
     let total_actions = actions_to_apply.len() as u64;
@@ -10368,9 +10606,174 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         }
     }
 
+    let after_scan_processes = quick_scan(&goal_progress_scan_options)
+        .map(|scan| scan.processes)
+        .unwrap_or_else(|_| Vec::new());
+    let after_snapshot = capture_metric_snapshot_for_goal_progress(&after_scan_processes);
+    let after_by_pid: HashMap<u32, &ProcessRecord> = after_scan_processes
+        .iter()
+        .map(|proc| (proc.pid.0, proc))
+        .collect();
+
+    let status_by_action: HashMap<String, String> = outcomes
+        .iter()
+        .filter_map(|outcome| {
+            let action_id = outcome.get("action_id")?.as_str()?.to_string();
+            let status = outcome
+                .get("status")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            Some((action_id, status))
+        })
+        .collect();
+
+    let mut respawn_by_action: HashMap<String, bool> = HashMap::new();
+    let mut memory_action_outcomes = Vec::new();
+    let mut cpu_action_outcomes = Vec::new();
+    let mut port_action_outcomes = Vec::new();
+    let mut fd_action_outcomes = Vec::new();
+    for action in &actions_to_apply {
+        let status = status_by_action
+            .get(&action.action_id)
+            .map(|value| value.as_str())
+            .unwrap_or("unknown");
+        let success = matches!(status, "success" | "dry_run" | "shadow");
+        let respawn_detected = detect_respawn_for_goal_progress(
+            action,
+            success,
+            &before_by_pid,
+            &after_by_pid,
+            &after_scan_processes,
+        );
+        respawn_by_action.insert(action.action_id.clone(), respawn_detected);
+
+        let (memory_expected, cpu_expected, port_expected, fd_expected, label) = expected_by_action
+            .get(&action.action_id)
+            .cloned()
+            .unwrap_or_else(|| (0.0, 0.0, 0.0, 0.0, format!("pid {}", action.target.pid.0)));
+
+        let action_pid = action.target.pid.0;
+        memory_action_outcomes.push(GoalActionOutcome {
+            pid: action_pid,
+            label: label.clone(),
+            success,
+            respawn_detected,
+            expected_contribution: memory_expected,
+        });
+        cpu_action_outcomes.push(GoalActionOutcome {
+            pid: action_pid,
+            label: label.clone(),
+            success,
+            respawn_detected,
+            expected_contribution: cpu_expected,
+        });
+        port_action_outcomes.push(GoalActionOutcome {
+            pid: action_pid,
+            label: label.clone(),
+            success,
+            respawn_detected,
+            expected_contribution: port_expected,
+        });
+        fd_action_outcomes.push(GoalActionOutcome {
+            pid: action_pid,
+            label,
+            success,
+            respawn_detected,
+            expected_contribution: fd_expected,
+        });
+    }
+
+    let progress_config = ProgressConfig::default();
+    let memory_report = goal_progress::measure_progress(
+        GoalMetric::Memory,
+        None,
+        &before_snapshot,
+        &after_snapshot,
+        memory_action_outcomes,
+        &progress_config,
+        Some(sid.0.clone()),
+    );
+    let cpu_report = goal_progress::measure_progress(
+        GoalMetric::Cpu,
+        None,
+        &before_snapshot,
+        &after_snapshot,
+        cpu_action_outcomes,
+        &progress_config,
+        Some(sid.0.clone()),
+    );
+    let port_report = goal_progress::measure_progress(
+        GoalMetric::Port,
+        None,
+        &before_snapshot,
+        &after_snapshot,
+        port_action_outcomes,
+        &progress_config,
+        Some(sid.0.clone()),
+    );
+    let fd_report = goal_progress::measure_progress(
+        GoalMetric::FileDescriptors,
+        None,
+        &before_snapshot,
+        &after_snapshot,
+        fd_action_outcomes,
+        &progress_config,
+        Some(sid.0.clone()),
+    );
+
+    let goal_progress_payload = serde_json::json!({
+        "session_id": sid.0,
+        "before": before_snapshot,
+        "after": after_snapshot,
+        "metrics": {
+            "memory": memory_report.clone(),
+            "cpu": cpu_report.clone(),
+            "ports": port_report.clone(),
+            "file_descriptors": fd_report.clone()
+        }
+    });
+    let goal_progress_discrepancy = serde_json::json!({
+        "memory": goal_report_brief_json(&memory_report),
+        "cpu": goal_report_brief_json(&cpu_report),
+        "ports": goal_report_brief_json(&port_report),
+        "file_descriptors": goal_report_brief_json(&fd_report),
+        "respawn_loop_suspected": respawn_by_action.values().any(|detected| *detected),
+    });
+
+    for outcome in &mut outcomes {
+        if let Some(obj) = outcome.as_object_mut() {
+            let action_id = obj
+                .get("action_id")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default();
+            let respawn_detected = respawn_by_action.get(action_id).copied().unwrap_or(false);
+            obj.insert(
+                "respawn_detected".to_string(),
+                serde_json::json!(respawn_detected),
+            );
+            obj.insert(
+                "goal_progress".to_string(),
+                goal_progress_discrepancy.clone(),
+            );
+        }
+    }
+
+    let memory_summary_suffix = format!(
+        ", mem_obs={:.1}MB mem_exp={:.1}MB ({})",
+        memory_report.observed_progress / 1_048_576.0,
+        memory_report.expected_progress / 1_048_576.0,
+        memory_report.classification
+    );
+
     // Write outcomes
+    let action_dir = handle.dir.join("action");
     let outcomes_path = handle.dir.join("action").join("outcomes.jsonl");
-    let _ = std::fs::create_dir_all(handle.dir.join("action"));
+    let _ = std::fs::create_dir_all(&action_dir);
+    let goal_progress_path = action_dir.join("goal_progress.json");
+    if let Ok(payload) = serde_json::to_string_pretty(&goal_progress_payload) {
+        let _ = std::fs::write(&goal_progress_path, payload);
+    }
     if let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -10402,6 +10805,7 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
             "resumed_skipped": resumed_skipped
         },
         "outcomes": outcomes,
+        "goal_progress": goal_progress_payload,
         "constraints_summary": constraints_summary,
         "resumed": args.resume
     });
@@ -10412,19 +10816,26 @@ fn run_agent_apply(global: &GlobalOpts, args: &AgentApplyArgs) -> ExitCode {
         OutputFormat::Summary => {
             if resumed_skipped > 0 {
                 println!(
-                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} precheck_blocked, {} already done (resumed)",
+                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} precheck_blocked, {} already done (resumed){}",
                     sid,
                     succeeded,
                     failed,
                     skipped,
                     blocked_by_constraints,
                     blocked_by_prechecks,
-                    resumed_skipped
+                    resumed_skipped,
+                    memory_summary_suffix
                 );
             } else {
                 println!(
-                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} precheck_blocked",
-                    sid, succeeded, failed, skipped, blocked_by_constraints, blocked_by_prechecks
+                    "[{}] apply: {} ok, {} fail, {} skip, {} blocked, {} precheck_blocked{}",
+                    sid,
+                    succeeded,
+                    failed,
+                    skipped,
+                    blocked_by_constraints,
+                    blocked_by_prechecks,
+                    memory_summary_suffix
                 );
             }
         }

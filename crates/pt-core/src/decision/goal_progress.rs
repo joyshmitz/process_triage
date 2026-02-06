@@ -181,7 +181,11 @@ fn compute_observed_delta(
                     0.0
                 }
             } else {
-                0.0
+                let before_ports: std::collections::HashSet<u16> =
+                    before.occupied_ports.iter().copied().collect();
+                let after_ports: std::collections::HashSet<u16> =
+                    after.occupied_ports.iter().copied().collect();
+                before_ports.difference(&after_ports).count() as f64
             }
         }
         GoalMetric::FileDescriptors => {
@@ -376,6 +380,20 @@ mod tests {
             None,
         );
         assert_eq!(report.observed_progress, 0.0);
+    }
+
+    #[test]
+    fn test_port_release_without_specific_target() {
+        let report = measure_progress(
+            GoalMetric::Port,
+            None,
+            &make_before(),
+            &make_after_good(),
+            make_outcomes(1.0, true, false),
+            &ProgressConfig::default(),
+            None,
+        );
+        assert_eq!(report.observed_progress, 1.0);
     }
 
     #[test]
