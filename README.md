@@ -46,6 +46,11 @@ scoop bucket add process-triage https://github.com/process-triage/scoop-bucket
 scoop install pt
 ```
 
+**Winget (Windows native):**
+```powershell
+winget install --id ProcessTriage.pt --source winget
+```
+
 <details>
 <summary>Manual installation / alternative methods</summary>
 
@@ -66,8 +71,12 @@ VERIFY=1 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_
 - Linux aarch64 (ARM64)
 - macOS x86_64 (Intel)
 - macOS aarch64 (Apple Silicon)
+- Windows x86_64 (Winget/Scoop packaging path)
 
 </details>
+
+For Windows package publication and maintainer token requirements, see
+[`docs/WINDOWS_PACKAGING.md`](docs/WINDOWS_PACKAGING.md).
 
 ---
 

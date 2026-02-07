@@ -22,6 +22,9 @@ env:
   # Package repository names
   HOMEBREW_TAP_REPO: process-triage/homebrew-tap
   SCOOP_BUCKET_REPO: process-triage/scoop-bucket
+  # Dedicated Winget manifest repo/fork. Can be set to microsoft/winget-pkgs
+  # when using a token with rights to push a PR branch.
+  WINGET_PKGS_REPO: process-triage/winget-pkgs
 
 jobs:
   # ==========================================================================
@@ -33,8 +36,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       version: ${{ steps.version.outputs.version }}
-      formula_sha: ${{ steps.upload.outputs.formula_sha }}
-      manifest_sha: ${{ steps.upload.outputs.manifest_sha }}
+      winget_generated: ${{ steps.winget.outputs.generated }}
 
     steps:
       - name: Checkout
@@ -74,8 +76,20 @@ jobs:
           echo "Generated files:"
           ls -la dist/packages/
 
+      - name: Detect Winget manifest generation
+        id: winget
+        run: |
+          if [[ -f dist/packages/pt.winget.yaml ]] \
+            && [[ -f dist/packages/pt.winget.installer.yaml ]] \
+            && [[ -f dist/packages/pt.winget.locale.en-US.yaml ]]; then
+            echo "generated=true" >> "$GITHUB_OUTPUT"
+            echo "Winget manifests present."
+          else
+            echo "generated=false" >> "$GITHUB_OUTPUT"
+            echo "Winget manifests not present (Windows assets likely missing)."
+          fi
+
       - name: Upload package files
-        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: package-files
@@ -223,6 +237,79 @@ jobs:
           labels: automated,release
 
   # ==========================================================================
+  # Update Winget package repo (create PR)
+  # ==========================================================================
+  update-winget:
+    name: Update Winget Package Repo
+    needs: [generate-packages, test-packages]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.event.inputs.dry_run != 'true' && needs.generate-packages.outputs.winget_generated == 'true' && secrets.WINGET_PKGS_TOKEN != ''
+
+    steps:
+      - name: Download package files
+        uses: actions/download-artifact@v4
+        with:
+          name: package-files
+          path: packages
+
+      - name: Checkout Winget repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WINGET_PKGS_REPO }}
+          token: ${{ secrets.WINGET_PKGS_TOKEN }}
+          path: winget
+
+      - name: Update Winget manifests
+        run: |
+          version="${{ needs.generate-packages.outputs.version }}"
+          manifest_dir="winget/manifests/p/ProcessTriage/pt/${version}"
+
+          mkdir -p "$manifest_dir"
+
+          cp packages/pt.winget.yaml "${manifest_dir}/ProcessTriage.pt.yaml"
+          cp packages/pt.winget.installer.yaml "${manifest_dir}/ProcessTriage.pt.installer.yaml"
+          cp packages/pt.winget.locale.en-US.yaml "${manifest_dir}/ProcessTriage.pt.locale.en-US.yaml"
+
+          # Defensive check for missed substitutions.
+          if grep -R --line-number '{{' "$manifest_dir"; then
+            echo "::error::Unreplaced template placeholder detected in Winget manifests"
+            exit 1
+          fi
+
+          cd winget
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet; then
+            echo "No changes to Winget manifests"
+            exit 0
+          fi
+
+          branch="update-process-triage-winget-${version}"
+          git checkout -b "$branch"
+          git add "manifests/p/ProcessTriage/pt/${version}"
+          git commit -m "Add ProcessTriage.pt ${version}"
+
+          echo "branch=$branch" >> "$GITHUB_ENV"
+
+      - name: Create PR to Winget repo
+        if: env.branch != ''
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.WINGET_PKGS_TOKEN }}
+          path: winget
+          branch: ${{ env.branch }}
+          title: "Add ProcessTriage.pt ${{ needs.generate-packages.outputs.version }}"
+          body: |
+            Automated update of ProcessTriage.pt Winget manifests to version ${{ needs.generate-packages.outputs.version }}.
+
+            Release: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.generate-packages.outputs.version }}
+
+            If this repo is a fork/mirror, open a follow-up PR to `microsoft/winget-pkgs`.
+          labels: automated,release,winget
+
+  # ==========================================================================
   # Test package installation (dry run validation)
   # ==========================================================================
   test-packages:
@@ -299,10 +386,42 @@ jobs:
 
           echo "Checking release URLs..."
 
-          # Check Linux x86_64 binary
-          url="https://github.com/${{ github.repository }}/releases/download/v${version}/pt-core-linux-x86_64-${version}.tar.gz"
-          if curl --head --fail --silent "$url" > /dev/null; then
+          # Linux x86_64 is expected for normal releases but can be absent for
+          # manual dry-run workflow_dispatch calls against placeholder versions.
+          linux_url="https://github.com/${{ github.repository }}/releases/download/v${version}/pt-core-linux-x86_64-${version}.tar.gz"
+          if curl --head --fail --silent "$linux_url" > /dev/null; then
             echo "  Linux x86_64: OK"
           else
-            echo "  Linux x86_64: MISSING (expected for dry runs)"
+            echo "  Linux x86_64: MISSING (allowed for dry runs)"
+          fi
+
+          if [[ ! -f packages/pt.winget.installer.yaml ]]; then
+            echo "Winget URL validation skipped (no Winget manifests generated)."
+            exit 0
+          fi
+
+          # x64 is required whenever Winget manifests are generated.
+          x64_url=$(sed -n '/Architecture: x64/{n;s/^[[:space:]]*InstallerUrl:[[:space:]]*//p;q;}' packages/pt.winget.installer.yaml)
+          if [[ -z "$x64_url" ]]; then
+            echo "::error::Missing x64 InstallerUrl in pt.winget.installer.yaml"
+            exit 1
+          fi
+          if curl --head --fail --silent "$x64_url" > /dev/null; then
+            echo "  Winget Windows x64 URL: OK"
+          else
+            echo "::error::Winget Windows x64 URL is not reachable: $x64_url"
+            exit 1
+          fi
+
+          # arm64 is optional. If present, it must resolve.
+          arm64_url=$(sed -n '/Architecture: arm64/{n;s/^[[:space:]]*InstallerUrl:[[:space:]]*//p;q;}' packages/pt.winget.installer.yaml || true)
+          if [[ -n "$arm64_url" ]]; then
+            if curl --head --fail --silent "$arm64_url" > /dev/null; then
+              echo "  Winget Windows arm64 URL: OK"
+            else
+              echo "::error::Winget Windows arm64 URL is not reachable: $arm64_url"
+              exit 1
+            fi
+          else
+            echo "  Winget Windows arm64 URL: not present (optional)"
           fi
