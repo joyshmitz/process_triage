@@ -7032,11 +7032,10 @@ fn run_schema(global: &GlobalOpts, args: &SchemaArgs) -> ExitCode {
                 println!("{}", format_structured_output(global, types_value));
             }
             OutputFormat::Jsonl => {
-                let types: Vec<_> = available_schemas()
-                    .into_iter()
-                    .map(|(name, desc)| serde_json::json!({"name": name, "description": desc}))
-                    .collect();
-                println!("{}", serde_json::to_string_pretty(&types).unwrap());
+                for (name, desc) in available_schemas() {
+                    let entry = serde_json::json!({"name": name, "description": desc});
+                    println!("{}", serde_json::to_string(&entry).unwrap());
+                }
             }
             _ => {
                 println!("Available schema types:\n");
@@ -7078,7 +7077,14 @@ fn run_schema(global: &GlobalOpts, args: &SchemaArgs) -> ExitCode {
     if let Some(ref type_name) = args.type_name {
         match generate_schema(type_name) {
             Some(schema) => {
-                println!("{}", format_schema(&schema, format));
+                match global.format {
+                    OutputFormat::Jsonl => {
+                        println!("{}", serde_json::to_string(&schema).unwrap());
+                    }
+                    _ => {
+                        println!("{}", format_schema(&schema, format));
+                    }
+                }
                 ExitCode::Clean
             }
             None => {
