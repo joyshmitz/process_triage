@@ -821,4 +821,595 @@ mod tests {
         };
         assert!(invalid.validate().is_err());
     }
+
+    // ── Policy ─────────────────────────────────────────────────────
+
+    #[test]
+    fn policy_default_schema_version() {
+        let p = Policy::default();
+        assert_eq!(p.schema_version, POLICY_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn policy_default_policy_id() {
+        let p = Policy::default();
+        assert_eq!(p.policy_id.as_deref(), Some("default-conservative"));
+    }
+
+    #[test]
+    fn policy_validate_wrong_schema() {
+        let mut p = Policy::default();
+        p.schema_version = "2.0.0".to_string();
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn policy_serde_roundtrip() {
+        let p = Policy::default();
+        let json = serde_json::to_string(&p).unwrap();
+        let back: Policy = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.schema_version, POLICY_SCHEMA_VERSION);
+        assert!(back.validate().is_ok());
+    }
+
+    // ── LossRow validation ─────────────────────────────────────────
+
+    #[test]
+    fn loss_row_kill_negative() {
+        let lr = LossRow {
+            keep: 0.0,
+            pause: None,
+            throttle: None,
+            kill: -1.0,
+            restart: None,
+        };
+        assert!(lr.validate("test").is_err());
+    }
+
+    #[test]
+    fn loss_row_kill_nan() {
+        let lr = LossRow {
+            keep: 0.0,
+            pause: None,
+            throttle: None,
+            kill: f64::NAN,
+            restart: None,
+        };
+        assert!(lr.validate("test").is_err());
+    }
+
+    #[test]
+    fn loss_row_kill_inf() {
+        let lr = LossRow {
+            keep: 0.0,
+            pause: None,
+            throttle: None,
+            kill: f64::INFINITY,
+            restart: None,
+        };
+        assert!(lr.validate("test").is_err());
+    }
+
+    #[test]
+    fn loss_row_pause_negative() {
+        let lr = LossRow {
+            keep: 0.0,
+            pause: Some(-0.1),
+            throttle: None,
+            kill: 1.0,
+            restart: None,
+        };
+        assert!(lr.validate("test").is_err());
+    }
+
+    #[test]
+    fn loss_row_throttle_nan() {
+        let lr = LossRow {
+            keep: 0.0,
+            pause: None,
+            throttle: Some(f64::NAN),
+            kill: 1.0,
+            restart: None,
+        };
+        assert!(lr.validate("test").is_err());
+    }
+
+    #[test]
+    fn loss_row_restart_negative() {
+        let lr = LossRow {
+            keep: 0.0,
+            pause: None,
+            throttle: None,
+            kill: 1.0,
+            restart: Some(-5.0),
+        };
+        assert!(lr.validate("test").is_err());
+    }
+
+    #[test]
+    fn loss_row_none_optionals_valid() {
+        let lr = LossRow {
+            keep: 0.0,
+            pause: None,
+            throttle: None,
+            kill: 0.0,
+            restart: None,
+        };
+        assert!(lr.validate("test").is_ok());
+    }
+
+    // ── LossMatrix ─────────────────────────────────────────────────
+
+    #[test]
+    fn loss_matrix_default_valid() {
+        let lm = LossMatrix::default();
+        assert!(lm.validate().is_ok());
+    }
+
+    #[test]
+    fn loss_matrix_invalid_useful() {
+        let mut lm = LossMatrix::default();
+        lm.useful.keep = -1.0;
+        assert!(lm.validate().is_err());
+    }
+
+    #[test]
+    fn loss_matrix_invalid_zombie() {
+        let mut lm = LossMatrix::default();
+        lm.zombie.kill = f64::NAN;
+        assert!(lm.validate().is_err());
+    }
+
+    // ── Guardrails ─────────────────────────────────────────────────
+
+    #[test]
+    fn guardrails_default_valid() {
+        let g = Guardrails::default();
+        assert!(g.validate().is_ok());
+    }
+
+    #[test]
+    fn guardrails_default_protected_count() {
+        let g = Guardrails::default();
+        assert_eq!(g.protected_patterns.len(), 4);
+    }
+
+    #[test]
+    fn guardrails_default_force_review() {
+        let g = Guardrails::default();
+        assert_eq!(g.force_review_patterns.len(), 1);
+    }
+
+    #[test]
+    fn guardrails_default_never_kill_ppid() {
+        let g = Guardrails::default();
+        assert_eq!(g.never_kill_ppid, vec![1]);
+    }
+
+    #[test]
+    fn guardrails_default_confirmation() {
+        let g = Guardrails::default();
+        assert!(g.require_confirmation);
+    }
+
+    #[test]
+    fn guardrails_empty_pattern_error() {
+        let g = Guardrails {
+            protected_patterns: vec![PatternEntry {
+                pattern: "".to_string(),
+                kind: PatternKind::Regex,
+                case_insensitive: true,
+                notes: None,
+            }],
+            ..Guardrails::default()
+        };
+        assert!(g.validate().is_err());
+    }
+
+    #[test]
+    fn guardrails_invalid_regex_error() {
+        let g = Guardrails {
+            protected_patterns: vec![PatternEntry {
+                pattern: "[invalid(regex".to_string(),
+                kind: PatternKind::Regex,
+                case_insensitive: true,
+                notes: None,
+            }],
+            force_review_patterns: Vec::new(),
+            ..Guardrails::default()
+        };
+        assert!(g.validate().is_err());
+    }
+
+    // ── PatternEntry ───────────────────────────────────────────────
+
+    #[test]
+    fn pattern_entry_valid_regex() {
+        let pe = PatternEntry {
+            pattern: r"\btest\b".to_string(),
+            kind: PatternKind::Regex,
+            case_insensitive: true,
+            notes: None,
+        };
+        assert!(pe.validate("test").is_ok());
+    }
+
+    #[test]
+    fn pattern_entry_valid_glob() {
+        let pe = PatternEntry {
+            pattern: "*.py".to_string(),
+            kind: PatternKind::Glob,
+            case_insensitive: false,
+            notes: None,
+        };
+        assert!(pe.validate("test").is_ok());
+    }
+
+    #[test]
+    fn pattern_entry_valid_literal() {
+        let pe = PatternEntry {
+            pattern: "sshd".to_string(),
+            kind: PatternKind::Literal,
+            case_insensitive: true,
+            notes: None,
+        };
+        assert!(pe.validate("test").is_ok());
+    }
+
+    #[test]
+    fn pattern_entry_empty_error() {
+        let pe = PatternEntry {
+            pattern: "".to_string(),
+            kind: PatternKind::Literal,
+            case_insensitive: true,
+            notes: None,
+        };
+        assert!(pe.validate("test").is_err());
+    }
+
+    // ── PatternKind ────────────────────────────────────────────────
+
+    #[test]
+    fn pattern_kind_default_regex() {
+        assert_eq!(PatternKind::default(), PatternKind::Regex);
+    }
+
+    #[test]
+    fn pattern_kind_serde() {
+        for kind in &[PatternKind::Regex, PatternKind::Glob, PatternKind::Literal] {
+            let json = serde_json::to_string(kind).unwrap();
+            let back: PatternKind = serde_json::from_str(&json).unwrap();
+            assert_eq!(*kind, back);
+        }
+    }
+
+    // ── RobotMode ──────────────────────────────────────────────────
+
+    #[test]
+    fn robot_mode_default_disabled() {
+        let rm = RobotMode::default();
+        assert!(!rm.enabled);
+    }
+
+    #[test]
+    fn robot_mode_default_min_posterior() {
+        let rm = RobotMode::default();
+        assert!((rm.min_posterior - 0.99).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn robot_mode_negative_posterior_error() {
+        let rm = RobotMode {
+            min_posterior: -0.1,
+            ..RobotMode::default()
+        };
+        assert!(rm.validate().is_err());
+    }
+
+    #[test]
+    fn robot_mode_negative_blast_radius_error() {
+        let rm = RobotMode {
+            max_blast_radius_mb: -1.0,
+            ..RobotMode::default()
+        };
+        assert!(rm.validate().is_err());
+    }
+
+    #[test]
+    fn robot_mode_zero_posterior_ok() {
+        let rm = RobotMode {
+            min_posterior: 0.0,
+            ..RobotMode::default()
+        };
+        assert!(rm.validate().is_ok());
+    }
+
+    // ── FdrControl ─────────────────────────────────────────────────
+
+    #[test]
+    fn fdr_control_default_valid() {
+        let fc = FdrControl::default();
+        assert!(fc.validate().is_ok());
+    }
+
+    #[test]
+    fn fdr_control_alpha_negative_error() {
+        let fc = FdrControl {
+            alpha: -0.1,
+            ..FdrControl::default()
+        };
+        assert!(fc.validate().is_err());
+    }
+
+    #[test]
+    fn fdr_control_alpha_above_one_error() {
+        let fc = FdrControl {
+            alpha: 1.5,
+            ..FdrControl::default()
+        };
+        assert!(fc.validate().is_err());
+    }
+
+    #[test]
+    fn fdr_control_alpha_one_ok() {
+        let fc = FdrControl {
+            alpha: 1.0,
+            ..FdrControl::default()
+        };
+        assert!(fc.validate().is_ok());
+    }
+
+    #[test]
+    fn fdr_control_default_has_alpha_investing() {
+        let fc = FdrControl::default();
+        assert!(fc.alpha_investing.is_some());
+    }
+
+    // ── FdrMethod ──────────────────────────────────────────────────
+
+    #[test]
+    fn fdr_method_serde() {
+        for method in &[FdrMethod::Bh, FdrMethod::By, FdrMethod::AlphaInvesting, FdrMethod::None] {
+            let json = serde_json::to_string(method).unwrap();
+            let back: FdrMethod = serde_json::from_str(&json).unwrap();
+            assert_eq!(*method, back);
+        }
+    }
+
+    // ── ConfidenceLevel ────────────────────────────────────────────
+
+    #[test]
+    fn confidence_level_serde() {
+        for level in &[ConfidenceLevel::Low, ConfidenceLevel::Medium, ConfidenceLevel::High] {
+            let json = serde_json::to_string(level).unwrap();
+            let back: ConfidenceLevel = serde_json::from_str(&json).unwrap();
+            assert_eq!(*level, back);
+        }
+    }
+
+    // ── AlphaInvesting ─────────────────────────────────────────────
+
+    #[test]
+    fn alpha_investing_default() {
+        let ai = AlphaInvesting::default();
+        assert!((ai.w0 - 0.05).abs() < f64::EPSILON);
+        assert!((ai.alpha_spend - 0.02).abs() < f64::EPSILON);
+        assert!((ai.alpha_earn - 0.01).abs() < f64::EPSILON);
+    }
+
+    // ── SignatureFastPath ──────────────────────────────────────────
+
+    #[test]
+    fn signature_fast_path_default_valid() {
+        let sfp = SignatureFastPath::default();
+        assert!(sfp.validate().is_ok());
+    }
+
+    #[test]
+    fn signature_fast_path_default_values() {
+        let sfp = SignatureFastPath::default();
+        assert!(sfp.enabled);
+        assert!((sfp.min_confidence_threshold - 0.9).abs() < f64::EPSILON);
+        assert!(sfp.require_explicit_priors);
+    }
+
+    #[test]
+    fn signature_fast_path_above_one_error() {
+        let sfp = SignatureFastPath {
+            min_confidence_threshold: 1.1,
+            ..SignatureFastPath::default()
+        };
+        assert!(sfp.validate().is_err());
+    }
+
+    #[test]
+    fn signature_fast_path_negative_error() {
+        let sfp = SignatureFastPath {
+            min_confidence_threshold: -0.1,
+            ..SignatureFastPath::default()
+        };
+        assert!(sfp.validate().is_err());
+    }
+
+    #[test]
+    fn signature_fast_path_zero_ok() {
+        let sfp = SignatureFastPath {
+            min_confidence_threshold: 0.0,
+            ..SignatureFastPath::default()
+        };
+        assert!(sfp.validate().is_ok());
+    }
+
+    // ── LoadAwareDecision ──────────────────────────────────────────
+
+    #[test]
+    fn load_aware_default_disabled() {
+        let la = LoadAwareDecision::default();
+        assert!(!la.enabled);
+    }
+
+    #[test]
+    fn load_aware_disabled_skips_validation() {
+        let la = LoadAwareDecision {
+            enabled: false,
+            queue_high: 0, // Would fail if enabled
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_ok());
+    }
+
+    #[test]
+    fn load_aware_default_valid_when_enabled() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_ok());
+    }
+
+    #[test]
+    fn load_aware_zero_weight_sum_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            weights: LoadWeights {
+                queue: 0.0,
+                load: 0.0,
+                memory: 0.0,
+                psi: 0.0,
+            },
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    #[test]
+    fn load_aware_queue_high_zero_with_weight_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            queue_high: 0,
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    #[test]
+    fn load_aware_load_per_core_zero_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            load_per_core_high: 0.0,
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    #[test]
+    fn load_aware_memory_above_one_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            memory_used_fraction_high: 1.5,
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    #[test]
+    fn load_aware_psi_zero_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            psi_avg10_high: 0.0,
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    #[test]
+    fn load_aware_keep_max_below_one_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            multipliers: LoadMultipliers {
+                keep_max: 0.5,
+                ..LoadMultipliers::default()
+            },
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    #[test]
+    fn load_aware_risky_max_below_one_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            multipliers: LoadMultipliers {
+                risky_max: 0.5,
+                ..LoadMultipliers::default()
+            },
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    #[test]
+    fn load_aware_reversible_min_zero_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            multipliers: LoadMultipliers {
+                reversible_min: 0.0,
+                ..LoadMultipliers::default()
+            },
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    #[test]
+    fn load_aware_reversible_min_above_one_error() {
+        let la = LoadAwareDecision {
+            enabled: true,
+            multipliers: LoadMultipliers {
+                reversible_min: 1.5,
+                ..LoadMultipliers::default()
+            },
+            ..LoadAwareDecision::default()
+        };
+        assert!(la.validate().is_err());
+    }
+
+    // ── LoadWeights / LoadMultipliers ──────────────────────────────
+
+    #[test]
+    fn load_weights_default_sum_one() {
+        let lw = LoadWeights::default();
+        let sum = lw.queue + lw.load + lw.memory + lw.psi;
+        assert!((sum - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn load_multipliers_default_values() {
+        let lm = LoadMultipliers::default();
+        assert!((lm.keep_max - 1.4).abs() < f64::EPSILON);
+        assert!((lm.reversible_min - 0.6).abs() < f64::EPSILON);
+        assert!((lm.risky_max - 1.8).abs() < f64::EPSILON);
+    }
+
+    // ── DataLossGates ──────────────────────────────────────────────
+
+    #[test]
+    fn data_loss_gates_default() {
+        let dlg = DataLossGates::default();
+        assert!(dlg.block_if_open_write_fds);
+        assert!(dlg.block_if_locked_files);
+        assert!(dlg.block_if_active_tty);
+        assert_eq!(dlg.max_open_write_fds, Some(0));
+        assert_eq!(dlg.block_if_deleted_cwd, Some(true));
+        assert_eq!(dlg.block_if_recent_io_seconds, Some(60));
+    }
+
+    #[test]
+    fn data_loss_gates_serde() {
+        let dlg = DataLossGates::default();
+        let json = serde_json::to_string(&dlg).unwrap();
+        let back: DataLossGates = serde_json::from_str(&json).unwrap();
+        assert!(back.block_if_open_write_fds);
+        assert_eq!(back.block_if_recent_io_seconds, Some(60));
+    }
 }
