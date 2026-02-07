@@ -389,4 +389,458 @@ path = "fleet.toml"
             .expect("expected error");
         assert!(err.to_string().contains("no providers"));
     }
+
+    // ── DiscoveryConfigFormat ───────────────────────────────────────
+
+    #[test]
+    fn config_format_as_str() {
+        assert_eq!(DiscoveryConfigFormat::Toml.as_str(), "toml");
+        assert_eq!(DiscoveryConfigFormat::Yaml.as_str(), "yaml");
+        assert_eq!(DiscoveryConfigFormat::Json.as_str(), "json");
+    }
+
+    #[test]
+    fn config_format_eq() {
+        assert_eq!(DiscoveryConfigFormat::Toml, DiscoveryConfigFormat::Toml);
+        assert_ne!(DiscoveryConfigFormat::Toml, DiscoveryConfigFormat::Json);
+    }
+
+    // ── detect_format ───────────────────────────────────────────────
+
+    #[test]
+    fn detect_format_toml() {
+        let fmt = detect_format(Path::new("fleet.toml")).unwrap();
+        assert_eq!(fmt, DiscoveryConfigFormat::Toml);
+    }
+
+    #[test]
+    fn detect_format_yaml() {
+        let fmt = detect_format(Path::new("fleet.yaml")).unwrap();
+        assert_eq!(fmt, DiscoveryConfigFormat::Yaml);
+    }
+
+    #[test]
+    fn detect_format_yml() {
+        let fmt = detect_format(Path::new("fleet.yml")).unwrap();
+        assert_eq!(fmt, DiscoveryConfigFormat::Yaml);
+    }
+
+    #[test]
+    fn detect_format_json() {
+        let fmt = detect_format(Path::new("fleet.json")).unwrap();
+        assert_eq!(fmt, DiscoveryConfigFormat::Json);
+    }
+
+    #[test]
+    fn detect_format_uppercase() {
+        let fmt = detect_format(Path::new("fleet.TOML")).unwrap();
+        assert_eq!(fmt, DiscoveryConfigFormat::Toml);
+    }
+
+    #[test]
+    fn detect_format_unknown() {
+        let err = detect_format(Path::new("fleet.xml")).unwrap_err();
+        assert!(err.to_string().contains("unsupported"));
+    }
+
+    #[test]
+    fn detect_format_no_extension() {
+        let err = detect_format(Path::new("fleet")).unwrap_err();
+        assert!(err.to_string().contains("unsupported"));
+    }
+
+    // ── parse_str TOML ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_toml_dns_provider() {
+        let input = r#"
+[[providers]]
+type = "dns"
+service = "myservice"
+domain = "example.com"
+use_srv = false
+port = 8080
+"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Toml).unwrap();
+        match &config.providers[0] {
+            ProviderConfig::Dns { service, domain, use_srv, port } => {
+                assert_eq!(service, "myservice");
+                assert_eq!(domain.as_deref(), Some("example.com"));
+                assert!(!use_srv);
+                assert_eq!(*port, Some(8080));
+            }
+            _ => panic!("expected Dns"),
+        }
+    }
+
+    #[test]
+    fn parse_toml_defaults() {
+        let input = r#"
+[[providers]]
+type = "static"
+path = "hosts.toml"
+"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Toml).unwrap();
+        assert_eq!(config.schema_version, DISCOVERY_SCHEMA_VERSION);
+        assert!(config.generated_at.is_none());
+        assert!(config.cache_ttl_secs.is_none());
+    }
+
+    #[test]
+    fn parse_toml_with_cache_ttl() {
+        let input = r#"
+cache_ttl_secs = 300
+refresh_interval_secs = 60
+stale_while_revalidate_secs = 120
+
+[[providers]]
+type = "static"
+path = "fleet.toml"
+"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Toml).unwrap();
+        assert_eq!(config.cache_ttl_secs, Some(300));
+        assert_eq!(config.refresh_interval_secs, Some(60));
+        assert_eq!(config.stale_while_revalidate_secs, Some(120));
+    }
+
+    // ── parse_str JSON ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_json_static() {
+        let input = r#"{"providers":[{"type":"static","path":"hosts.json"}]}"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Json).unwrap();
+        assert_eq!(config.providers.len(), 1);
+    }
+
+    #[test]
+    fn parse_json_multiple_providers() {
+        let input = r#"{
+            "providers": [
+                {"type": "static", "path": "hosts.json"},
+                {"type": "dns", "service": "svc"}
+            ]
+        }"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Json).unwrap();
+        assert_eq!(config.providers.len(), 2);
+    }
+
+    #[test]
+    fn parse_json_invalid() {
+        let result = FleetDiscoveryConfig::parse_str("{bad}", DiscoveryConfigFormat::Json);
+        assert!(result.is_err());
+    }
+
+    // ── parse_str YAML ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_yaml_static() {
+        let input = "providers:\n  - type: static\n    path: hosts.yaml\n";
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Yaml).unwrap();
+        assert_eq!(config.providers.len(), 1);
+    }
+
+    // ── ProviderConfig serde ────────────────────────────────────────
+
+    #[test]
+    fn provider_config_aws_serde() {
+        let input = r#"{"providers":[{"type":"aws","region":"us-east-1","tag_filters":{"env":"prod"}}]}"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Json).unwrap();
+        match &config.providers[0] {
+            ProviderConfig::Aws { region, tag_filters } => {
+                assert_eq!(region.as_deref(), Some("us-east-1"));
+                assert_eq!(tag_filters.get("env").map(|s| s.as_str()), Some("prod"));
+            }
+            _ => panic!("expected Aws"),
+        }
+    }
+
+    #[test]
+    fn provider_config_gcp_serde() {
+        let input = r#"{"providers":[{"type":"gcp","project":"my-proj","labels":{"team":"infra"}}]}"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Json).unwrap();
+        match &config.providers[0] {
+            ProviderConfig::Gcp { project, labels } => {
+                assert_eq!(project.as_deref(), Some("my-proj"));
+                assert_eq!(labels.get("team").map(|s| s.as_str()), Some("infra"));
+            }
+            _ => panic!("expected Gcp"),
+        }
+    }
+
+    #[test]
+    fn provider_config_k8s_serde() {
+        let input = r#"{"providers":[{"type":"k8s","namespace":"prod","label_selector":"app=web"}]}"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Json).unwrap();
+        match &config.providers[0] {
+            ProviderConfig::K8s { namespace, label_selector } => {
+                assert_eq!(namespace.as_deref(), Some("prod"));
+                assert_eq!(label_selector.as_deref(), Some("app=web"));
+            }
+            _ => panic!("expected K8s"),
+        }
+    }
+
+    #[test]
+    fn provider_config_dns_defaults() {
+        let input = r#"{"providers":[{"type":"dns","service":"svc"}]}"#;
+        let config = FleetDiscoveryConfig::parse_str(input, DiscoveryConfigFormat::Json).unwrap();
+        match &config.providers[0] {
+            ProviderConfig::Dns { use_srv, domain, port, .. } => {
+                assert!(*use_srv); // default_use_srv is true
+                assert!(domain.is_none());
+                assert!(port.is_none());
+            }
+            _ => panic!("expected Dns"),
+        }
+    }
+
+    // ── FleetDiscoveryConfig serde roundtrip ─────────────────────────
+
+    #[test]
+    fn discovery_config_serde_roundtrip() {
+        let config = FleetDiscoveryConfig {
+            schema_version: DISCOVERY_SCHEMA_VERSION.to_string(),
+            generated_at: Some("2026-01-15T00:00:00Z".to_string()),
+            providers: vec![ProviderConfig::Static { path: "fleet.toml".to_string() }],
+            cache_ttl_secs: Some(600),
+            refresh_interval_secs: None,
+            stale_while_revalidate_secs: None,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let back: FleetDiscoveryConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.schema_version, DISCOVERY_SCHEMA_VERSION);
+        assert_eq!(back.providers.len(), 1);
+        assert_eq!(back.cache_ttl_secs, Some(600));
+    }
+
+    // ── ProviderRegistry from_config ─────────────────────────────────
+
+    #[test]
+    fn registry_from_config_static() {
+        let config = FleetDiscoveryConfig {
+            schema_version: DISCOVERY_SCHEMA_VERSION.to_string(),
+            generated_at: None,
+            providers: vec![ProviderConfig::Static { path: "fleet.toml".to_string() }],
+            cache_ttl_secs: None,
+            refresh_interval_secs: None,
+            stale_while_revalidate_secs: None,
+        };
+        let registry = ProviderRegistry::from_config(&config).unwrap();
+        assert_eq!(registry.providers.len(), 1);
+    }
+
+    #[test]
+    fn registry_from_config_dns() {
+        let config = FleetDiscoveryConfig {
+            schema_version: DISCOVERY_SCHEMA_VERSION.to_string(),
+            generated_at: None,
+            providers: vec![ProviderConfig::Dns {
+                service: "svc".to_string(),
+                domain: None,
+                use_srv: false,
+                port: None,
+            }],
+            cache_ttl_secs: None,
+            refresh_interval_secs: None,
+            stale_while_revalidate_secs: None,
+        };
+        let registry = ProviderRegistry::from_config(&config).unwrap();
+        assert_eq!(registry.providers.len(), 1);
+    }
+
+    #[test]
+    fn registry_from_config_aws_not_implemented() {
+        let config = FleetDiscoveryConfig {
+            schema_version: DISCOVERY_SCHEMA_VERSION.to_string(),
+            generated_at: None,
+            providers: vec![ProviderConfig::Aws { region: None, tag_filters: HashMap::new() }],
+            cache_ttl_secs: None,
+            refresh_interval_secs: None,
+            stale_while_revalidate_secs: None,
+        };
+        let err = ProviderRegistry::from_config(&config).err().unwrap();
+        assert!(err.to_string().contains("aws"));
+    }
+
+    #[test]
+    fn registry_from_config_gcp_not_implemented() {
+        let config = FleetDiscoveryConfig {
+            schema_version: DISCOVERY_SCHEMA_VERSION.to_string(),
+            generated_at: None,
+            providers: vec![ProviderConfig::Gcp { project: None, labels: HashMap::new() }],
+            cache_ttl_secs: None,
+            refresh_interval_secs: None,
+            stale_while_revalidate_secs: None,
+        };
+        let err = ProviderRegistry::from_config(&config).err().unwrap();
+        assert!(err.to_string().contains("gcp"));
+    }
+
+    #[test]
+    fn registry_from_config_k8s_not_implemented() {
+        let config = FleetDiscoveryConfig {
+            schema_version: DISCOVERY_SCHEMA_VERSION.to_string(),
+            generated_at: None,
+            providers: vec![ProviderConfig::K8s { namespace: None, label_selector: None }],
+            cache_ttl_secs: None,
+            refresh_interval_secs: None,
+            stale_while_revalidate_secs: None,
+        };
+        let err = ProviderRegistry::from_config(&config).err().unwrap();
+        assert!(err.to_string().contains("k8s"));
+    }
+
+    // ── StaticInventoryProvider ──────────────────────────────────────
+
+    #[test]
+    fn static_provider_name() {
+        let p = StaticInventoryProvider::new(PathBuf::from("fleet.toml"));
+        assert_eq!(p.name(), "static");
+    }
+
+    #[test]
+    fn static_provider_from_path() {
+        let p = StaticInventoryProvider::from_path(Path::new("/tmp/fleet.toml"));
+        assert_eq!(p.path, PathBuf::from("/tmp/fleet.toml"));
+    }
+
+    // ── DnsDiscoveryProvider ────────────────────────────────────────
+
+    #[test]
+    fn dns_provider_name() {
+        let p = DnsDiscoveryProvider::new("svc", None, true, None);
+        assert_eq!(p.name(), "dns");
+    }
+
+    #[test]
+    fn dns_provider_construction() {
+        let p = DnsDiscoveryProvider::new("myservice", Some("example.com"), false, Some(8080));
+        assert_eq!(p.service, "myservice");
+        assert_eq!(p.domain.as_deref(), Some("example.com"));
+        assert!(!p.use_srv);
+    }
+
+    // ── merge_inventories ───────────────────────────────────────────
+
+    #[test]
+    fn merge_inventories_empty() {
+        let result = merge_inventories(&[]);
+        assert!(result.hosts.is_empty());
+    }
+
+    #[test]
+    fn merge_inventories_single() {
+        let inv = FleetInventory {
+            schema_version: INVENTORY_SCHEMA_VERSION.to_string(),
+            generated_at: Utc::now().to_rfc3339(),
+            hosts: vec![HostRecord {
+                hostname: "host1".to_string(),
+                tags: HashMap::new(),
+                access_method: None,
+                credentials_ref: None,
+                last_seen: None,
+                status: None,
+            }],
+        };
+        let result = merge_inventories(&[inv]);
+        assert_eq!(result.hosts.len(), 1);
+        assert_eq!(result.hosts[0].hostname, "host1");
+    }
+
+    #[test]
+    fn merge_inventories_deduplicates_by_hostname() {
+        let inv1 = FleetInventory {
+            schema_version: INVENTORY_SCHEMA_VERSION.to_string(),
+            generated_at: Utc::now().to_rfc3339(),
+            hosts: vec![HostRecord {
+                hostname: "host1".to_string(),
+                tags: HashMap::from([("env".to_string(), "prod".to_string())]),
+                access_method: None,
+                credentials_ref: None,
+                last_seen: None,
+                status: None,
+            }],
+        };
+        let inv2 = FleetInventory {
+            schema_version: INVENTORY_SCHEMA_VERSION.to_string(),
+            generated_at: Utc::now().to_rfc3339(),
+            hosts: vec![HostRecord {
+                hostname: "host1".to_string(),
+                tags: HashMap::from([("role".to_string(), "web".to_string())]),
+                access_method: None,
+                credentials_ref: None,
+                last_seen: Some("2026-01-01".to_string()),
+                status: None,
+            }],
+        };
+        let result = merge_inventories(&[inv1, inv2]);
+        assert_eq!(result.hosts.len(), 1);
+        // Tags merged
+        assert_eq!(result.hosts[0].tags.get("env").map(|s| s.as_str()), Some("prod"));
+        assert_eq!(result.hosts[0].tags.get("role").map(|s| s.as_str()), Some("web"));
+        // last_seen filled from second
+        assert!(result.hosts[0].last_seen.is_some());
+    }
+
+    #[test]
+    fn merge_inventories_sorted_by_hostname() {
+        let inv = FleetInventory {
+            schema_version: INVENTORY_SCHEMA_VERSION.to_string(),
+            generated_at: Utc::now().to_rfc3339(),
+            hosts: vec![
+                HostRecord {
+                    hostname: "charlie".to_string(),
+                    tags: HashMap::new(),
+                    access_method: None,
+                    credentials_ref: None,
+                    last_seen: None,
+                    status: None,
+                },
+                HostRecord {
+                    hostname: "alpha".to_string(),
+                    tags: HashMap::new(),
+                    access_method: None,
+                    credentials_ref: None,
+                    last_seen: None,
+                    status: None,
+                },
+                HostRecord {
+                    hostname: "bravo".to_string(),
+                    tags: HashMap::new(),
+                    access_method: None,
+                    credentials_ref: None,
+                    last_seen: None,
+                    status: None,
+                },
+            ],
+        };
+        let result = merge_inventories(&[inv]);
+        assert_eq!(result.hosts[0].hostname, "alpha");
+        assert_eq!(result.hosts[1].hostname, "bravo");
+        assert_eq!(result.hosts[2].hostname, "charlie");
+    }
+
+    // ── DiscoveryError ──────────────────────────────────────────────
+
+    #[test]
+    fn discovery_error_display() {
+        let e = DiscoveryError::Other("test error".to_string());
+        assert!(e.to_string().contains("test error"));
+    }
+
+    // ── load_from_path with tempfile ─────────────────────────────────
+
+    #[test]
+    fn load_from_path_json() {
+        let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+        std::fs::write(tmp.path(), r#"{"providers":[{"type":"static","path":"hosts.json"}]}"#).unwrap();
+        let config = FleetDiscoveryConfig::load_from_path(tmp.path()).unwrap();
+        assert_eq!(config.providers.len(), 1);
+    }
+
+    #[test]
+    fn load_from_path_nonexistent() {
+        let result = FleetDiscoveryConfig::load_from_path(Path::new("/tmp/nonexistent-pt-discovery-test.json"));
+        assert!(result.is_err());
+    }
 }

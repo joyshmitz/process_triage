@@ -335,4 +335,269 @@ mod tests {
         let update = store.update_wealth(&policy, 1000, 2).expect("update");
         assert!(update.wealth_next >= 0.0);
     }
+
+    // ── AlphaInvestingPolicy construction ────────────────────────────
+
+    fn make_policy_with_alpha(w0: Option<f64>, spend: Option<f64>, earn: Option<f64>) -> Policy {
+        let mut p = Policy::default();
+        p.fdr_control.alpha_investing = Some(AlphaInvesting {
+            w0,
+            alpha_spend: spend,
+            alpha_earn: earn,
+        });
+        p
+    }
+
+    #[test]
+    fn policy_from_config_defaults() {
+        let policy = make_policy_with_alpha(None, None, None);
+        let cfg = AlphaInvestingPolicy::from_policy(&policy).unwrap();
+        assert!((cfg.w0 - 0.05).abs() < f64::EPSILON);
+        assert!((cfg.alpha_spend - 0.02).abs() < f64::EPSILON);
+        assert!((cfg.alpha_earn - 0.01).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn policy_from_config_custom_values() {
+        let policy = make_policy_with_alpha(Some(0.10), Some(0.05), Some(0.03));
+        let cfg = AlphaInvestingPolicy::from_policy(&policy).unwrap();
+        assert!((cfg.w0 - 0.10).abs() < f64::EPSILON);
+        assert!((cfg.alpha_spend - 0.05).abs() < f64::EPSILON);
+        assert!((cfg.alpha_earn - 0.03).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn policy_missing_alpha_investing() {
+        let policy = Policy::default();
+        let result = AlphaInvestingPolicy::from_policy(&policy);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AlphaInvestingError::MissingPolicy => {}
+            other => panic!("expected MissingPolicy, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn policy_invalid_w0_zero() {
+        let policy = make_policy_with_alpha(Some(0.0), Some(0.02), Some(0.01));
+        let result = AlphaInvestingPolicy::from_policy(&policy);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn policy_invalid_w0_negative() {
+        let policy = make_policy_with_alpha(Some(-0.01), Some(0.02), Some(0.01));
+        assert!(AlphaInvestingPolicy::from_policy(&policy).is_err());
+    }
+
+    #[test]
+    fn policy_invalid_negative_spend() {
+        let policy = make_policy_with_alpha(Some(0.05), Some(-0.01), Some(0.01));
+        assert!(AlphaInvestingPolicy::from_policy(&policy).is_err());
+    }
+
+    #[test]
+    fn policy_invalid_negative_earn() {
+        let policy = make_policy_with_alpha(Some(0.05), Some(0.02), Some(-0.01));
+        assert!(AlphaInvestingPolicy::from_policy(&policy).is_err());
+    }
+
+    #[test]
+    fn policy_zero_spend_and_earn_valid() {
+        let policy = make_policy_with_alpha(Some(0.05), Some(0.0), Some(0.0));
+        let cfg = AlphaInvestingPolicy::from_policy(&policy).unwrap();
+        assert!((cfg.alpha_spend - 0.0).abs() < f64::EPSILON);
+        assert!((cfg.alpha_earn - 0.0).abs() < f64::EPSILON);
+    }
+
+    // ── alpha_spend_for_wealth ──────────────────────────────────────
+
+    #[test]
+    fn alpha_spend_proportional_to_wealth() {
+        let cfg = AlphaInvestingPolicy { w0: 0.05, alpha_spend: 0.02, alpha_earn: 0.01 };
+        let spend = cfg.alpha_spend_for_wealth(0.05);
+        assert!((spend - 0.001).abs() < f64::EPSILON); // 0.02 * 0.05 = 0.001
+    }
+
+    #[test]
+    fn alpha_spend_zero_wealth() {
+        let cfg = AlphaInvestingPolicy { w0: 0.05, alpha_spend: 0.02, alpha_earn: 0.01 };
+        assert!((cfg.alpha_spend_for_wealth(0.0) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn alpha_spend_negative_wealth() {
+        let cfg = AlphaInvestingPolicy { w0: 0.05, alpha_spend: 0.02, alpha_earn: 0.01 };
+        assert!((cfg.alpha_spend_for_wealth(-1.0) - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn alpha_spend_capped_at_wealth() {
+        // If alpha_spend is very high, spend is capped at wealth
+        let cfg = AlphaInvestingPolicy { w0: 0.05, alpha_spend: 2.0, alpha_earn: 0.01 };
+        let spend = cfg.alpha_spend_for_wealth(0.05);
+        // 2.0 * 0.05 = 0.10, but min(0.10, 0.05) = 0.05
+        assert!((spend - 0.05).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn alpha_spend_large_wealth() {
+        let cfg = AlphaInvestingPolicy { w0: 0.05, alpha_spend: 0.02, alpha_earn: 0.01 };
+        let spend = cfg.alpha_spend_for_wealth(10.0);
+        assert!((spend - 0.2).abs() < f64::EPSILON); // 0.02 * 10 = 0.2
+    }
+
+    // ── AlphaWealthState serde ──────────────────────────────────────
+
+    #[test]
+    fn wealth_state_serde_roundtrip() {
+        let state = AlphaWealthState {
+            wealth: 0.042,
+            last_updated: "2026-01-15T00:00:00Z".to_string(),
+            policy_id: Some("default".to_string()),
+            policy_version: "1.0.0".to_string(),
+            host_id: "test-host".to_string(),
+            user_id: 1000,
+        };
+        let json = serde_json::to_string(&state).unwrap();
+        let back: AlphaWealthState = serde_json::from_str(&json).unwrap();
+        assert!((back.wealth - 0.042).abs() < f64::EPSILON);
+        assert_eq!(back.user_id, 1000);
+        assert_eq!(back.policy_id.as_deref(), Some("default"));
+    }
+
+    // ── AlphaUpdate serialization ───────────────────────────────────
+
+    #[test]
+    fn alpha_update_serializes() {
+        let update = AlphaUpdate {
+            wealth_prev: 0.05,
+            alpha_spend: 0.001,
+            discoveries: 2,
+            alpha_earn: 0.01,
+            wealth_next: 0.069,
+        };
+        let json = serde_json::to_string(&update).unwrap();
+        assert!(json.contains("\"discoveries\":2"));
+        assert!(json.contains("wealth_prev"));
+        assert!(json.contains("wealth_next"));
+    }
+
+    // ── AlphaInvestingStore with tempdir ─────────────────────────────
+
+    #[test]
+    fn store_new_paths() {
+        let dir = tempdir().unwrap();
+        let store = AlphaInvestingStore::new(dir.path());
+        assert_eq!(store.state_path, dir.path().join("alpha_wealth.json"));
+        assert_eq!(store.lock_path, dir.path().join("alpha_wealth.lock"));
+    }
+
+    #[test]
+    fn store_load_or_init_creates_state() {
+        let dir = tempdir().unwrap();
+        let store = AlphaInvestingStore::new(dir.path());
+        let policy = make_policy_with_alpha(Some(0.10), Some(0.02), Some(0.01));
+        let state = store.load_or_init(&policy, 1000).unwrap();
+        assert!((state.wealth - 0.10).abs() < f64::EPSILON);
+        assert_eq!(state.user_id, 1000);
+        assert!(store.state_path.exists());
+    }
+
+    #[test]
+    fn store_load_or_init_returns_existing() {
+        let dir = tempdir().unwrap();
+        let store = AlphaInvestingStore::new(dir.path());
+        let policy = make_policy_with_alpha(Some(0.10), Some(0.02), Some(0.01));
+        store.load_or_init(&policy, 1000).unwrap();
+
+        // Second call returns existing state
+        let state2 = store.load_or_init(&policy, 2000).unwrap();
+        // Note: user_id is from original init, not the new call
+        assert_eq!(state2.user_id, 1000);
+    }
+
+    #[test]
+    fn store_update_wealth_no_discoveries() {
+        let dir = tempdir().unwrap();
+        let store = AlphaInvestingStore::new(dir.path());
+        let policy = make_policy_with_alpha(Some(0.05), Some(0.02), Some(0.01));
+        store.load_or_init(&policy, 1000).unwrap();
+        let update = store.update_wealth(&policy, 1000, 0).unwrap();
+        // wealth_next = (0.05 - 0.001 + 0).max(0) = 0.049
+        assert!((update.wealth_prev - 0.05).abs() < f64::EPSILON);
+        assert!(update.wealth_next < update.wealth_prev);
+        assert_eq!(update.discoveries, 0);
+    }
+
+    #[test]
+    fn store_update_wealth_with_discoveries() {
+        let dir = tempdir().unwrap();
+        let store = AlphaInvestingStore::new(dir.path());
+        let policy = make_policy_with_alpha(Some(0.05), Some(0.02), Some(0.01));
+        store.load_or_init(&policy, 1000).unwrap();
+        let update = store.update_wealth(&policy, 1000, 5).unwrap();
+        // reward = 0.01 * 5 = 0.05
+        // wealth_next = (0.05 - 0.001 + 0.05).max(0) = 0.099
+        assert!(update.wealth_next > update.wealth_prev);
+    }
+
+    #[test]
+    fn store_update_wealth_bottoms_at_zero() {
+        let dir = tempdir().unwrap();
+        let store = AlphaInvestingStore::new(dir.path());
+        let policy = make_policy_with_alpha(Some(0.001), Some(1.0), Some(0.0));
+        store.load_or_init(&policy, 1000).unwrap();
+        // alpha_spend = min(1.0 * 0.001, 0.001) = 0.001
+        // wealth_next = (0.001 - 0.001 + 0).max(0) = 0
+        let update = store.update_wealth(&policy, 1000, 0).unwrap();
+        assert!((update.wealth_next - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn store_sequential_updates_accumulate() {
+        let dir = tempdir().unwrap();
+        let store = AlphaInvestingStore::new(dir.path());
+        let policy = make_policy_with_alpha(Some(0.05), Some(0.02), Some(0.01));
+        store.load_or_init(&policy, 1000).unwrap();
+
+        let u1 = store.update_wealth(&policy, 1000, 0).unwrap();
+        let u2 = store.update_wealth(&policy, 1000, 0).unwrap();
+        // Each update spends some wealth
+        assert!((u2.wealth_prev - u1.wealth_next).abs() < f64::EPSILON);
+        assert!(u2.wealth_next < u1.wealth_next);
+    }
+
+    // ── LockGuard ───────────────────────────────────────────────────
+
+    #[test]
+    fn lock_guard_creates_and_removes_file() {
+        let dir = tempdir().unwrap();
+        let lock_path = dir.path().join("test.lock");
+        {
+            let _guard = LockGuard::acquire(&lock_path).unwrap();
+            assert!(lock_path.exists());
+        }
+        // After drop, lock file is removed
+        assert!(!lock_path.exists());
+    }
+
+    #[test]
+    fn lock_guard_contains_pid() {
+        let dir = tempdir().unwrap();
+        let lock_path = dir.path().join("pid.lock");
+        let _guard = LockGuard::acquire(&lock_path).unwrap();
+        let content = std::fs::read_to_string(&lock_path).unwrap();
+        let pid: u32 = content.trim().parse().unwrap();
+        assert_eq!(pid, std::process::id());
+    }
+
+    // ── AlphaInvestingError ─────────────────────────────────────────
+
+    #[test]
+    fn alpha_investing_error_display() {
+        assert!(AlphaInvestingError::MissingPolicy.to_string().contains("not configured"));
+        assert!(AlphaInvestingError::InvalidPolicy("bad".into()).to_string().contains("bad"));
+        assert!(AlphaInvestingError::LockUnavailable.to_string().contains("lock"));
+    }
 }
