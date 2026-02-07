@@ -463,6 +463,7 @@ pub fn update_belief(
         let alpha = config.smoothing_alpha;
         let mut smoothed = [0.0; NUM_STATES];
         let total = NUM_STATES as f64 * alpha + 1.0;
+        #[allow(clippy::needless_range_loop)]
         for i in 0..NUM_STATES {
             smoothed[i] = (posterior.probs[i] + alpha) / total;
         }
