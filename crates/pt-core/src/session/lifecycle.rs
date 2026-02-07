@@ -124,6 +124,12 @@ pub fn create_session(
     store: &SessionStore,
     options: &CreateSessionOptions,
 ) -> Result<(SessionId, SessionHandle), SessionError> {
+    // Validate TTL upfront so we don't create partial session artifacts on failure.
+    let ttl_duration = options
+        .ttl_seconds
+        .map(|ttl| seconds_to_duration(ttl, store.sessions_root()))
+        .transpose()?;
+
     let session_id = SessionId::new();
     let manifest = SessionManifest::new(
         &session_id,
@@ -134,12 +140,7 @@ pub fn create_session(
     let handle = store.create(&manifest)?;
 
     let now = Utc::now();
-    let expires_at = options
-        .ttl_seconds
-        .map(|ttl| {
-            seconds_to_duration(ttl, &handle.dir).map(|duration| (now + duration).to_rfc3339())
-        })
-        .transpose()?;
+    let expires_at = ttl_duration.map(|duration| (now + duration).to_rfc3339());
 
     let lifecycle = LifecycleInfo {
         session_id: session_id.0.clone(),
@@ -674,6 +675,14 @@ mod tests {
 
         let result = create_session(store, &opts);
         assert!(result.is_err());
+
+        let sessions = store
+            .list_sessions(&ListSessionsOptions::default())
+            .unwrap();
+        assert!(
+            sessions.is_empty(),
+            "create_session should not leave partial session artifacts on ttl validation failure"
+        );
     }
 
     #[test]
