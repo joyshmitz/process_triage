@@ -337,4 +337,226 @@ mod tests {
         assert!(json_str.contains("\"level\":\"info\""));
         assert!(json_str.contains("\"message\":\"test message\""));
     }
+
+    // ── guess_field_class ───────────────────────────────────────────
+
+    #[test]
+    fn guess_cmd_fields() {
+        assert_eq!(guess_field_class("cmd"), FieldClass::Cmd);
+        assert_eq!(guess_field_class("command"), FieldClass::Cmd);
+        assert_eq!(guess_field_class("exe"), FieldClass::Cmd);
+    }
+
+    #[test]
+    fn guess_cmdline_fields() {
+        assert_eq!(guess_field_class("args"), FieldClass::Cmdline);
+        assert_eq!(guess_field_class("cmdline"), FieldClass::Cmdline);
+    }
+
+    #[test]
+    fn guess_path_fields() {
+        assert_eq!(guess_field_class("path"), FieldClass::PathProject);
+        assert_eq!(guess_field_class("file"), FieldClass::PathProject);
+        assert_eq!(guess_field_class("cwd"), FieldClass::PathProject);
+        assert_eq!(guess_field_class("dir"), FieldClass::PathProject);
+    }
+
+    #[test]
+    fn guess_home_path() {
+        assert_eq!(guess_field_class("home"), FieldClass::PathHome);
+    }
+
+    #[test]
+    fn guess_tmp_fields() {
+        assert_eq!(guess_field_class("tmp"), FieldClass::PathTmp);
+        assert_eq!(guess_field_class("temp"), FieldClass::PathTmp);
+    }
+
+    #[test]
+    fn guess_env_fields() {
+        assert_eq!(guess_field_class("env"), FieldClass::EnvValue);
+        assert_eq!(guess_field_class("environ"), FieldClass::EnvValue);
+    }
+
+    #[test]
+    fn guess_identity_fields() {
+        assert_eq!(guess_field_class("user"), FieldClass::Username);
+        assert_eq!(guess_field_class("username"), FieldClass::Username);
+        assert_eq!(guess_field_class("host"), FieldClass::Hostname);
+        assert_eq!(guess_field_class("hostname"), FieldClass::Hostname);
+    }
+
+    #[test]
+    fn guess_network_fields() {
+        assert_eq!(guess_field_class("ip"), FieldClass::IpAddress);
+        assert_eq!(guess_field_class("addr"), FieldClass::IpAddress);
+        assert_eq!(guess_field_class("address"), FieldClass::IpAddress);
+        assert_eq!(guess_field_class("url"), FieldClass::Url);
+        assert_eq!(guess_field_class("uri"), FieldClass::Url);
+        assert_eq!(guess_field_class("port"), FieldClass::Port);
+    }
+
+    #[test]
+    fn guess_process_fields() {
+        assert_eq!(guess_field_class("pid"), FieldClass::Pid);
+        assert_eq!(guess_field_class("ppid"), FieldClass::Pid);
+        assert_eq!(guess_field_class("uid"), FieldClass::Uid);
+        assert_eq!(guess_field_class("gid"), FieldClass::Uid);
+    }
+
+    #[test]
+    fn guess_container_fields() {
+        assert_eq!(guess_field_class("container"), FieldClass::ContainerId);
+        assert_eq!(guess_field_class("container_id"), FieldClass::ContainerId);
+    }
+
+    #[test]
+    fn guess_systemd_fields() {
+        assert_eq!(guess_field_class("unit"), FieldClass::SystemdUnit);
+        assert_eq!(guess_field_class("service"), FieldClass::SystemdUnit);
+    }
+
+    #[test]
+    fn guess_unknown_field_is_freetext() {
+        assert_eq!(guess_field_class("something_random"), FieldClass::FreeText);
+        assert_eq!(guess_field_class(""), FieldClass::FreeText);
+        assert_eq!(guess_field_class("score"), FieldClass::FreeText);
+    }
+
+    // ── SpanContext ─────────────────────────────────────────────────
+
+    #[test]
+    fn span_context_default_all_none() {
+        let ctx = SpanContext::default();
+        assert!(ctx.run_id.is_none());
+        assert!(ctx.session_id.is_none());
+        assert!(ctx.host_id.is_none());
+        assert!(ctx.stage.is_none());
+        assert!(ctx.pid.is_none());
+        assert!(ctx.start_id.is_none());
+    }
+
+    // ── JsonFieldVisitor ────────────────────────────────────────────
+
+    #[test]
+    fn field_visitor_starts_empty() {
+        let v = JsonFieldVisitor::new();
+        assert!(v.fields.is_empty());
+        assert!(v.message.is_none());
+    }
+
+    // ── JsonlLayer construction ─────────────────────────────────────
+
+    #[test]
+    fn jsonl_layer_with_vec_writer() {
+        let writer = Vec::<u8>::new();
+        let _layer = JsonlLayer::new(writer);
+    }
+
+    // ── Full layer event recording ──────────────────────────────────
+
+    fn make_buffer_layer() -> (Arc<Mutex<Vec<u8>>>, impl Layer<tracing_subscriber::Registry>) {
+        let buffer = Arc::new(Mutex::new(Vec::new()));
+        struct BufWriter(Arc<Mutex<Vec<u8>>>);
+        impl Write for BufWriter {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.0.lock().unwrap().write(buf)
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let layer = JsonlLayer::new(BufWriter(buffer.clone()));
+        (buffer, layer)
+    }
+
+    #[test]
+    fn layer_records_warn_level() {
+        let (buffer, layer) = make_buffer_layer();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::warn!(target: "test.warn", message = "danger");
+        });
+
+        let output = buffer.lock().unwrap();
+        let json_str = String::from_utf8_lossy(&output);
+        assert!(json_str.contains("\"level\":\"warn\""));
+        assert!(json_str.contains("\"message\":\"danger\""));
+    }
+
+    #[test]
+    fn layer_records_error_level() {
+        let (buffer, layer) = make_buffer_layer();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::error!(target: "test.error", message = "fail");
+        });
+
+        let output = buffer.lock().unwrap();
+        let json_str = String::from_utf8_lossy(&output);
+        assert!(json_str.contains("\"level\":\"error\""));
+    }
+
+    #[test]
+    fn layer_records_extra_fields() {
+        let (buffer, layer) = make_buffer_layer();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(target: "test.fields", count = 42, active = true, message = "hi");
+        });
+
+        let output = buffer.lock().unwrap();
+        let json_str = String::from_utf8_lossy(&output);
+        assert!(json_str.contains("\"fields\""));
+        // count should be in fields
+        let parsed: serde_json::Value = serde_json::from_str(json_str.trim()).unwrap();
+        assert_eq!(parsed["fields"]["count"], 42);
+        assert_eq!(parsed["fields"]["active"], true);
+    }
+
+    #[test]
+    fn layer_output_has_timestamp() {
+        let (buffer, layer) = make_buffer_layer();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(target: "test.ts", message = "ts test");
+        });
+
+        let output = buffer.lock().unwrap();
+        let json_str = String::from_utf8_lossy(&output);
+        assert!(json_str.contains("\"ts\""));
+    }
+
+    #[test]
+    fn layer_output_has_event_target() {
+        let (buffer, layer) = make_buffer_layer();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(target: "my.custom.target", message = "targeted");
+        });
+
+        let output = buffer.lock().unwrap();
+        let json_str = String::from_utf8_lossy(&output);
+        assert!(json_str.contains("my.custom.target"));
+    }
+
+    #[test]
+    fn layer_output_is_valid_json() {
+        let (buffer, layer) = make_buffer_layer();
+        let subscriber = tracing_subscriber::registry().with(layer);
+
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(target: "test.json", message = "valid json check");
+        });
+
+        let output = buffer.lock().unwrap();
+        let json_str = String::from_utf8_lossy(&output);
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(json_str.trim());
+        assert!(parsed.is_ok(), "output should be valid JSON: {}", json_str);
+    }
 }

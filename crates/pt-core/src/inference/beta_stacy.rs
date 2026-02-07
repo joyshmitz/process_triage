@@ -417,4 +417,356 @@ mod tests {
             "Bin 2 at_risk should include out-of-bounds samples"
         );
     }
+
+    // ── BetaParams ──────────────────────────────────────────────────
+
+    #[test]
+    fn beta_params_new() {
+        let p = BetaParams::new(2.0, 3.0);
+        assert_eq!(p.alpha, 2.0);
+        assert_eq!(p.beta, 3.0);
+    }
+
+    #[test]
+    fn beta_params_default_uniform() {
+        let p = BetaParams::default();
+        assert_eq!(p.alpha, 1.0);
+        assert_eq!(p.beta, 1.0);
+    }
+
+    #[test]
+    fn beta_params_mean_uniform() {
+        let p = BetaParams::new(1.0, 1.0);
+        assert!((p.mean() - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn beta_params_mean_asymmetric() {
+        let p = BetaParams::new(9.0, 1.0);
+        assert!((p.mean() - 0.9).abs() < 1e-12);
+    }
+
+    #[test]
+    fn beta_params_mean_zero_denom() {
+        let p = BetaParams::new(0.0, 0.0);
+        assert_eq!(p.mean(), 0.0);
+    }
+
+    #[test]
+    fn beta_params_mean_negative_denom() {
+        let p = BetaParams::new(-1.0, 0.5);
+        // denom = -0.5 <= 0
+        assert_eq!(p.mean(), 0.0);
+    }
+
+    // ── BinningScheme fixed ─────────────────────────────────────────
+
+    #[test]
+    fn fixed_scheme_bins_count() {
+        let scheme = BinningScheme::fixed(10.0, 5);
+        assert_eq!(scheme.bins().len(), 5);
+    }
+
+    #[test]
+    fn fixed_scheme_bins_boundaries() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        let bins = scheme.bins();
+        assert!((bins[0].start_s - 0.0).abs() < 1e-12);
+        assert!((bins[0].end_s - 10.0).abs() < 1e-12);
+        assert!((bins[1].start_s - 10.0).abs() < 1e-12);
+        assert!((bins[1].end_s - 20.0).abs() < 1e-12);
+        assert!((bins[2].start_s - 20.0).abs() < 1e-12);
+        assert!((bins[2].end_s - 30.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn fixed_scheme_index_for_duration() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        assert_eq!(scheme.index_for_duration(0.0), Some(0));
+        assert_eq!(scheme.index_for_duration(5.0), Some(0));
+        assert_eq!(scheme.index_for_duration(9.99), Some(0));
+        assert_eq!(scheme.index_for_duration(10.0), Some(1));
+        assert_eq!(scheme.index_for_duration(20.0), Some(2));
+        assert_eq!(scheme.index_for_duration(29.99), Some(2));
+        assert_eq!(scheme.index_for_duration(30.0), None); // out of range
+    }
+
+    #[test]
+    fn fixed_scheme_negative_duration_returns_none() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        assert_eq!(scheme.index_for_duration(-1.0), None);
+    }
+
+    #[test]
+    fn fixed_scheme_nan_duration_returns_none() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        assert_eq!(scheme.index_for_duration(f64::NAN), None);
+    }
+
+    #[test]
+    fn fixed_scheme_zero_width_returns_none() {
+        let scheme = BinningScheme::fixed(0.0, 3);
+        assert_eq!(scheme.index_for_duration(5.0), None);
+    }
+
+    // ── BinningScheme log ───────────────────────────────────────────
+
+    #[test]
+    fn log_scheme_bins_count() {
+        let scheme = BinningScheme::log(1.0, 2.0, 4);
+        assert_eq!(scheme.bins().len(), 4);
+    }
+
+    #[test]
+    fn log_scheme_bins_grow_exponentially() {
+        let scheme = BinningScheme::log(1.0, 2.0, 3);
+        let bins = scheme.bins();
+        // Bin 0: 0..1, Bin 1: 1..3, Bin 2: 3..7
+        assert!((bins[0].start_s - 0.0).abs() < 1e-12);
+        assert!((bins[0].end_s - 1.0).abs() < 1e-12);
+        assert!((bins[1].start_s - 1.0).abs() < 1e-12);
+        assert!((bins[1].end_s - 3.0).abs() < 1e-12);
+        assert!((bins[2].start_s - 3.0).abs() < 1e-12);
+        assert!((bins[2].end_s - 7.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn log_scheme_index_for_duration() {
+        let scheme = BinningScheme::log(1.0, 2.0, 3);
+        assert_eq!(scheme.index_for_duration(0.5), Some(0));
+        assert_eq!(scheme.index_for_duration(2.0), Some(1));
+        assert_eq!(scheme.index_for_duration(5.0), Some(2));
+        assert_eq!(scheme.index_for_duration(7.0), None); // out of range
+    }
+
+    #[test]
+    fn log_scheme_invalid_growth_factor_returns_none() {
+        let scheme = BinningScheme::log(1.0, 1.0, 3); // growth=1.0 is not > 1.0
+        assert_eq!(scheme.index_for_duration(5.0), None);
+    }
+
+    #[test]
+    fn log_scheme_zero_start_width_returns_none() {
+        let scheme = BinningScheme::log(0.0, 2.0, 3);
+        assert_eq!(scheme.index_for_duration(5.0), None);
+    }
+
+    // ── BetaStacyBin ────────────────────────────────────────────────
+
+    #[test]
+    fn bin_posterior_with_no_data() {
+        let bin = BetaStacyBin {
+            index: 0,
+            prior: BetaParams::new(1.0, 1.0),
+            at_risk: 0,
+            events: 0,
+        };
+        let post = bin.posterior();
+        assert_eq!(post.alpha, 1.0);
+        assert_eq!(post.beta, 1.0);
+    }
+
+    #[test]
+    fn bin_posterior_with_events() {
+        let bin = BetaStacyBin {
+            index: 0,
+            prior: BetaParams::new(1.0, 1.0),
+            at_risk: 10,
+            events: 3,
+        };
+        let post = bin.posterior();
+        assert!((post.alpha - 4.0).abs() < 1e-12); // 1 + 3
+        assert!((post.beta - 8.0).abs() < 1e-12); // 1 + (10 - 3)
+    }
+
+    #[test]
+    fn bin_hazard_mean_no_data() {
+        let bin = BetaStacyBin {
+            index: 0,
+            prior: BetaParams::new(1.0, 1.0),
+            at_risk: 0,
+            events: 0,
+        };
+        assert!((bin.hazard_mean() - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn bin_hazard_mean_all_events() {
+        let bin = BetaStacyBin {
+            index: 0,
+            prior: BetaParams::new(1.0, 1.0),
+            at_risk: 10,
+            events: 10,
+        };
+        // posterior alpha = 11, beta = 1, mean = 11/12
+        let expected = 11.0 / 12.0;
+        assert!((bin.hazard_mean() - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn bin_hazard_mean_clamped() {
+        let bin = BetaStacyBin {
+            index: 0,
+            prior: BetaParams::new(1.0, 1.0),
+            at_risk: 5,
+            events: 3,
+        };
+        let h = bin.hazard_mean();
+        assert!(h >= 0.0 && h <= 1.0);
+    }
+
+    // ── BetaStacyModel ─────────────────────────────────────────────
+
+    #[test]
+    fn model_new_creates_bins() {
+        let scheme = BinningScheme::fixed(10.0, 5);
+        let model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        assert_eq!(model.bins.len(), 5);
+    }
+
+    #[test]
+    fn model_new_zero_bins_errors() {
+        let scheme = BinningScheme::fixed(10.0, 0);
+        let err = BetaStacyModel::new(scheme, BetaParams::default()).err().unwrap();
+        matches!(err, BetaStacyError::NoBins);
+    }
+
+    #[test]
+    fn model_update_from_counts() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        let mut model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        model.update_from_counts(&[10, 5, 2], &[3, 1, 0]);
+        assert_eq!(model.bins[0].at_risk, 10);
+        assert_eq!(model.bins[0].events, 3);
+        assert_eq!(model.bins[1].at_risk, 5);
+        assert_eq!(model.bins[2].events, 0);
+    }
+
+    #[test]
+    fn model_update_from_counts_accumulates() {
+        let scheme = BinningScheme::fixed(10.0, 2);
+        let mut model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        model.update_from_counts(&[5, 3], &[2, 1]);
+        model.update_from_counts(&[3, 2], &[1, 0]);
+        assert_eq!(model.bins[0].at_risk, 8);
+        assert_eq!(model.bins[0].events, 3);
+    }
+
+    #[test]
+    fn model_update_from_samples_negative_duration_errors() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        let mut model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        let samples = vec![LifetimeSample {
+            duration_s: -5.0,
+            event: true,
+        }];
+        assert!(model.update_from_samples(&samples).is_err());
+    }
+
+    #[test]
+    fn model_update_from_samples_nan_errors() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        let mut model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        let samples = vec![LifetimeSample {
+            duration_s: f64::NAN,
+            event: false,
+        }];
+        assert!(model.update_from_samples(&samples).is_err());
+    }
+
+    #[test]
+    fn model_update_from_samples_infinity_treated_as_out_of_bounds() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        let mut model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        let samples = vec![LifetimeSample {
+            duration_s: f64::INFINITY,
+            event: false,
+        }];
+        // Infinity is not finite, should error
+        assert!(model.update_from_samples(&samples).is_err());
+    }
+
+    #[test]
+    fn survival_curve_starts_below_one() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        let model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        let curve = model.survival_curve();
+        // With uniform priors and no data, hazard mean = 0.5 per bin
+        // S(1) = 0.5, S(2) = 0.25, S(3) = 0.125
+        assert!(curve[0] < 1.0);
+        assert!(curve[0] > 0.0);
+    }
+
+    #[test]
+    fn survival_curve_non_negative() {
+        let scheme = BinningScheme::fixed(10.0, 3);
+        let mut model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        model.update_from_counts(&[100, 50, 10], &[90, 45, 10]);
+        let curve = model.survival_curve();
+        for val in &curve {
+            assert!(*val >= 0.0);
+        }
+    }
+
+    #[test]
+    fn survival_curve_length_matches_bins() {
+        let scheme = BinningScheme::fixed(10.0, 7);
+        let model = BetaStacyModel::new(scheme, BetaParams::default()).unwrap();
+        assert_eq!(model.survival_curve().len(), 7);
+    }
+
+    // ── BetaStacyError ──────────────────────────────────────────────
+
+    #[test]
+    fn error_no_bins_display() {
+        let err = BetaStacyError::NoBins;
+        assert_eq!(err.to_string(), "binning scheme produced no bins");
+    }
+
+    #[test]
+    fn error_invalid_duration_display() {
+        let err = BetaStacyError::InvalidDuration { value: -3.14 };
+        assert!(err.to_string().contains("-3.14"));
+    }
+
+    // ── BinSpec ─────────────────────────────────────────────────────
+
+    #[test]
+    fn bin_spec_indices_sequential() {
+        let scheme = BinningScheme::fixed(5.0, 4);
+        let bins = scheme.bins();
+        for (i, bin) in bins.iter().enumerate() {
+            assert_eq!(bin.index, i);
+        }
+    }
+
+    #[test]
+    fn bin_spec_contiguous() {
+        let scheme = BinningScheme::log(2.0, 1.5, 5);
+        let bins = scheme.bins();
+        for i in 1..bins.len() {
+            assert!((bins[i].start_s - bins[i - 1].end_s).abs() < 1e-12);
+        }
+    }
+
+    // ── LifetimeSample ──────────────────────────────────────────────
+
+    #[test]
+    fn lifetime_sample_event_true() {
+        let s = LifetimeSample {
+            duration_s: 42.0,
+            event: true,
+        };
+        assert_eq!(s.duration_s, 42.0);
+        assert!(s.event);
+    }
+
+    #[test]
+    fn lifetime_sample_censored() {
+        let s = LifetimeSample {
+            duration_s: 100.0,
+            event: false,
+        };
+        assert!(!s.event);
+    }
 }
