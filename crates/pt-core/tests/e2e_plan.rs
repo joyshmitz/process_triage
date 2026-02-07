@@ -6,8 +6,10 @@
 use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
 use predicates::prelude::*;
+use pt_common::config::policy::Policy;
 use serde_json::Value;
 use std::time::Duration;
+use tempfile::tempdir;
 
 /// Get a Command for pt-core binary.
 fn pt_core() -> Command {
@@ -284,6 +286,101 @@ mod plan_options {
                 "--goal should not be treated as stub flag anymore"
             );
         }
+    }
+
+    #[test]
+    fn plan_includes_signature_inference_metadata() {
+        let output = pt_core_fast()
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--threshold",
+                "0",
+                "--max-candidates",
+                "5",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
+            .assert()
+            .code(predicate::in_iter([0, 1]))
+            .get_output()
+            .stdout
+            .clone();
+
+        let json: Value = serde_json::from_slice(&output).expect("Output should be valid JSON");
+        let summary = json
+            .get("summary")
+            .and_then(|v| v.as_object())
+            .expect("expected summary object");
+        assert!(
+            summary.contains_key("signature_fast_path_enabled"),
+            "summary should include signature fast-path enablement"
+        );
+        assert!(
+            summary.contains_key("signature_matches"),
+            "summary should include signature match count"
+        );
+        assert!(
+            summary.contains_key("signature_fast_path_used"),
+            "summary should include signature fast-path usage count"
+        );
+
+        if let Some(first_candidate) = json
+            .get("candidates")
+            .and_then(|v| v.as_array())
+            .and_then(|arr| arr.first())
+        {
+            assert!(
+                first_candidate.get("signature").is_some(),
+                "candidate should include signature metadata"
+            );
+            assert!(
+                first_candidate.get("inference").is_some(),
+                "candidate should include inference metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn plan_respects_policy_disabling_signature_fast_path() {
+        let config_dir = tempdir().expect("temp config dir");
+        let mut policy = Policy::default();
+        policy.signature_fast_path.enabled = false;
+        let policy_path = config_dir.path().join("policy.json");
+        std::fs::write(
+            &policy_path,
+            serde_json::to_vec_pretty(&policy).expect("serialize policy"),
+        )
+        .expect("write policy.json");
+
+        let output = pt_core_fast()
+            .env("PT_CONFIG_DIR", config_dir.path().display().to_string())
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--threshold",
+                "0",
+                "--max-candidates",
+                "5",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
+            .assert()
+            .code(predicate::in_iter([0, 1]))
+            .get_output()
+            .stdout
+            .clone();
+
+        let json: Value = serde_json::from_slice(&output).expect("Output should be valid JSON");
+        let enabled = json
+            .get("summary")
+            .and_then(|v| v.get("signature_fast_path_enabled"))
+            .and_then(|v| v.as_bool());
+        assert_eq!(enabled, Some(false));
     }
 }
 
@@ -1069,12 +1166,11 @@ mod inference_safety {
         let json = parse_plan_json(&output);
 
         if let Some(summary) = json.get("summary") {
-            // Verify protected_filtered is present and non-negative
-            if let Some(filtered) = summary.get("protected_filtered").and_then(|f| f.as_u64()) {
+            // Verify protected_filtered is present and parseable as an unsigned count
+            if let Some(filtered) = summary.get("protected_filtered") {
                 assert!(
-                    filtered >= 0,
-                    "protected_filtered should be non-negative, got {}",
-                    filtered
+                    filtered.as_u64().is_some(),
+                    "protected_filtered should be u64-compatible, got {filtered:?}"
                 );
             }
 

@@ -2462,7 +2462,11 @@ use pt_core::decision::{
     apply_load_to_loss_matrix, compute_load_adjustment, decide_action, Action, ActionFeasibility,
     LoadSignals,
 };
-use pt_core::inference::{compute_posterior, CpuEvidence, Evidence, EvidenceLedger};
+use pt_core::inference::{
+    compute_posterior, compute_posterior_with_overrides, try_signature_fast_path, CpuEvidence,
+    Evidence, EvidenceLedger, FastPathConfig, FastPathSkipReason, PriorContext,
+};
+use pt_core::supervision::signature::{MatchLevel, ProcessMatchContext, SignatureDatabase};
 
 fn progress_emitter(global: &GlobalOpts) -> Option<Arc<dyn ProgressEmitter>> {
     match global.format {
@@ -8346,6 +8350,26 @@ fn run_agent_snapshot(global: &GlobalOpts, args: &AgentSnapshotArgs) -> ExitCode
     ExitCode::Clean
 }
 
+fn match_level_label(level: MatchLevel) -> &'static str {
+    match level {
+        MatchLevel::None => "none",
+        MatchLevel::GenericCategory => "generic_category",
+        MatchLevel::CommandOnly => "command_only",
+        MatchLevel::CommandPlusArgs => "command_plus_args",
+        MatchLevel::ExactCommand => "exact_command",
+        MatchLevel::MultiPattern => "multi_pattern",
+    }
+}
+
+fn fast_path_skip_reason_label(reason: FastPathSkipReason) -> &'static str {
+    match reason {
+        FastPathSkipReason::Disabled => "disabled",
+        FastPathSkipReason::NoMatch => "no_match",
+        FastPathSkipReason::ScoreBelowThreshold => "score_below_threshold",
+        FastPathSkipReason::NoPriors => "no_priors",
+    }
+}
+
 fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     let _lock = match acquire_global_lock(global, "agent plan") {
         Ok(lock) => lock,
@@ -8416,6 +8440,24 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     };
     let priors = config.priors.clone();
     let policy = config.policy.clone();
+    let fast_path_config = FastPathConfig {
+        enabled: policy.signature_fast_path.enabled,
+        min_confidence_threshold: policy.signature_fast_path.min_confidence_threshold,
+        require_explicit_priors: policy.signature_fast_path.require_explicit_priors,
+    };
+
+    let mut signature_db = SignatureDatabase::with_defaults();
+    if let Some(user_schema) = pt_core::signature_cli::load_user_signatures() {
+        for signature in user_schema.signatures {
+            if let Err(err) = signature_db.add(signature) {
+                eprintln!(
+                    "agent plan: warning: skipping invalid user signature during load: {}",
+                    err
+                );
+            }
+        }
+    }
+
     let rate_limit_path = resolve_data_dir_for_lock().map(|dir| dir.join("rate_limit.json"));
     let enforcer = match pt_core::decision::PolicyEnforcer::new(&policy, rate_limit_path.as_deref())
     {
@@ -8519,6 +8561,8 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     let mut all_candidates: Vec<(f64, serde_json::Value, PersistedProcess, PersistedInference)> =
         Vec::new();
     let mut policy_blocked_count = 0usize;
+    let mut signature_match_count = 0usize;
+    let mut signature_fast_path_used_count = 0usize;
 
     let feasibility = ActionFeasibility::allow_all();
     let mut shadow_recorder = if global.shadow {
@@ -8602,22 +8646,108 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             command_category: None,
         };
 
-        // Compute posterior probabilities
-        let posterior_result = match compute_posterior(&priors, &evidence) {
-            Ok(r) => r,
-            Err(_) => continue, // Skip processes that fail inference
+        let mut match_ctx = ProcessMatchContext::with_comm(&proc.comm);
+        if !proc.cmd.is_empty() {
+            match_ctx = match_ctx.cmdline(&proc.cmd);
+        }
+        let signature_match = signature_db.best_match(&match_ctx);
+        if signature_match.is_some() {
+            signature_match_count = signature_match_count.saturating_add(1);
+        }
+
+        let mut fast_path_used = false;
+        let mut fast_path_skip_reason: Option<&'static str> = None;
+        let prior_source_label: String;
+        let prior_context = PriorContext {
+            global_priors: &priors,
+            signature_match: signature_match.as_ref(),
+            user_overrides: None,
         };
 
+        let (posterior_result, mut ledger) = if let Some(sig_match) = signature_match.as_ref() {
+            match try_signature_fast_path(&fast_path_config, Some(sig_match), proc.pid.0) {
+                Ok(Some(fast_path)) => {
+                    fast_path_used = true;
+                    signature_fast_path_used_count =
+                        signature_fast_path_used_count.saturating_add(1);
+                    prior_source_label = "signature_fast_path".to_string();
+                    (fast_path.posterior, fast_path.ledger)
+                }
+                Ok(None) => match compute_posterior_with_overrides(&prior_context, &evidence) {
+                    Ok((result, source_info)) => {
+                        prior_source_label = source_info.source.to_string();
+                        let ledger =
+                            EvidenceLedger::from_posterior_result(&result, Some(proc.pid.0), None);
+                        (result, ledger)
+                    }
+                    Err(_) => continue,
+                },
+                Err(reason) => {
+                    fast_path_skip_reason = Some(fast_path_skip_reason_label(reason));
+                    match compute_posterior_with_overrides(&prior_context, &evidence) {
+                        Ok((result, source_info)) => {
+                            prior_source_label = source_info.source.to_string();
+                            let ledger = EvidenceLedger::from_posterior_result(
+                                &result,
+                                Some(proc.pid.0),
+                                None,
+                            );
+                            (result, ledger)
+                        }
+                        Err(_) => continue,
+                    }
+                }
+            }
+        } else {
+            match compute_posterior_with_overrides(&prior_context, &evidence) {
+                Ok((result, source_info)) => {
+                    prior_source_label = source_info.source.to_string();
+                    let ledger =
+                        EvidenceLedger::from_posterior_result(&result, Some(proc.pid.0), None);
+                    (result, ledger)
+                }
+                Err(_) => continue,
+            }
+        };
+
+        let signature_name = signature_match.as_ref().map(|m| m.signature.name.clone());
+        let signature_level = signature_match
+            .as_ref()
+            .map(|m| match_level_label(m.level).to_string());
+        let signature_score = signature_match.as_ref().map(|m| m.score);
+        let signature_category = signature_match
+            .as_ref()
+            .map(|m| format!("{:?}", m.signature.category));
+
+        if let Some(sig_match) = signature_match.as_ref() {
+            if !fast_path_used {
+                ledger.top_evidence.insert(
+                    0,
+                    format!(
+                        "Signature match: {} (score={:.2}, level={})",
+                        sig_match.signature.name,
+                        sig_match.score,
+                        match_level_label(sig_match.level)
+                    ),
+                );
+                ledger.why_summary = format!(
+                    "Matched signature '{}' (score {:.2}, level {}, prior source {}). {}",
+                    sig_match.signature.name,
+                    sig_match.score,
+                    match_level_label(sig_match.level),
+                    prior_source_label,
+                    ledger.why_summary
+                );
+            }
+        }
+
         // Compute decision (optimal action based on expected loss)
-        let decision_outcome =
+        let mut decision_outcome =
             match decide_action(&posterior_result.posterior, &decision_policy, &feasibility) {
                 Ok(d) => d,
                 Err(_) => continue, // Skip processes that fail decision
             };
-
-        // Build evidence ledger for classification and confidence
-        let ledger =
-            EvidenceLedger::from_posterior_result(&posterior_result, Some(proc.pid.0), None);
+        decision_outcome.rationale.has_known_signature = Some(signature_match.is_some());
 
         // Determine max posterior class for filtering
         let posterior = &posterior_result.posterior;
@@ -8791,6 +8921,24 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
                 "useful_bad": posterior.useful_bad,
                 "abandoned": posterior.abandoned,
                 "zombie": posterior.zombie,
+            },
+            "signature": {
+                "matched": signature_match.is_some(),
+                "name": signature_name,
+                "category": signature_category,
+                "score": signature_score,
+                "match_level": signature_level,
+            },
+            "inference": {
+                "mode": if fast_path_used { "signature_fast_path" } else { "bayesian" },
+                "prior_source": prior_source_label,
+                "fast_path": {
+                    "enabled": fast_path_config.enabled,
+                    "used": fast_path_used,
+                    "skip_reason": fast_path_skip_reason,
+                    "min_confidence_threshold": fast_path_config.min_confidence_threshold,
+                    "require_explicit_priors": fast_path_config.require_explicit_priors,
+                },
             },
             "confidence": ledger.confidence.label(),
             "evidence": evidence_contributions,
@@ -9029,6 +9177,11 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         "kill_recommendations": kill_candidates.len(),
         "review_recommendations": review_candidates.len(),
         "policy_blocked": policy_blocked_count,
+        "signature_matches": signature_match_count,
+        "signature_fast_path_used": signature_fast_path_used_count,
+        "signature_fast_path_enabled": fast_path_config.enabled,
+        "signature_fast_path_min_confidence_threshold": fast_path_config.min_confidence_threshold,
+        "signature_fast_path_require_explicit_priors": fast_path_config.require_explicit_priors,
         "threshold_used": args.min_posterior,
         "filter_used": args.only,
     });

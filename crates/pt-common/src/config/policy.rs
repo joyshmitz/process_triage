@@ -35,6 +35,10 @@ pub struct Policy {
     /// Robot mode gates
     pub robot_mode: RobotMode,
 
+    /// Signature-informed fast-path controls for inference
+    #[serde(default)]
+    pub signature_fast_path: SignatureFastPath,
+
     /// False discovery rate control
     pub fdr_control: FdrControl,
 
@@ -73,6 +77,9 @@ impl Policy {
         // Validate robot mode
         self.robot_mode.validate()?;
 
+        // Validate signature fast-path controls
+        self.signature_fast_path.validate()?;
+
         // Validate FDR control
         self.fdr_control.validate()?;
 
@@ -92,11 +99,55 @@ impl Default for Policy {
             loss_matrix: LossMatrix::default(),
             guardrails: Guardrails::default(),
             robot_mode: RobotMode::default(),
+            signature_fast_path: SignatureFastPath::default(),
             fdr_control: FdrControl::default(),
             data_loss_gates: DataLossGates::default(),
             load_aware: LoadAwareDecision::default(),
             inherits: vec![],
             notes: None,
+        }
+    }
+}
+
+/// Signature-informed inference fast-path controls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureFastPath {
+    /// Whether high-confidence signature matches may bypass full inference.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+
+    /// Minimum signature match score required for fast-path.
+    #[serde(default = "default_fast_path_threshold")]
+    pub min_confidence_threshold: f64,
+
+    /// Require explicit signature priors for fast-path eligibility.
+    #[serde(default = "default_true")]
+    pub require_explicit_priors: bool,
+}
+
+fn default_fast_path_threshold() -> f64 {
+    0.9
+}
+
+impl SignatureFastPath {
+    /// Validate signature fast-path settings.
+    pub fn validate(&self) -> Result<()> {
+        if !(0.0..=1.0).contains(&self.min_confidence_threshold) {
+            return Err(Error::InvalidPolicy(format!(
+                "signature_fast_path.min_confidence_threshold must be in [0, 1] (got {})",
+                self.min_confidence_threshold
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl Default for SignatureFastPath {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_confidence_threshold: default_fast_path_threshold(),
+            require_explicit_priors: true,
         }
     }
 }

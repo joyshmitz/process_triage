@@ -27,6 +27,8 @@ pub struct Policy {
     pub loss_matrix: LossMatrix,
     pub guardrails: Guardrails,
     pub robot_mode: RobotMode,
+    #[serde(default)]
+    pub signature_fast_path: SignatureFastPath,
     pub fdr_control: FdrControl,
     pub data_loss_gates: DataLossGates,
     #[serde(default)]
@@ -285,6 +287,21 @@ pub struct RobotMode {
     pub require_human_for_supervised: bool,
 }
 
+/// Signature-informed inference fast-path controls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignatureFastPath {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_fast_path_threshold")]
+    pub min_confidence_threshold: f64,
+    #[serde(default = "default_true")]
+    pub require_explicit_priors: bool,
+}
+
+fn default_fast_path_threshold() -> f64 {
+    0.9
+}
+
 /// Confidence level enum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -470,6 +487,16 @@ impl Default for RobotMode {
     }
 }
 
+impl Default for SignatureFastPath {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_confidence_threshold: default_fast_path_threshold(),
+            require_explicit_priors: true,
+        }
+    }
+}
+
 impl Default for FdrControl {
     fn default() -> Self {
         Self {
@@ -508,6 +535,7 @@ impl Default for Policy {
             loss_matrix: LossMatrix::default(),
             guardrails: Guardrails::default(),
             robot_mode: RobotMode::default(),
+            signature_fast_path: SignatureFastPath::default(),
             fdr_control: FdrControl::default(),
             data_loss_gates: DataLossGates::default(),
             load_aware: LoadAwareDecision::default(),

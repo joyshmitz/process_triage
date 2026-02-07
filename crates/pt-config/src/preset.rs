@@ -9,7 +9,7 @@
 use crate::policy::{
     AlphaInvesting, ConfidenceLevel, DataLossGates, DecisionTimeBound, FdrControl, FdrMethod,
     Guardrails, LoadAwareDecision, LossMatrix, LossRow, PatternEntry, PatternKind, Policy,
-    RobotMode,
+    RobotMode, SignatureFastPath,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -233,6 +233,7 @@ fn developer_preset() -> Policy {
             exclude_categories: Vec::new(),
             require_human_for_supervised: false, // Can kill supervised dev tools
         },
+        signature_fast_path: SignatureFastPath::default(),
 
         fdr_control: FdrControl {
             enabled: true,
@@ -428,6 +429,7 @@ fn server_preset() -> Policy {
             ],
             require_human_for_supervised: true,
         },
+        signature_fast_path: SignatureFastPath::default(),
 
         fdr_control: FdrControl {
             enabled: true,
@@ -588,6 +590,7 @@ fn ci_preset() -> Policy {
             exclude_categories: vec!["ci_runner".to_string()],
             require_human_for_supervised: false, // Fully automated
         },
+        signature_fast_path: SignatureFastPath::default(),
 
         fdr_control: FdrControl {
             enabled: true,
@@ -847,6 +850,7 @@ fn paranoid_preset() -> Policy {
             ],
             require_human_for_supervised: true,
         },
+        signature_fast_path: SignatureFastPath::default(),
 
         fdr_control: FdrControl {
             enabled: true,

@@ -142,6 +142,10 @@ pub use robust::{
 pub use robust_stats::{
     summarize as summarize_robust_stats, RobustStatsConfig, RobustStatsError, RobustSummary,
 };
+pub use signature_fast_path::{
+    fast_path_potentially_applicable, try_signature_fast_path, FastPathConfig, FastPathResult,
+    FastPathSkipReason,
+};
 pub use sketches::{
     CountMinConfig, CountMinSketch, HeavyHitter, PercentileSummary, SketchError, SketchEvidence,
     SketchManager, SketchManagerConfig, SketchResult, SketchSummary, SpaceSaving,

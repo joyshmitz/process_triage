@@ -361,6 +361,18 @@ pub fn validate_policy(policy: &Policy) -> Result<(), ValidationError> {
         });
     }
 
+    if policy.signature_fast_path.min_confidence_threshold < 0.0
+        || policy.signature_fast_path.min_confidence_threshold > 1.0
+    {
+        return Err(ValidationError::InvalidValue {
+            field: "signature_fast_path.min_confidence_threshold".to_string(),
+            message: format!(
+                "must be in [0, 1] (got {})",
+                policy.signature_fast_path.min_confidence_threshold
+            ),
+        });
+    }
+
     validate_load_aware(&policy.load_aware)?;
 
     Ok(())
