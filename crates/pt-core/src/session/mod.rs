@@ -729,3 +729,648 @@ fn write_json_pretty_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), 
     })?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pt_common::SessionId;
+
+    // ── SessionState serde ──────────────────────────────────────────
+
+    #[test]
+    fn session_state_serde_roundtrip() {
+        for state in [
+            SessionState::Created,
+            SessionState::Scanning,
+            SessionState::Planned,
+            SessionState::Executing,
+            SessionState::Completed,
+            SessionState::Cancelled,
+            SessionState::Failed,
+            SessionState::Archived,
+        ] {
+            let json = serde_json::to_string(&state).unwrap();
+            let back: SessionState = serde_json::from_str(&json).unwrap();
+            assert_eq!(state, back);
+        }
+    }
+
+    #[test]
+    fn session_state_snake_case() {
+        assert_eq!(serde_json::to_string(&SessionState::Created).unwrap(), r#""created""#);
+        assert_eq!(serde_json::to_string(&SessionState::Scanning).unwrap(), r#""scanning""#);
+        assert_eq!(serde_json::to_string(&SessionState::Completed).unwrap(), r#""completed""#);
+    }
+
+    // ── SessionMode serde ───────────────────────────────────────────
+
+    #[test]
+    fn session_mode_serde_roundtrip() {
+        for mode in [
+            SessionMode::Interactive,
+            SessionMode::RobotPlan,
+            SessionMode::RobotApply,
+            SessionMode::DaemonAlert,
+            SessionMode::ScanOnly,
+            SessionMode::Export,
+        ] {
+            let json = serde_json::to_string(&mode).unwrap();
+            let back: SessionMode = serde_json::from_str(&json).unwrap();
+            assert_eq!(mode, back);
+        }
+    }
+
+    #[test]
+    fn session_mode_snake_case() {
+        assert_eq!(serde_json::to_string(&SessionMode::RobotPlan).unwrap(), r#""robot_plan""#);
+        assert_eq!(serde_json::to_string(&SessionMode::DaemonAlert).unwrap(), r#""daemon_alert""#);
+        assert_eq!(serde_json::to_string(&SessionMode::ScanOnly).unwrap(), r#""scan_only""#);
+    }
+
+    // ── SessionManifest ─────────────────────────────────────────────
+
+    #[test]
+    fn manifest_new_sets_created_state() {
+        let sid = SessionId("pt-20260115-120000-abcd".to_string());
+        let m = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        assert_eq!(m.session_id, "pt-20260115-120000-abcd");
+        assert_eq!(m.state, SessionState::Created);
+        assert!(m.parent_session_id.is_none());
+        assert_eq!(m.mode, SessionMode::Interactive);
+        assert!(m.label.is_none());
+        assert!(m.error.is_none());
+        assert_eq!(m.schema_version, pt_common::SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn manifest_new_has_initial_state_history() {
+        let sid = SessionId("pt-test".to_string());
+        let m = SessionManifest::new(&sid, None, SessionMode::ScanOnly, None);
+        assert_eq!(m.state_history.len(), 1);
+        assert_eq!(m.state_history[0].state, SessionState::Created);
+        assert!(!m.state_history[0].ts.is_empty());
+    }
+
+    #[test]
+    fn manifest_new_with_parent_and_label() {
+        let sid = SessionId("pt-child".to_string());
+        let parent = SessionId("pt-parent".to_string());
+        let m = SessionManifest::new(&sid, Some(&parent), SessionMode::RobotApply, Some("test run".to_string()));
+        assert_eq!(m.parent_session_id.as_deref(), Some("pt-parent"));
+        assert_eq!(m.label.as_deref(), Some("test run"));
+    }
+
+    #[test]
+    fn manifest_record_state_appends_history() {
+        let sid = SessionId("pt-test".to_string());
+        let mut m = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        m.record_state(SessionState::Scanning);
+        assert_eq!(m.state, SessionState::Scanning);
+        assert_eq!(m.state_history.len(), 2);
+        assert_eq!(m.state_history[1].state, SessionState::Scanning);
+        assert!(m.timing.updated_at.is_some());
+    }
+
+    #[test]
+    fn manifest_record_state_multiple() {
+        let sid = SessionId("pt-test".to_string());
+        let mut m = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        m.record_state(SessionState::Scanning);
+        m.record_state(SessionState::Planned);
+        m.record_state(SessionState::Executing);
+        m.record_state(SessionState::Completed);
+        assert_eq!(m.state, SessionState::Completed);
+        assert_eq!(m.state_history.len(), 5);
+    }
+
+    #[test]
+    fn manifest_timing_created_at_set() {
+        let sid = SessionId("pt-test".to_string());
+        let m = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        assert!(!m.timing.created_at.is_empty());
+        assert!(m.timing.updated_at.is_none());
+    }
+
+    #[test]
+    fn manifest_serde_roundtrip() {
+        let sid = SessionId("pt-test".to_string());
+        let m = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let json = serde_json::to_string(&m).unwrap();
+        let back: SessionManifest = serde_json::from_str(&json).unwrap();
+        assert_eq!(m.session_id, back.session_id);
+        assert_eq!(m.state, back.state);
+        assert_eq!(m.mode, back.mode);
+    }
+
+    // ── SessionContext ──────────────────────────────────────────────
+
+    #[test]
+    fn context_new_sets_fields() {
+        let sid = SessionId("pt-test".to_string());
+        let ctx = SessionContext::new(&sid, "host1".to_string(), "run1".to_string(), None);
+        assert_eq!(ctx.session_id, "pt-test");
+        assert_eq!(ctx.host_id, "host1");
+        assert_eq!(ctx.run_id, "run1");
+        assert!(ctx.label.is_none());
+        assert!(!ctx.generated_at.is_empty());
+        assert_eq!(ctx.schema_version, pt_common::SCHEMA_VERSION);
+        assert!(!ctx.os.family.is_empty());
+        assert!(!ctx.os.arch.is_empty());
+    }
+
+    #[test]
+    fn context_new_with_label() {
+        let sid = SessionId("pt-test".to_string());
+        let ctx = SessionContext::new(&sid, "h".to_string(), "r".to_string(), Some("my run".to_string()));
+        assert_eq!(ctx.label.as_deref(), Some("my run"));
+    }
+
+    #[test]
+    fn context_serde_roundtrip() {
+        let sid = SessionId("pt-test".to_string());
+        let ctx = SessionContext::new(&sid, "host".to_string(), "run".to_string(), None);
+        let json = serde_json::to_string(&ctx).unwrap();
+        let back: SessionContext = serde_json::from_str(&json).unwrap();
+        assert_eq!(ctx.session_id, back.session_id);
+        assert_eq!(ctx.host_id, back.host_id);
+    }
+
+    // ── ListSessionsOptions ─────────────────────────────────────────
+
+    #[test]
+    fn list_sessions_options_defaults() {
+        let opts = ListSessionsOptions::default();
+        assert!(opts.limit.is_none());
+        assert!(opts.state.is_none());
+        assert!(opts.older_than.is_none());
+    }
+
+    // ── CleanupResult ───────────────────────────────────────────────
+
+    #[test]
+    fn cleanup_result_serde_roundtrip() {
+        let result = CleanupResult {
+            removed_count: 3,
+            removed_sessions: vec!["s1".to_string(), "s2".to_string(), "s3".to_string()],
+            preserved_count: 1,
+            errors: vec![],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: CleanupResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(result.removed_count, back.removed_count);
+        assert_eq!(result.removed_sessions.len(), back.removed_sessions.len());
+    }
+
+    // ── SessionError ────────────────────────────────────────────────
+
+    #[test]
+    fn session_error_display() {
+        let e = SessionError::DataDirUnavailable;
+        let msg = format!("{}", e);
+        assert!(msg.contains("XDG"));
+
+        let e = SessionError::NotFound { session_id: "pt-123".to_string() };
+        let msg = format!("{}", e);
+        assert!(msg.contains("pt-123"));
+    }
+
+    // ── SnapshotConfigFile ──────────────────────────────────────────
+
+    #[test]
+    fn snapshot_config_file_serde() {
+        let scf = SnapshotConfigFile {
+            path: Some("/etc/priors.json".to_string()),
+            hash: Some("abc123".to_string()),
+            schema_version: "1.0".to_string(),
+            using_defaults: false,
+        };
+        let json = serde_json::to_string(&scf).unwrap();
+        let back: SnapshotConfigFile = serde_json::from_str(&json).unwrap();
+        assert_eq!(scf.path, back.path);
+        assert!(!back.using_defaults);
+    }
+
+    // ── SessionStore with tempdir ───────────────────────────────────
+
+    fn make_store(dir: &std::path::Path) -> SessionStore {
+        SessionStore {
+            sessions_root: dir.to_path_buf(),
+        }
+    }
+
+    #[test]
+    fn store_create_and_open_session() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-20260115-120000-abcd".to_string());
+        let manifest = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let handle = store.create(&manifest).unwrap();
+        assert!(handle.dir.exists());
+        assert!(handle.manifest_path().exists());
+
+        // Verify subdirectories are created
+        assert!(handle.dir.join("scan").exists());
+        assert!(handle.dir.join("inference").exists());
+        assert!(handle.dir.join("decision").exists());
+        assert!(handle.dir.join("action").exists());
+        assert!(handle.dir.join("telemetry").exists());
+        assert!(handle.dir.join("logs").exists());
+        assert!(handle.dir.join("exports").exists());
+
+        // Can re-open
+        let handle2 = store.open(&sid).unwrap();
+        assert_eq!(handle.dir, handle2.dir);
+    }
+
+    #[test]
+    fn store_open_nonexistent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-nonexistent".to_string());
+        let result = store.open(&sid);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            SessionError::NotFound { session_id } => assert_eq!(session_id, "pt-nonexistent"),
+            other => panic!("expected NotFound, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn handle_read_write_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-20260115-120000-test".to_string());
+        let manifest = SessionManifest::new(&sid, None, SessionMode::RobotPlan, Some("test".to_string()));
+        let handle = store.create(&manifest).unwrap();
+        let read_back = handle.read_manifest().unwrap();
+        assert_eq!(read_back.session_id, "pt-20260115-120000-test");
+        assert_eq!(read_back.mode, SessionMode::RobotPlan);
+        assert_eq!(read_back.label.as_deref(), Some("test"));
+    }
+
+    #[test]
+    fn handle_write_context() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-20260115-120000-ctx".to_string());
+        let manifest = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let handle = store.create(&manifest).unwrap();
+        let ctx = SessionContext::new(&sid, "host".to_string(), "run".to_string(), None);
+        handle.write_context(&ctx).unwrap();
+        assert!(handle.context_path().exists());
+
+        let content = std::fs::read_to_string(handle.context_path()).unwrap();
+        let back: SessionContext = serde_json::from_str(&content).unwrap();
+        assert_eq!(back.host_id, "host");
+    }
+
+    #[test]
+    fn handle_write_capabilities_valid_json() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-20260115-120000-cap".to_string());
+        let manifest = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let handle = store.create(&manifest).unwrap();
+        handle.write_capabilities_json(r#"{"can_kill":true}"#).unwrap();
+        assert!(handle.capabilities_path().exists());
+        let content = std::fs::read_to_string(handle.capabilities_path()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(v["can_kill"], true);
+    }
+
+    #[test]
+    fn handle_write_capabilities_invalid_json_wraps() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-20260115-120000-bad".to_string());
+        let manifest = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let handle = store.create(&manifest).unwrap();
+        handle.write_capabilities_json("not json at all").unwrap();
+        let content = std::fs::read_to_string(handle.capabilities_path()).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(v["raw"], "not json at all");
+    }
+
+    #[test]
+    fn handle_update_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-20260115-120000-upd".to_string());
+        let manifest = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let handle = store.create(&manifest).unwrap();
+        let updated = handle.update_state(SessionState::Scanning).unwrap();
+        assert_eq!(updated.state, SessionState::Scanning);
+        assert_eq!(updated.state_history.len(), 2);
+
+        // Read back from disk confirms persistence
+        let read_back = handle.read_manifest().unwrap();
+        assert_eq!(read_back.state, SessionState::Scanning);
+    }
+
+    #[test]
+    fn handle_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-20260115-120000-pth".to_string());
+        let manifest = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let handle = store.create(&manifest).unwrap();
+        assert!(handle.manifest_path().ends_with("manifest.json"));
+        assert!(handle.context_path().ends_with("context.json"));
+        assert!(handle.capabilities_path().ends_with("capabilities.json"));
+        assert!(handle.snapshot_path().ends_with("scan/snapshot.json"));
+    }
+
+    #[test]
+    fn store_sessions_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        assert_eq!(store.sessions_root(), tmp.path());
+    }
+
+    #[test]
+    fn store_session_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let sid = SessionId("pt-test".to_string());
+        assert_eq!(store.session_dir(&sid), tmp.path().join("pt-test"));
+    }
+
+    // ── list_sessions ───────────────────────────────────────────────
+
+    #[test]
+    fn list_sessions_empty_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+        let result = store.list_sessions(&ListSessionsOptions::default()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn list_sessions_nonexistent_root() {
+        let store = make_store(Path::new("/tmp/nonexistent-pt-test-root-12345"));
+        let result = store.list_sessions(&ListSessionsOptions::default()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn list_sessions_finds_created_sessions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        let sid1 = SessionId("pt-20260115-120000-aaaa".to_string());
+        let m1 = SessionManifest::new(&sid1, None, SessionMode::Interactive, None);
+        store.create(&m1).unwrap();
+
+        let sid2 = SessionId("pt-20260115-120001-bbbb".to_string());
+        let m2 = SessionManifest::new(&sid2, None, SessionMode::RobotPlan, None);
+        store.create(&m2).unwrap();
+
+        let result = store.list_sessions(&ListSessionsOptions::default()).unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn list_sessions_with_limit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        for i in 0..5 {
+            let sid = SessionId(format!("pt-20260115-12000{}-{:04}", i, i));
+            let m = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+            store.create(&m).unwrap();
+        }
+
+        let opts = ListSessionsOptions { limit: Some(3), ..Default::default() };
+        let result = store.list_sessions(&opts).unwrap();
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn list_sessions_filter_by_state() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        let sid1 = SessionId("pt-20260115-120000-aaaa".to_string());
+        let m1 = SessionManifest::new(&sid1, None, SessionMode::Interactive, None);
+        let h1 = store.create(&m1).unwrap();
+        h1.update_state(SessionState::Completed).unwrap();
+
+        let sid2 = SessionId("pt-20260115-120001-bbbb".to_string());
+        let m2 = SessionManifest::new(&sid2, None, SessionMode::Interactive, None);
+        store.create(&m2).unwrap(); // stays Created
+
+        let opts = ListSessionsOptions {
+            state: Some(SessionState::Completed),
+            ..Default::default()
+        };
+        let result = store.list_sessions(&opts).unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].session_id, "pt-20260115-120000-aaaa");
+    }
+
+    #[test]
+    fn list_sessions_skips_non_session_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        // Create a dir that doesn't match session format
+        std::fs::create_dir(tmp.path().join("random-dir")).unwrap();
+        // Create a dir too short to be session ID
+        std::fs::create_dir(tmp.path().join("pt-short")).unwrap();
+
+        let result = store.list_sessions(&ListSessionsOptions::default()).unwrap();
+        assert!(result.is_empty());
+    }
+
+    // ── cleanup_sessions ────────────────────────────────────────────
+
+    #[test]
+    fn cleanup_preserves_executing_sessions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        let sid = SessionId("pt-20260101-000000-exec".to_string());
+        let m = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let h = store.create(&m).unwrap();
+        h.update_state(SessionState::Executing).unwrap();
+
+        let result = store.cleanup_sessions(Duration::zero()).unwrap();
+        assert_eq!(result.preserved_count, 1);
+        assert_eq!(result.removed_count, 0);
+        assert!(store.session_dir(&sid).exists());
+    }
+
+    #[test]
+    fn cleanup_removes_completed_sessions() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path());
+
+        let sid = SessionId("pt-20260101-000000-done".to_string());
+        let m = SessionManifest::new(&sid, None, SessionMode::Interactive, None);
+        let h = store.create(&m).unwrap();
+        h.update_state(SessionState::Completed).unwrap();
+
+        let result = store.cleanup_sessions(Duration::zero()).unwrap();
+        assert_eq!(result.removed_count, 1);
+        assert!(!store.session_dir(&sid).exists());
+    }
+
+    // ── count_candidates / count_actions ─────────────────────────────
+
+    #[test]
+    fn count_candidates_none_when_no_plan() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(count_candidates(tmp.path()).is_none());
+    }
+
+    #[test]
+    fn count_candidates_from_candidates_array() {
+        let tmp = tempfile::tempdir().unwrap();
+        let decision_dir = tmp.path().join("decision");
+        std::fs::create_dir_all(&decision_dir).unwrap();
+        let plan = serde_json::json!({
+            "candidates": [{"pid": 1}, {"pid": 2}, {"pid": 3}]
+        });
+        std::fs::write(decision_dir.join("plan.json"), plan.to_string()).unwrap();
+        assert_eq!(count_candidates(tmp.path()), Some(3));
+    }
+
+    #[test]
+    fn count_actions_none_when_no_outcomes() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(count_actions(tmp.path()).is_none());
+    }
+
+    #[test]
+    fn count_actions_counts_lines() {
+        let tmp = tempfile::tempdir().unwrap();
+        let action_dir = tmp.path().join("action");
+        std::fs::create_dir_all(&action_dir).unwrap();
+        std::fs::write(
+            action_dir.join("outcomes.jsonl"),
+            "{\"action\":\"kill\"}\n{\"action\":\"spare\"}\n",
+        ).unwrap();
+        assert_eq!(count_actions(tmp.path()), Some(2));
+    }
+
+    #[test]
+    fn count_actions_skips_empty_lines() {
+        let tmp = tempfile::tempdir().unwrap();
+        let action_dir = tmp.path().join("action");
+        std::fs::create_dir_all(&action_dir).unwrap();
+        std::fs::write(
+            action_dir.join("outcomes.jsonl"),
+            "{\"a\":1}\n\n{\"a\":2}\n  \n",
+        ).unwrap();
+        assert_eq!(count_actions(tmp.path()), Some(2));
+    }
+
+    // ── write_json_pretty / write_json_pretty_atomic ────────────────
+
+    #[test]
+    fn write_json_pretty_creates_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("test.json");
+        let value = serde_json::json!({"hello": "world"});
+        write_json_pretty(&path, &value).unwrap();
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("hello"));
+        assert!(content.contains("world"));
+    }
+
+    #[test]
+    fn write_json_pretty_creates_parent_dirs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("a").join("b").join("test.json");
+        write_json_pretty(&path, &serde_json::json!({"ok": true})).unwrap();
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn write_json_pretty_atomic_creates_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("atomic.json");
+        let value = serde_json::json!({"atomic": true});
+        write_json_pretty_atomic(&path, &value).unwrap();
+        assert!(path.exists());
+        let content = std::fs::read_to_string(&path).unwrap();
+        let back: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(back["atomic"], true);
+    }
+
+    #[test]
+    fn write_json_pretty_atomic_no_temp_file_left() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("clean.json");
+        write_json_pretty_atomic(&path, &serde_json::json!({})).unwrap();
+        // No .tmp files should remain
+        let entries: Vec<_> = std::fs::read_dir(tmp.path()).unwrap().collect();
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].as_ref().unwrap().file_name().to_str().unwrap() == "clean.json");
+    }
+
+    // ── SnapshotHost / SnapshotScanSummary ──────────────────────────
+
+    #[test]
+    fn snapshot_host_serde() {
+        let h = SnapshotHost {
+            hostname: "test-host".to_string(),
+            cores: 8,
+            memory_total_gb: 32.0,
+            memory_used_gb: 16.5,
+            load_avg: vec![1.0, 2.0, 3.0],
+        };
+        let json = serde_json::to_string(&h).unwrap();
+        let back: SnapshotHost = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.hostname, "test-host");
+        assert_eq!(back.cores, 8);
+    }
+
+    #[test]
+    fn snapshot_scan_summary_serde() {
+        let s = SnapshotScanSummary {
+            total_processes: 500,
+            protected_filtered: 100,
+            candidates_evaluated: 50,
+            scan_duration_ms: 1200,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let back: SnapshotScanSummary = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.total_processes, 500);
+    }
+
+    // ── SessionSummary ──────────────────────────────────────────────
+
+    #[test]
+    fn session_summary_serde_skip_none() {
+        let s = SessionSummary {
+            session_id: "pt-test".to_string(),
+            created_at: "2026-01-15T00:00:00Z".to_string(),
+            state: SessionState::Created,
+            mode: SessionMode::Interactive,
+            label: None,
+            host_id: None,
+            candidates_count: None,
+            actions_count: None,
+            path: PathBuf::from("/tmp/test"),
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(!json.contains("label"));
+        assert!(!json.contains("candidates_count"));
+        assert!(!json.contains("actions_count"));
+    }
+
+    // ── StateTransition ─────────────────────────────────────────────
+
+    #[test]
+    fn state_transition_serde() {
+        let t = StateTransition {
+            state: SessionState::Scanning,
+            ts: "2026-01-15T00:00:00Z".to_string(),
+        };
+        let json = serde_json::to_string(&t).unwrap();
+        let back: StateTransition = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.state, SessionState::Scanning);
+    }
+}
