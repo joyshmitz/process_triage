@@ -310,3 +310,464 @@ impl Classification {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::inference::posterior::{ClassScores, EvidenceTerm, PosteriorResult};
+
+    fn make_posterior(useful: f64, useful_bad: f64, abandoned: f64, zombie: f64) -> PosteriorResult {
+        PosteriorResult {
+            posterior: ClassScores {
+                useful,
+                useful_bad,
+                abandoned,
+                zombie,
+            },
+            log_posterior: ClassScores::default(),
+            log_odds_abandoned_useful: 0.0,
+            evidence_terms: vec![],
+        }
+    }
+
+    fn make_posterior_with_terms(
+        useful: f64,
+        abandoned: f64,
+        terms: Vec<EvidenceTerm>,
+    ) -> PosteriorResult {
+        PosteriorResult {
+            posterior: ClassScores {
+                useful,
+                useful_bad: 0.0,
+                abandoned,
+                zombie: 0.0,
+            },
+            log_posterior: ClassScores::default(),
+            log_odds_abandoned_useful: 0.0,
+            evidence_terms: terms,
+        }
+    }
+
+    fn make_term(feature: &str, abandoned_ll: f64, useful_ll: f64) -> EvidenceTerm {
+        EvidenceTerm {
+            feature: feature.to_string(),
+            log_likelihood: ClassScores {
+                useful: useful_ll,
+                useful_bad: 0.0,
+                abandoned: abandoned_ll,
+                zombie: 0.0,
+            },
+        }
+    }
+
+    // ── Classification ──────────────────────────────────────────────
+
+    #[test]
+    fn classification_label_useful() {
+        assert_eq!(Classification::Useful.label(), "useful");
+    }
+
+    #[test]
+    fn classification_label_useful_bad() {
+        assert_eq!(Classification::UsefulBad.label(), "useful_bad");
+    }
+
+    #[test]
+    fn classification_label_abandoned() {
+        assert_eq!(Classification::Abandoned.label(), "abandoned");
+    }
+
+    #[test]
+    fn classification_label_zombie() {
+        assert_eq!(Classification::Zombie.label(), "zombie");
+    }
+
+    #[test]
+    fn classification_serde_roundtrip() {
+        for c in [
+            Classification::Useful,
+            Classification::UsefulBad,
+            Classification::Abandoned,
+            Classification::Zombie,
+        ] {
+            let json = serde_json::to_string(&c).unwrap();
+            let back: Classification = serde_json::from_str(&json).unwrap();
+            assert_eq!(c, back);
+        }
+    }
+
+    #[test]
+    fn classification_serde_snake_case() {
+        assert_eq!(serde_json::to_string(&Classification::UsefulBad).unwrap(), r#""useful_bad""#);
+        assert_eq!(serde_json::to_string(&Classification::Abandoned).unwrap(), r#""abandoned""#);
+    }
+
+    // ── Confidence ──────────────────────────────────────────────────
+
+    #[test]
+    fn confidence_label_values() {
+        assert_eq!(Confidence::VeryHigh.label(), "very_high");
+        assert_eq!(Confidence::High.label(), "high");
+        assert_eq!(Confidence::Medium.label(), "medium");
+        assert_eq!(Confidence::Low.label(), "low");
+    }
+
+    #[test]
+    fn confidence_display() {
+        assert_eq!(format!("{}", Confidence::VeryHigh), "very_high");
+        assert_eq!(format!("{}", Confidence::High), "high");
+        assert_eq!(format!("{}", Confidence::Medium), "medium");
+        assert_eq!(format!("{}", Confidence::Low), "low");
+    }
+
+    #[test]
+    fn confidence_serde_roundtrip() {
+        for c in [Confidence::VeryHigh, Confidence::High, Confidence::Medium, Confidence::Low] {
+            let json = serde_json::to_string(&c).unwrap();
+            let back: Confidence = serde_json::from_str(&json).unwrap();
+            assert_eq!(c, back);
+        }
+    }
+
+    #[test]
+    fn confidence_serde_snake_case() {
+        assert_eq!(serde_json::to_string(&Confidence::VeryHigh).unwrap(), r#""very_high""#);
+    }
+
+    // ── Direction ───────────────────────────────────────────────────
+
+    #[test]
+    fn direction_display() {
+        assert_eq!(format!("{}", Direction::TowardPredicted), "toward_predicted");
+        assert_eq!(format!("{}", Direction::TowardReference), "toward_reference");
+        assert_eq!(format!("{}", Direction::Neutral), "neutral");
+    }
+
+    #[test]
+    fn direction_serde() {
+        assert_eq!(serde_json::to_string(&Direction::TowardPredicted).unwrap(), r#""toward_predicted""#);
+        assert_eq!(serde_json::to_string(&Direction::TowardReference).unwrap(), r#""toward_reference""#);
+        assert_eq!(serde_json::to_string(&Direction::Neutral).unwrap(), r#""neutral""#);
+    }
+
+    // ── get_glyph / default_glyph_map ───────────────────────────────
+
+    #[test]
+    fn get_glyph_always_question_mark() {
+        assert_eq!(get_glyph("cpu"), '?');
+        assert_eq!(get_glyph("runtime"), '?');
+        assert_eq!(get_glyph(""), '?');
+    }
+
+    #[test]
+    fn default_glyph_map_empty() {
+        let map = default_glyph_map();
+        assert!(map.is_empty());
+    }
+
+    // ── EvidenceLedger::from_posterior_result ─────────────────────────
+
+    #[test]
+    fn ledger_classifies_useful_highest() {
+        let result = make_posterior(0.90, 0.05, 0.03, 0.02);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.classification, Classification::Useful);
+    }
+
+    #[test]
+    fn ledger_classifies_abandoned_highest() {
+        let result = make_posterior(0.05, 0.05, 0.85, 0.05);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.classification, Classification::Abandoned);
+    }
+
+    #[test]
+    fn ledger_classifies_zombie_highest() {
+        let result = make_posterior(0.01, 0.01, 0.01, 0.97);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.classification, Classification::Zombie);
+    }
+
+    #[test]
+    fn ledger_classifies_useful_bad_highest() {
+        let result = make_posterior(0.10, 0.80, 0.05, 0.05);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.classification, Classification::UsefulBad);
+    }
+
+    #[test]
+    fn ledger_confidence_very_high() {
+        let result = make_posterior(0.995, 0.002, 0.002, 0.001);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.confidence, Confidence::VeryHigh);
+    }
+
+    #[test]
+    fn ledger_confidence_high() {
+        let result = make_posterior(0.97, 0.01, 0.01, 0.01);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.confidence, Confidence::High);
+    }
+
+    #[test]
+    fn ledger_confidence_medium() {
+        let result = make_posterior(0.85, 0.05, 0.05, 0.05);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.confidence, Confidence::Medium);
+    }
+
+    #[test]
+    fn ledger_confidence_low() {
+        let result = make_posterior(0.40, 0.20, 0.30, 0.10);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.confidence, Confidence::Low);
+    }
+
+    #[test]
+    fn ledger_confidence_boundary_at_099() {
+        let result = make_posterior(0.99, 0.005, 0.003, 0.002);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.confidence, Confidence::High);
+    }
+
+    #[test]
+    fn ledger_confidence_boundary_at_095() {
+        let result = make_posterior(0.95, 0.02, 0.02, 0.01);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.confidence, Confidence::Medium);
+    }
+
+    #[test]
+    fn ledger_confidence_boundary_at_080() {
+        let result = make_posterior(0.80, 0.10, 0.05, 0.05);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.confidence, Confidence::Low);
+    }
+
+    #[test]
+    fn ledger_why_summary_format() {
+        let result = make_posterior(0.05, 0.05, 0.85, 0.05);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert!(ledger.why_summary.contains("Abandoned"));
+        assert!(ledger.why_summary.contains("medium"));
+    }
+
+    #[test]
+    fn ledger_bayes_factors_from_terms() {
+        let terms = vec![
+            make_term("cpu", -2.0, -0.5),
+            make_term("runtime", -0.1, -3.0),
+        ];
+        let result = make_posterior_with_terms(0.3, 0.7, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors.len(), 2);
+    }
+
+    #[test]
+    fn ledger_bayes_factor_direction_abandoned() {
+        let terms = vec![
+            make_term("runtime", -0.1, -3.0), // log_bf = 2.9 > 0
+        ];
+        let result = make_posterior_with_terms(0.3, 0.7, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors[0].direction, "supports abandoned");
+    }
+
+    #[test]
+    fn ledger_bayes_factor_direction_useful() {
+        let terms = vec![
+            make_term("cpu", -3.0, -0.1), // log_bf = -2.9 < 0
+        ];
+        let result = make_posterior_with_terms(0.8, 0.2, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors[0].direction, "supports useful");
+    }
+
+    #[test]
+    fn ledger_bayes_factor_strength_decisive() {
+        // |delta_bits| > 3.3
+        let terms = vec![
+            make_term("feature", 0.0, -5.0), // log_bf = 5.0, delta_bits ≈ 7.2
+        ];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors[0].strength, "decisive");
+    }
+
+    #[test]
+    fn ledger_bayes_factor_strength_strong() {
+        // 2.0 < |delta_bits| <= 3.3
+        let terms = vec![
+            make_term("feature", 0.0, -1.8), // log_bf = 1.8, delta_bits ≈ 2.6
+        ];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors[0].strength, "strong");
+    }
+
+    #[test]
+    fn ledger_bayes_factor_strength_substantial() {
+        // 1.0 < |delta_bits| <= 2.0
+        let terms = vec![
+            make_term("feature", 0.0, -1.0), // log_bf = 1.0, delta_bits ≈ 1.44
+        ];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors[0].strength, "substantial");
+    }
+
+    #[test]
+    fn ledger_bayes_factor_strength_weak() {
+        // |delta_bits| <= 1.0
+        let terms = vec![
+            make_term("feature", 0.0, -0.5), // log_bf = 0.5, delta_bits ≈ 0.72
+        ];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors[0].strength, "weak");
+    }
+
+    #[test]
+    fn ledger_skips_negligible_terms() {
+        let terms = vec![
+            make_term("negligible", -1.0, -1.005), // |log_bf| = 0.005 < 0.01
+            make_term("significant", 0.0, -2.0),
+        ];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors.len(), 1);
+        assert_eq!(ledger.bayes_factors[0].feature, "significant");
+    }
+
+    #[test]
+    fn ledger_bayes_factors_sorted_by_abs_delta_bits() {
+        let terms = vec![
+            make_term("small", 0.0, -0.5),
+            make_term("large", 0.0, -5.0),
+            make_term("medium", 0.0, -1.5),
+        ];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.bayes_factors[0].feature, "large");
+        assert_eq!(ledger.bayes_factors[1].feature, "medium");
+        assert_eq!(ledger.bayes_factors[2].feature, "small");
+    }
+
+    #[test]
+    fn ledger_top_evidence_limited_to_3() {
+        let terms = vec![
+            make_term("a", 0.0, -1.0),
+            make_term("b", 0.0, -2.0),
+            make_term("c", 0.0, -3.0),
+            make_term("d", 0.0, -4.0),
+            make_term("e", 0.0, -5.0),
+        ];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.top_evidence.len(), 3);
+    }
+
+    #[test]
+    fn ledger_top_evidence_toward_abandoned() {
+        let terms = vec![
+            make_term("runtime", 0.0, -3.0),
+        ];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert!(ledger.top_evidence[0].contains("runtime"));
+        assert!(ledger.top_evidence[0].contains("bits"));
+        assert!(ledger.top_evidence[0].contains("toward abandoned"));
+    }
+
+    #[test]
+    fn ledger_top_evidence_toward_useful() {
+        let terms = vec![
+            make_term("cpu", -3.0, 0.0), // log_bf < 0
+        ];
+        let result = make_posterior_with_terms(0.8, 0.2, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert!(ledger.top_evidence[0].contains("toward useful"));
+    }
+
+    #[test]
+    fn ledger_empty_terms_gives_empty_bayes_factors() {
+        let result = make_posterior(0.9, 0.05, 0.03, 0.02);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert!(ledger.bayes_factors.is_empty());
+        assert!(ledger.top_evidence.is_empty());
+    }
+
+    #[test]
+    fn ledger_evidence_glyphs_initially_empty() {
+        let result = make_posterior(0.9, 0.05, 0.03, 0.02);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert!(ledger.evidence_glyphs.is_empty());
+    }
+
+    #[test]
+    fn ledger_bf_is_exp_of_log_bf() {
+        let terms = vec![make_term("test", 0.0, -2.0)];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        let entry = &ledger.bayes_factors[0];
+        assert!((entry.bf - entry.log_bf.exp()).abs() < 1e-10);
+    }
+
+    #[test]
+    fn ledger_delta_bits_is_log_bf_over_ln2() {
+        let terms = vec![make_term("test", 0.0, -2.0)];
+        let result = make_posterior_with_terms(0.1, 0.9, terms);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        let entry = &ledger.bayes_factors[0];
+        let expected = entry.log_bf / std::f64::consts::LN_2;
+        assert!((entry.delta_bits - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn ledger_posterior_cloned() {
+        let result = make_posterior(0.5, 0.2, 0.2, 0.1);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        assert_eq!(ledger.posterior, result);
+    }
+
+    // ── BayesFactorEntry serde ──────────────────────────────────────
+
+    #[test]
+    fn bayes_factor_entry_serde_roundtrip() {
+        let entry = BayesFactorEntry {
+            feature: "runtime".to_string(),
+            bf: 7.389,
+            log_bf: 2.0,
+            delta_bits: 2.885,
+            direction: "supports abandoned".to_string(),
+            strength: "strong".to_string(),
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: BayesFactorEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(entry, back);
+    }
+
+    // ── EvidenceLedger serde ────────────────────────────────────────
+
+    #[test]
+    fn evidence_ledger_serde_roundtrip() {
+        let result = make_posterior(0.1, 0.05, 0.8, 0.05);
+        let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
+        let json = serde_json::to_string(&ledger).unwrap();
+        let back: EvidenceLedger = serde_json::from_str(&json).unwrap();
+        assert_eq!(ledger.classification, back.classification);
+        assert_eq!(ledger.confidence, back.confidence);
+    }
+
+    // ── FeatureGlyph ────────────────────────────────────────────────
+
+    #[test]
+    fn feature_glyph_debug() {
+        let fg = FeatureGlyph {
+            feature: "cpu".to_string(),
+            glyph: '?',
+        };
+        let dbg = format!("{:?}", fg);
+        assert!(dbg.contains("cpu"));
+    }
+}
