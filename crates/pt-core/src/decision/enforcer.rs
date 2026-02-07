@@ -1705,4 +1705,645 @@ mod tests {
         let result = enforcer.check_action(&candidate, Action::Kill, false);
         assert!(result.allowed);
     }
+
+    // ── ViolationKind serde ─────────────────────────────────────────
+
+    #[test]
+    fn violation_kind_serde_all_variants() {
+        let variants = [
+            ViolationKind::ProtectedPattern,
+            ViolationKind::ProtectedPid,
+            ViolationKind::ProtectedPpid,
+            ViolationKind::ProtectedUser,
+            ViolationKind::ProtectedGroup,
+            ViolationKind::ProtectedCategory,
+            ViolationKind::MinAgeBreach,
+            ViolationKind::RateLimitExceeded,
+            ViolationKind::RobotModeGate,
+            ViolationKind::DataLossGate,
+            ViolationKind::ForceReview,
+            ViolationKind::ProcessStateInvalid,
+        ];
+        for v in &variants {
+            let json = serde_json::to_string(v).unwrap();
+            assert!(!json.is_empty());
+        }
+        // Verify snake_case serialization
+        let json = serde_json::to_string(&ViolationKind::ProtectedPattern).unwrap();
+        assert_eq!(json, "\"protected_pattern\"");
+        let json = serde_json::to_string(&ViolationKind::RateLimitExceeded).unwrap();
+        assert_eq!(json, "\"rate_limit_exceeded\"");
+        let json = serde_json::to_string(&ViolationKind::ProcessStateInvalid).unwrap();
+        assert_eq!(json, "\"process_state_invalid\"");
+    }
+
+    // ── PolicyCheckResult serde ─────────────────────────────────────
+
+    #[test]
+    fn policy_check_result_serde_allowed() {
+        let result = PolicyCheckResult::allowed();
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"allowed\":true"));
+        assert!(json.contains("\"violation\":null"));
+    }
+
+    #[test]
+    fn policy_check_result_serde_blocked() {
+        let result = PolicyCheckResult::blocked(PolicyViolation {
+            kind: ViolationKind::ProtectedPid,
+            message: "PID 1 is protected".to_string(),
+            rule: "guardrails.never_kill_pid".to_string(),
+            context: None,
+        });
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"allowed\":false"));
+        assert!(json.contains("\"protected_pid\""));
+    }
+
+    #[test]
+    fn policy_check_result_with_warning() {
+        let result = PolicyCheckResult::allowed()
+            .with_warning("first warning".to_string())
+            .with_warning("second warning".to_string());
+        assert!(result.allowed);
+        assert_eq!(result.warnings.len(), 2);
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("first warning"));
+    }
+
+    // ── PolicyViolation serde ───────────────────────────────────────
+
+    #[test]
+    fn policy_violation_serde_with_context() {
+        let v = PolicyViolation {
+            kind: ViolationKind::DataLossGate,
+            message: "has locked files".to_string(),
+            rule: "data_loss_gates.block_if_locked_files".to_string(),
+            context: Some("killing may corrupt".to_string()),
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        assert!(json.contains("\"context\":\"killing may corrupt\""));
+    }
+
+    #[test]
+    fn policy_violation_serde_without_context() {
+        let v = PolicyViolation {
+            kind: ViolationKind::ProtectedUser,
+            message: "user root is protected".to_string(),
+            rule: "guardrails.protected_users".to_string(),
+            context: None,
+        };
+        let json = serde_json::to_string(&v).unwrap();
+        // context should be omitted entirely
+        assert!(!json.contains("context"));
+    }
+
+    // ── CriticalFilesSummary ────────────────────────────────────────
+
+    #[test]
+    fn critical_files_summary_serde() {
+        let s = CriticalFilesSummary {
+            hard_count: 2,
+            soft_count: 1,
+            rules: vec!["sqlite-wal".to_string(), "git-lock".to_string()],
+            remediation_hints: vec!["close db".to_string()],
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        assert!(json.contains("\"hard_count\":2"));
+        assert!(json.contains("\"soft_count\":1"));
+    }
+
+    #[test]
+    fn critical_files_summary_from_candidate() {
+        use crate::collect::{CriticalFile, CriticalFileCategory, DetectionStrength};
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.critical_files = vec![
+            CriticalFile {
+                fd: 3,
+                path: "/tmp/db.sqlite-wal".to_string(),
+                category: CriticalFileCategory::SqliteWal,
+                strength: DetectionStrength::Hard,
+                rule_id: "sqlite-wal".to_string(),
+            },
+            CriticalFile {
+                fd: 5,
+                path: "/tmp/.git/index.lock".to_string(),
+                category: CriticalFileCategory::GitLock,
+                strength: DetectionStrength::Soft,
+                rule_id: "git-lock".to_string(),
+            },
+        ];
+
+        let summary = enforcer.critical_files_summary(&candidate);
+        assert!(summary.is_some());
+        let summary = summary.unwrap();
+        assert_eq!(summary.hard_count, 1);
+        assert_eq!(summary.soft_count, 1);
+        assert_eq!(summary.rules.len(), 2);
+        assert_eq!(summary.remediation_hints.len(), 2);
+    }
+
+    #[test]
+    fn critical_files_summary_none_when_empty() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+        let candidate = test_candidate();
+        assert!(enforcer.critical_files_summary(&candidate).is_none());
+    }
+
+    #[test]
+    fn has_hard_critical_files_true() {
+        use crate::collect::{CriticalFile, CriticalFileCategory, DetectionStrength};
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+        let mut candidate = test_candidate();
+        candidate.critical_files = vec![CriticalFile {
+            fd: 3,
+            path: "/tmp/db.sqlite-wal".to_string(),
+            category: CriticalFileCategory::SqliteWal,
+            strength: DetectionStrength::Hard,
+            rule_id: "sqlite-wal".to_string(),
+        }];
+        assert!(enforcer.has_hard_critical_files(&candidate));
+    }
+
+    #[test]
+    fn has_hard_critical_files_false_soft_only() {
+        use crate::collect::{CriticalFile, CriticalFileCategory, DetectionStrength};
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+        let mut candidate = test_candidate();
+        candidate.critical_files = vec![CriticalFile {
+            fd: 5,
+            path: "/tmp/.git/index.lock".to_string(),
+            category: CriticalFileCategory::GitLock,
+            strength: DetectionStrength::Soft,
+            rule_id: "git-lock".to_string(),
+        }];
+        assert!(!enforcer.has_hard_critical_files(&candidate));
+    }
+
+    // ── EnforcerError display ───────────────────────────────────────
+
+    #[test]
+    fn enforcer_error_invalid_pattern_display() {
+        let err = EnforcerError::InvalidPattern {
+            path: "guardrails.protected_patterns[0]".to_string(),
+            message: "bad regex".to_string(),
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("invalid pattern"));
+        assert!(msg.contains("guardrails.protected_patterns[0]"));
+        assert!(msg.contains("bad regex"));
+    }
+
+    #[test]
+    fn enforcer_error_policy_invalid_display() {
+        let err = EnforcerError::PolicyInvalid("missing field".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("policy validation failed"));
+        assert!(msg.contains("missing field"));
+    }
+
+    #[test]
+    fn enforcer_error_is_std_error() {
+        let err = EnforcerError::PolicyInvalid("test".to_string());
+        let _: &dyn std::error::Error = &err;
+    }
+
+    // ── Regex pattern matching ──────────────────────────────────────
+
+    #[test]
+    fn regex_pattern_matching() {
+        let mut policy = test_policy();
+        policy.guardrails.protected_patterns = vec![PatternEntry {
+            pattern: r"^/usr/bin/python\d+".to_string(),
+            kind: PatternKind::Regex,
+            case_insensitive: false,
+            notes: Some("python interpreters".to_string()),
+        }];
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.cmdline = "/usr/bin/python3.11 script.py".to_string();
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::ProtectedPattern
+        );
+
+        candidate.cmdline = "/usr/local/python --flag".to_string();
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(result.allowed);
+    }
+
+    #[test]
+    fn regex_pattern_case_insensitive() {
+        let mut policy = test_policy();
+        policy.guardrails.protected_patterns = vec![PatternEntry {
+            pattern: "CRITICAL".to_string(),
+            kind: PatternKind::Regex,
+            case_insensitive: true,
+            notes: None,
+        }];
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.cmdline = "my-critical-service".to_string();
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+    }
+
+    #[test]
+    fn invalid_regex_returns_error() {
+        let mut policy = test_policy();
+        policy.guardrails.protected_patterns = vec![PatternEntry {
+            pattern: "[invalid".to_string(),
+            kind: PatternKind::Regex,
+            case_insensitive: false,
+            notes: None,
+        }];
+        let result = PolicyEnforcer::new(&policy, None);
+        assert!(result.is_err());
+        match result {
+            Err(EnforcerError::InvalidPattern { .. }) => {}
+            _ => panic!("expected InvalidPattern error"),
+        }
+    }
+
+    // ── Robot mode gates: known signature ───────────────────────────
+
+    #[test]
+    fn robot_mode_require_known_signature() {
+        let mut policy = test_policy();
+        policy.robot_mode.enabled = true;
+        policy.robot_mode.min_posterior = 0.50;
+        policy.robot_mode.require_known_signature = true;
+
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.posterior = Some(0.99);
+        candidate.has_known_signature = false; // No signature
+
+        let result = enforcer.check_action(&candidate, Action::Kill, true);
+        assert!(!result.allowed);
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("known signature"));
+
+        // With known signature should pass this gate
+        candidate.has_known_signature = true;
+        let result = enforcer.check_action(&candidate, Action::Kill, true);
+        // Might still fail on other gates, but not on signature
+        if !result.allowed {
+            assert_ne!(
+                result.violation.as_ref().unwrap().rule,
+                "robot_mode.require_known_signature"
+            );
+        }
+    }
+
+    // ── Robot mode gates: category exclusion ────────────────────────
+
+    #[test]
+    fn robot_mode_exclude_categories() {
+        let mut policy = test_policy();
+        policy.robot_mode.enabled = true;
+        policy.robot_mode.min_posterior = 0.50;
+        policy.robot_mode.exclude_categories = vec!["daemon".to_string()];
+
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.posterior = Some(0.99);
+        candidate.category = Some("daemon".to_string());
+
+        let result = enforcer.check_action(&candidate, Action::Kill, true);
+        assert!(!result.allowed);
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("exclude_categories"));
+    }
+
+    #[test]
+    fn robot_mode_allow_categories() {
+        let mut policy = test_policy();
+        policy.robot_mode.enabled = true;
+        policy.robot_mode.min_posterior = 0.50;
+        policy.robot_mode.allow_categories = vec!["abandoned".to_string()];
+
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.posterior = Some(0.99);
+        candidate.category = Some("shell".to_string()); // Not in allow list
+
+        let result = enforcer.check_action(&candidate, Action::Kill, true);
+        assert!(!result.allowed);
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("not in robot_mode.allow_categories"));
+    }
+
+    // ── Data loss gate: deleted CWD ─────────────────────────────────
+
+    #[test]
+    fn data_loss_gate_deleted_cwd() {
+        let mut policy = test_policy();
+        policy.data_loss_gates.block_if_deleted_cwd = Some(true);
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.cwd_deleted = Some(true);
+
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("CWD is deleted"));
+    }
+
+    // ── Data loss gate: hard critical file blocks kill ──────────────
+
+    #[test]
+    fn data_loss_gate_hard_critical_file() {
+        use crate::collect::{CriticalFile, CriticalFileCategory, DetectionStrength};
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.open_write_fds = Some(0);
+        candidate.has_locked_files = Some(false);
+        candidate.has_active_tty = Some(false);
+        candidate.critical_files = vec![CriticalFile {
+            fd: 3,
+            path: "/tmp/db.sqlite-wal".to_string(),
+            category: CriticalFileCategory::SqliteWal,
+            strength: DetectionStrength::Hard,
+            rule_id: "sqlite-wal".to_string(),
+        }];
+
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::DataLossGate
+        );
+    }
+
+    // ── Protected group ─────────────────────────────────────────────
+
+    #[test]
+    fn protected_group_blocked() {
+        let mut policy = test_policy();
+        policy.guardrails.protected_groups = vec!["wheel".to_string()];
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.group = Some("wheel".to_string());
+
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::ProtectedGroup
+        );
+    }
+
+    #[test]
+    fn protected_group_case_insensitive() {
+        let mut policy = test_policy();
+        policy.guardrails.protected_groups = vec!["wheel".to_string()];
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.group = Some("WHEEL".to_string());
+
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+    }
+
+    // ── Force review in robot mode (enabled) ────────────────────────
+
+    #[test]
+    fn force_review_blocks_in_robot_mode_when_enabled() {
+        let mut policy = test_policy();
+        policy.robot_mode.enabled = true;
+        policy.robot_mode.min_posterior = 0.50;
+        policy.guardrails.force_review_patterns = vec![PatternEntry {
+            pattern: "database".to_string(),
+            kind: PatternKind::Literal,
+            case_insensitive: true,
+            notes: Some("needs review".to_string()),
+        }];
+
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.cmdline = "my-database-service".to_string();
+        candidate.posterior = Some(0.99);
+
+        let result = enforcer.check_action(&candidate, Action::Kill, true);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::ForceReview
+        );
+    }
+
+    // ── Min age does not block non-destructive actions ──────────────
+
+    #[test]
+    fn min_age_does_not_block_pause() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.age_seconds = 10; // Very young
+
+        // Pause is not considered "destructive" in the enforcer
+        let result = enforcer.check_action(&candidate, Action::Pause, false);
+        // Should pass min-age gate since only Kill/Restart check min age
+        assert!(result.allowed);
+    }
+
+    // ── Utility methods ─────────────────────────────────────────────
+
+    #[test]
+    fn requires_confirmation_default() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+        // Default policy requires confirmation
+        assert!(enforcer.requires_confirmation());
+    }
+
+    #[test]
+    fn current_run_kill_count_starts_at_zero() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+        assert_eq!(enforcer.current_run_kill_count(), 0);
+    }
+
+    #[test]
+    fn record_kill_increments_count() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+        enforcer.record_kill().unwrap();
+        assert_eq!(enforcer.current_run_kill_count(), 1);
+        enforcer.record_kill().unwrap();
+        assert_eq!(enforcer.current_run_kill_count(), 2);
+    }
+
+    // ── Robot mode hard critical files gate ──────────────────────────
+
+    #[test]
+    fn robot_mode_blocks_hard_critical_files() {
+        use crate::collect::{CriticalFile, CriticalFileCategory, DetectionStrength};
+        let mut policy = test_policy();
+        policy.robot_mode.enabled = true;
+        policy.robot_mode.min_posterior = 0.50;
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.posterior = Some(0.99);
+        candidate.critical_files = vec![CriticalFile {
+            fd: 3,
+            path: "/var/lib/apt/lock".to_string(),
+            category: CriticalFileCategory::SystemPackageLock,
+            strength: DetectionStrength::Hard,
+            rule_id: "apt-lock".to_string(),
+        }];
+
+        let result = enforcer.check_action(&candidate, Action::Kill, true);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::RobotModeGate
+        );
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .message
+            .contains("critical file"));
+    }
+
+    // ── Glob question mark wildcard ─────────────────────────────────
+
+    #[test]
+    fn glob_question_mark_wildcard() {
+        let mut policy = test_policy();
+        policy.guardrails.protected_patterns = vec![PatternEntry {
+            pattern: "proc??s".to_string(),
+            kind: PatternKind::Glob,
+            case_insensitive: false,
+            notes: None,
+        }];
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.cmdline = "process".to_string();
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed, "? should match single character");
+
+        candidate.cmdline = "procs".to_string();
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(result.allowed, "? needs exactly one character");
+    }
+
+    // ── Literal case-sensitive match ────────────────────────────────
+
+    #[test]
+    fn literal_case_sensitive_no_match() {
+        let mut policy = test_policy();
+        policy.guardrails.protected_patterns = vec![PatternEntry {
+            pattern: "MyApp".to_string(),
+            kind: PatternKind::Literal,
+            case_insensitive: false,
+            notes: None,
+        }];
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.cmdline = "myapp --flag".to_string();
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(result.allowed, "case sensitive literal should not match");
+
+        candidate.cmdline = "MyApp --flag".to_string();
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed, "exact case should match");
+    }
+
+    // ── ProcessCandidate debug ──────────────────────────────────────
+
+    #[test]
+    fn process_candidate_debug() {
+        let candidate = test_candidate();
+        let dbg = format!("{:?}", candidate);
+        assert!(dbg.contains("ProcessCandidate"));
+        assert!(dbg.contains("12345"));
+    }
+
+    // ── Soft critical file data loss gate with open FDs ─────────────
+
+    #[test]
+    fn data_loss_soft_critical_in_context() {
+        use crate::collect::{CriticalFile, CriticalFileCategory, DetectionStrength};
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+
+        let mut candidate = test_candidate();
+        candidate.open_write_fds = Some(5);
+        candidate.critical_files = vec![CriticalFile {
+            fd: 5,
+            path: "/tmp/package-lock.json".to_string(),
+            category: CriticalFileCategory::NodePackageLock,
+            strength: DetectionStrength::Soft,
+            rule_id: "npm-lock".to_string(),
+        }];
+
+        let result = enforcer.check_action(&candidate, Action::Kill, false);
+        assert!(!result.allowed);
+        assert_eq!(
+            result.violation.as_ref().unwrap().kind,
+            ViolationKind::DataLossGate
+        );
+        // Context should mention detected files
+        assert!(result
+            .violation
+            .as_ref()
+            .unwrap()
+            .context
+            .as_ref()
+            .unwrap()
+            .contains("Detected files"));
+    }
+
+    // ── Should reload ───────────────────────────────────────────────
+
+    #[test]
+    fn should_reload_very_short_max_age() {
+        let policy = test_policy();
+        let enforcer = PolicyEnforcer::new(&policy, None).unwrap();
+        // Using a zero-length duration should trigger reload immediately
+        std::thread::sleep(std::time::Duration::from_millis(1));
+        assert!(enforcer.should_reload(Duration::from_nanos(1)));
+    }
 }

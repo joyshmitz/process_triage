@@ -1375,4 +1375,627 @@ mod tests {
         assert_eq!(params.launchd_domain, Some("gui/501".to_string()));
         assert!(params.systemd_unit.is_none());
     }
+
+    // ── SupervisorType serde roundtrip ──────────────────────────────
+
+    #[test]
+    fn supervisor_type_serde_all_variants() {
+        let variants = [
+            SupervisorType::Systemd,
+            SupervisorType::Launchd,
+            SupervisorType::Pm2,
+            SupervisorType::Supervisord,
+            SupervisorType::Docker,
+            SupervisorType::Containerd,
+            SupervisorType::Podman,
+            SupervisorType::Nodemon,
+            SupervisorType::Forever,
+            SupervisorType::Unknown,
+        ];
+        for v in &variants {
+            let json = serde_json::to_string(v).unwrap();
+            let back: SupervisorType = serde_json::from_str(&json).unwrap();
+            assert_eq!(*v, back);
+        }
+    }
+
+    #[test]
+    fn supervisor_type_serde_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&SupervisorType::Systemd).unwrap(),
+            "\"systemd\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SupervisorType::Containerd).unwrap(),
+            "\"containerd\""
+        );
+        assert_eq!(
+            serde_json::to_string(&SupervisorType::Unknown).unwrap(),
+            "\"unknown\""
+        );
+    }
+
+    // ── SupervisorType Display all remaining variants ────────────────
+
+    #[test]
+    fn supervisor_type_display_all() {
+        assert_eq!(SupervisorType::Supervisord.to_string(), "supervisord");
+        assert_eq!(SupervisorType::Containerd.to_string(), "containerd");
+        assert_eq!(SupervisorType::Podman.to_string(), "podman");
+        assert_eq!(SupervisorType::Nodemon.to_string(), "nodemon");
+        assert_eq!(SupervisorType::Forever.to_string(), "forever");
+        assert_eq!(SupervisorType::Unknown.to_string(), "unknown");
+    }
+
+    // ── SupervisorCommand serde roundtrip ────────────────────────────
+
+    #[test]
+    fn supervisor_command_serde_all_variants() {
+        let variants = [
+            SupervisorCommand::Stop,
+            SupervisorCommand::Restart,
+            SupervisorCommand::Kill,
+            SupervisorCommand::Delete,
+        ];
+        for v in &variants {
+            let json = serde_json::to_string(v).unwrap();
+            let back: SupervisorCommand = serde_json::from_str(&json).unwrap();
+            assert_eq!(format!("{}", v), format!("{}", back));
+        }
+    }
+
+    // ── SupervisorActionError display all variants ───────────────────
+
+    #[test]
+    fn supervisor_action_error_display_all() {
+        let errors: Vec<Box<dyn std::error::Error>> = vec![
+            Box::new(SupervisorActionError::UnsupportedSupervisor(
+                "exotic".to_string(),
+            )),
+            Box::new(SupervisorActionError::CommandFailed("exit 1".to_string())),
+            Box::new(SupervisorActionError::Timeout(Duration::from_secs(30))),
+            Box::new(SupervisorActionError::ProcessRespawned),
+            Box::new(SupervisorActionError::ProcessStillRunning),
+            Box::new(SupervisorActionError::PermissionDenied(
+                "no sudo".to_string(),
+            )),
+            Box::new(SupervisorActionError::UnitNotFound(
+                "missing.service".to_string(),
+            )),
+            Box::new(SupervisorActionError::ProtectedUnit(
+                "sshd.service".to_string(),
+            )),
+        ];
+        let expected_fragments = [
+            "unsupported supervisor",
+            "command execution failed",
+            "timed out",
+            "respawned",
+            "still running",
+            "permission denied",
+            "not found",
+            "protected unit",
+        ];
+        for (err, frag) in errors.iter().zip(expected_fragments.iter()) {
+            let msg = format!("{}", err);
+            assert!(msg.contains(frag), "Expected '{}' in: {}", frag, msg);
+        }
+    }
+
+    #[test]
+    fn supervisor_action_error_io_variant() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let err = SupervisorActionError::from(io_err);
+        let msg = format!("{}", err);
+        assert!(msg.contains("io error"));
+    }
+
+    // ── SupervisorPlanAction serde roundtrip ─────────────────────────
+
+    #[test]
+    fn supervisor_plan_action_serde_roundtrip() {
+        let action = SupervisorPlanAction {
+            action_id: "test-serde".to_string(),
+            pid: 5678,
+            supervisor_type: SupervisorType::Docker,
+            unit_identifier: "abc123".to_string(),
+            command: SupervisorCommand::Stop,
+            display_command: "docker stop abc123".to_string(),
+            parameters: SupervisorParameters {
+                container_id: Some("abc123".to_string()),
+                ..Default::default()
+            },
+            timeout: Duration::from_secs(30),
+            blocked: false,
+            block_reason: None,
+        };
+        let json = serde_json::to_string(&action).unwrap();
+        let back: SupervisorPlanAction = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.action_id, "test-serde");
+        assert_eq!(back.pid, 5678);
+        assert_eq!(back.supervisor_type, SupervisorType::Docker);
+        assert_eq!(back.command.to_string(), "stop");
+        assert!(!back.blocked);
+    }
+
+    // ── SupervisorParameters serde roundtrip ─────────────────────────
+
+    #[test]
+    fn supervisor_parameters_serde_roundtrip() {
+        let params = SupervisorParameters {
+            systemd_unit: Some("nginx.service".to_string()),
+            launchd_label: None,
+            launchd_domain: None,
+            pm2_name: Some("my-app".to_string()),
+            container_id: None,
+            supervisord_program: Some("myworker".to_string()),
+            forever_uid: Some("abc123".to_string()),
+            force: true,
+            signal: Some("SIGTERM".to_string()),
+        };
+        let json = serde_json::to_string(&params).unwrap();
+        let back: SupervisorParameters = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.systemd_unit, Some("nginx.service".to_string()));
+        assert_eq!(back.pm2_name, Some("my-app".to_string()));
+        assert!(back.force);
+        assert_eq!(back.signal, Some("SIGTERM".to_string()));
+    }
+
+    #[test]
+    fn supervisor_parameters_serde_skips_none_fields() {
+        let params = SupervisorParameters::default();
+        let json = serde_json::to_string(&params).unwrap();
+        // None fields should be omitted due to skip_serializing_if
+        assert!(!json.contains("systemd_unit"));
+        assert!(!json.contains("pm2_name"));
+        assert!(json.contains("\"force\":false"));
+    }
+
+    // ── Build commands for remaining supervisors ─────────────────────
+
+    fn make_action(
+        supervisor_type: SupervisorType,
+        command: SupervisorCommand,
+        params: SupervisorParameters,
+    ) -> SupervisorPlanAction {
+        SupervisorPlanAction {
+            action_id: "test-build".to_string(),
+            pid: 1234,
+            supervisor_type,
+            unit_identifier: "test-unit".to_string(),
+            command,
+            display_command: "test command".to_string(),
+            parameters: params,
+            timeout: Duration::from_secs(30),
+            blocked: false,
+            block_reason: None,
+        }
+    }
+
+    #[test]
+    fn build_containerd_stop_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Containerd,
+            SupervisorCommand::Stop,
+            SupervisorParameters {
+                container_id: Some("ctr-abc".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "ctr");
+        assert_eq!(args, vec!["task", "kill", "ctr-abc"]);
+    }
+
+    #[test]
+    fn build_containerd_delete_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Containerd,
+            SupervisorCommand::Delete,
+            SupervisorParameters {
+                container_id: Some("ctr-abc".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "ctr");
+        assert_eq!(args, vec!["container", "delete", "ctr-abc"]);
+    }
+
+    #[test]
+    fn build_supervisord_stop_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Supervisord,
+            SupervisorCommand::Stop,
+            SupervisorParameters {
+                supervisord_program: Some("myworker".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "supervisorctl");
+        assert_eq!(args, vec!["stop", "myworker"]);
+    }
+
+    #[test]
+    fn build_supervisord_restart_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Supervisord,
+            SupervisorCommand::Restart,
+            SupervisorParameters {
+                supervisord_program: Some("myworker".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "supervisorctl");
+        assert_eq!(args, vec!["restart", "myworker"]);
+    }
+
+    #[test]
+    fn build_supervisord_delete_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Supervisord,
+            SupervisorCommand::Delete,
+            SupervisorParameters {
+                supervisord_program: Some("myworker".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "supervisorctl");
+        assert_eq!(args, vec!["remove", "myworker"]);
+    }
+
+    #[test]
+    fn build_podman_stop_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Podman,
+            SupervisorCommand::Stop,
+            SupervisorParameters {
+                container_id: Some("pod-abc".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "podman");
+        assert_eq!(args, vec!["stop", "pod-abc"]);
+    }
+
+    #[test]
+    fn build_podman_kill_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Podman,
+            SupervisorCommand::Kill,
+            SupervisorParameters {
+                container_id: Some("pod-abc".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "podman");
+        assert_eq!(args, vec!["kill", "pod-abc"]);
+    }
+
+    #[test]
+    fn build_podman_delete_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Podman,
+            SupervisorCommand::Delete,
+            SupervisorParameters {
+                container_id: Some("pod-abc".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "podman");
+        assert_eq!(args, vec!["rm", "-f", "pod-abc"]);
+    }
+
+    #[test]
+    fn build_forever_stop_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Forever,
+            SupervisorCommand::Stop,
+            SupervisorParameters {
+                forever_uid: Some("uid-abc".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "forever");
+        assert_eq!(args, vec!["stop", "uid-abc"]);
+    }
+
+    #[test]
+    fn build_forever_restart_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Forever,
+            SupervisorCommand::Restart,
+            SupervisorParameters {
+                forever_uid: Some("uid-abc".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "forever");
+        assert_eq!(args, vec!["restart", "uid-abc"]);
+    }
+
+    #[test]
+    fn build_nodemon_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Nodemon,
+            SupervisorCommand::Stop,
+            SupervisorParameters::default(),
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "kill");
+        assert_eq!(args, vec!["-INT", "1234"]);
+    }
+
+    #[test]
+    fn build_unknown_supervisor_returns_error() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Unknown,
+            SupervisorCommand::Stop,
+            SupervisorParameters::default(),
+        );
+        let result = runner.build_command(&action);
+        assert!(matches!(
+            result,
+            Err(SupervisorActionError::UnsupportedSupervisor(_))
+        ));
+    }
+
+    // ── Systemd additional commands ──────────────────────────────────
+
+    #[test]
+    fn build_systemd_restart_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Systemd,
+            SupervisorCommand::Restart,
+            SupervisorParameters {
+                systemd_unit: Some("nginx.service".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "systemctl");
+        assert_eq!(args, vec!["restart", "nginx.service"]);
+    }
+
+    #[test]
+    fn build_systemd_kill_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Systemd,
+            SupervisorCommand::Kill,
+            SupervisorParameters {
+                systemd_unit: Some("nginx.service".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "systemctl");
+        assert_eq!(args, vec!["kill", "nginx.service"]);
+    }
+
+    #[test]
+    fn build_systemd_delete_disables() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Systemd,
+            SupervisorCommand::Delete,
+            SupervisorParameters {
+                systemd_unit: Some("nginx.service".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "systemctl");
+        assert_eq!(args, vec!["disable", "nginx.service"]);
+    }
+
+    // ── Docker additional commands ───────────────────────────────────
+
+    #[test]
+    fn build_docker_kill_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Docker,
+            SupervisorCommand::Kill,
+            SupervisorParameters {
+                container_id: Some("abc123".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "docker");
+        assert_eq!(args, vec!["kill", "abc123"]);
+    }
+
+    #[test]
+    fn build_docker_delete_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Docker,
+            SupervisorCommand::Delete,
+            SupervisorParameters {
+                container_id: Some("abc123".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "docker");
+        assert_eq!(args, vec!["rm", "-f", "abc123"]);
+    }
+
+    // ── PM2 additional commands ──────────────────────────────────────
+
+    #[test]
+    fn build_pm2_stop_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Pm2,
+            SupervisorCommand::Stop,
+            SupervisorParameters {
+                pm2_name: Some("my-app".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "pm2");
+        assert_eq!(args, vec!["stop", "my-app"]);
+    }
+
+    #[test]
+    fn build_pm2_kill_uses_stop() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Pm2,
+            SupervisorCommand::Kill,
+            SupervisorParameters {
+                pm2_name: Some("my-app".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "pm2");
+        assert_eq!(args, vec!["stop", "my-app"]); // Kill maps to stop for pm2
+    }
+
+    #[test]
+    fn build_pm2_delete_command() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Pm2,
+            SupervisorCommand::Delete,
+            SupervisorParameters {
+                pm2_name: Some("my-app".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "pm2");
+        assert_eq!(args, vec!["delete", "my-app"]);
+    }
+
+    // ── From<AppSupervisorType> remaining variants ───────────────────
+
+    #[test]
+    fn supervisor_type_from_app_type_remaining() {
+        assert_eq!(
+            SupervisorType::from(AppSupervisorType::Forever),
+            SupervisorType::Forever
+        );
+        assert_eq!(
+            SupervisorType::from(AppSupervisorType::Unknown),
+            SupervisorType::Unknown
+        );
+    }
+
+    // ── SupervisorActionRunner Default trait ─────────────────────────
+
+    #[test]
+    fn supervisor_action_runner_default() {
+        let runner = SupervisorActionRunner::default();
+        assert_eq!(runner.config.default_timeout, Duration::from_secs(30));
+        assert!(!runner.config.dry_run);
+    }
+
+    // ── SupervisorActionResult serde ─────────────────────────────────
+
+    #[test]
+    fn supervisor_action_result_serde() {
+        let result = SupervisorActionResult {
+            success: true,
+            duration: Duration::from_millis(250),
+            stdout: Some("stopped".to_string()),
+            stderr: None,
+            exit_code: Some(0),
+            respawned: false,
+            warnings: vec!["check later".to_string()],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(json.contains("\"success\":true"));
+        assert!(json.contains("\"respawned\":false"));
+    }
+
+    // ── Protected patterns: cron, docker.service, containerd.service ─
+
+    #[test]
+    fn protected_patterns_additional() {
+        let runner = SupervisorActionRunner::new();
+        assert!(runner.is_protected_unit("cron.service"));
+        assert!(runner.is_protected_unit("docker.service"));
+        assert!(runner.is_protected_unit("containerd.service"));
+        // Partial match shouldn't work (cron pattern is ^cron.*)
+        assert!(!runner.is_protected_unit("my-cron-app"));
+    }
+
+    // ── SupervisorActionConfig custom values ─────────────────────────
+
+    #[test]
+    fn supervisor_action_config_custom() {
+        let config = SupervisorActionConfig {
+            default_timeout: Duration::from_secs(10),
+            max_timeout: Duration::from_secs(60),
+            respawn_check_delay: Duration::from_secs(1),
+            respawn_check_count: 5,
+            protected_patterns: vec![r"^myapp.*".to_string()],
+            allow_escalation: false,
+            dry_run: true,
+        };
+        let runner = SupervisorActionRunner::with_config(config);
+        assert!(runner.is_protected_unit("myapp.service"));
+        assert!(!runner.is_protected_unit("otherapp.service"));
+    }
+
+    // ── Launchd delete command ───────────────────────────────────────
+
+    #[test]
+    fn build_launchd_delete_uses_bootout() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Launchd,
+            SupervisorCommand::Delete,
+            SupervisorParameters {
+                launchd_label: Some("com.example.service".to_string()),
+                launchd_domain: Some("system".to_string()),
+                ..Default::default()
+            },
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "launchctl");
+        assert_eq!(args, vec!["bootout", "system/com.example.service"]);
+    }
+
+    // ── Build command uses unit_identifier as fallback ────────────────
+
+    #[test]
+    fn build_command_uses_unit_identifier_fallback() {
+        let runner = SupervisorActionRunner::new();
+        let action = make_action(
+            SupervisorType::Systemd,
+            SupervisorCommand::Stop,
+            SupervisorParameters::default(), // No systemd_unit set
+        );
+        let (program, args) = runner.build_command(&action).unwrap();
+        assert_eq!(program, "systemctl");
+        assert_eq!(args, vec!["stop", "test-unit"]); // Falls back to unit_identifier
+    }
 }
