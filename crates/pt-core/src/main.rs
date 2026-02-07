@@ -8906,6 +8906,85 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         persisted_inference_records.push(inf_rec);
     }
 
+    let mut goal_summary: Option<serde_json::Value> = None;
+    let mut goal_selected: Option<HashSet<u32>> = None;
+    if let Some(goal_str) = args.goal.as_deref() {
+        match parse_goal(goal_str) {
+            Ok(goal) => {
+                let total_cpu_pct_for_goal: f64 = candidates
+                    .iter()
+                    .map(|candidate| {
+                        candidate
+                            .get("cpu_percent")
+                            .and_then(|value| value.as_f64())
+                            .unwrap_or(0.0)
+                    })
+                    .sum();
+                match build_goal_plan_from_candidates(
+                    goal_str,
+                    &goal,
+                    total_cpu_pct_for_goal,
+                    &candidates,
+                ) {
+                    Ok(goal_output) => {
+                        let goal_json = goal_summary_json(goal_str, &goal, &goal_output);
+                        let selected = goal_output.selected_pids.clone();
+                        let selected_set: HashSet<u32> = selected.iter().copied().collect();
+                        let mut selected_rank: HashMap<u32, usize> = HashMap::new();
+                        for (idx, pid) in selected.iter().enumerate() {
+                            selected_rank.insert(*pid, idx);
+                        }
+
+                        for candidate in &mut candidates {
+                            if let Some(obj) = candidate.as_object_mut() {
+                                let pid =
+                                    obj.get("pid").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                                let selected_for_goal = selected_set.contains(&pid);
+                                obj.insert(
+                                    "goal_selected".to_string(),
+                                    serde_json::json!(selected_for_goal),
+                                );
+                                if selected_for_goal {
+                                    obj.insert(
+                                        "goal_rank".to_string(),
+                                        serde_json::json!(selected_rank
+                                            .get(&pid)
+                                            .copied()
+                                            .unwrap_or(usize::MAX)),
+                                    );
+                                }
+                            }
+                        }
+
+                        candidates.sort_by_key(|candidate| {
+                            let pid = candidate
+                                .get("pid")
+                                .and_then(|value| value.as_u64())
+                                .unwrap_or(0) as u32;
+                            selected_rank.get(&pid).copied().unwrap_or(usize::MAX)
+                        });
+
+                        goal_summary = Some(goal_json);
+                        goal_selected = Some(selected_set);
+                    }
+                    Err(err) => {
+                        goal_summary = Some(serde_json::json!({
+                            "goal": goal_str,
+                            "parsed": goal.canonical(),
+                            "error": err,
+                        }));
+                    }
+                }
+            }
+            Err(err) => {
+                goal_summary = Some(serde_json::json!({
+                    "goal": goal_str,
+                    "error": err,
+                }));
+            }
+        }
+    }
+
     // Rebuild kill/review/spare candidate lists from the final sorted candidates
     let mut kill_candidates: Vec<u32> = Vec::new();
     let mut review_candidates: Vec<u32> = Vec::new();
@@ -8915,7 +8994,11 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         let pid = candidate["pid"].as_u64().unwrap_or(0) as u32;
         let action = candidate["recommended_action"].as_str().unwrap_or("");
         let memory_mb = candidate["memory_mb"].as_u64().unwrap_or(0);
-        if action == "kill" {
+        let selected_by_goal = goal_selected
+            .as_ref()
+            .map(|selected| selected.contains(&pid))
+            .unwrap_or(false);
+        if selected_by_goal || action == "kill" {
             kill_candidates.push(pid);
             expected_memory_freed_bytes += memory_mb * 1024 * 1024;
         } else if action == "keep" {
@@ -8952,15 +9035,26 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     if global.shadow {
         summary["shadow_observations_recorded"] = serde_json::json!(shadow_recorded);
     }
+    if let Some(goal) = &goal_summary {
+        summary["goal_mode"] = serde_json::json!(true);
+        summary["goal_achievable"] = goal
+            .get("achievable")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        summary["goal_selected_count"] = serde_json::json!(kill_candidates.len());
+    }
 
     // Build recommendations section (new structured format)
-    let recommendations = serde_json::json!({
+    let mut recommendations = serde_json::json!({
         "kill_set": kill_candidates,
         "review_set": review_candidates,
         "spare_set": spare_candidates,
         "expected_memory_freed_gb": (expected_memory_freed_gb * 100.0).round() / 100.0,
         "fleet_fdr": 0.03, // Placeholder - would come from fleet-wide statistics
     });
+    if let Some(goal) = &goal_summary {
+        recommendations["goal"] = goal.clone();
+    }
 
     // Build recommended section (legacy format for backward compatibility)
     let empty_pids: Vec<u32> = Vec::new();
@@ -8986,9 +9080,6 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     if args.since_time.is_some() {
         stub_flags_used.push("--since-time");
     }
-    if args.goal.is_some() {
-        stub_flags_used.push("--goal");
-    }
 
     // Build stub_flags section if any future flags were used
     let stub_flags_section = if !stub_flags_used.is_empty() {
@@ -9003,6 +9094,18 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
     } else {
         None
     };
+
+    let goal_value = goal_summary
+        .as_ref()
+        .and_then(|goal| goal.get("goal"))
+        .cloned()
+        .or_else(|| args.goal.as_ref().map(|goal| serde_json::json!(goal)))
+        .unwrap_or(serde_json::Value::Null);
+    let goal_progress = goal_summary
+        .as_ref()
+        .and_then(|goal| goal.get("goal_achievement"))
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!([]));
 
     // Build complete plan output with structured JSON format
     let mut plan_output = serde_json::json!({
@@ -9039,6 +9142,9 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
             "narrative": args.narrative,
         },
         "summary": summary,
+        "goal": goal_value,
+        "goal_progress": goal_progress,
+        "goal_summary": goal_summary,
         "candidates": candidates,
         "recommendations": recommendations,
         "recommended": recommended,  // Legacy format for backward compatibility

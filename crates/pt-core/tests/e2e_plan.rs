@@ -233,6 +233,58 @@ mod plan_options {
             // Exit code 0 = no candidates, 1 = candidates found (both are operational success)
             .code(predicate::in_iter([0, 1]));
     }
+
+    #[test]
+    fn plan_with_goal_includes_goal_fields() {
+        let output = pt_core_fast()
+            .args([
+                "--format",
+                "json",
+                "agent",
+                "plan",
+                "--goal",
+                "free 1GB RAM",
+                "--threshold",
+                "0",
+                "--max-candidates",
+                "5",
+                "--sample-size",
+                TEST_SAMPLE_SIZE,
+            ])
+            .assert()
+            .code(predicate::in_iter([0, 1]))
+            .get_output()
+            .stdout
+            .clone();
+
+        let json: Value = serde_json::from_slice(&output).expect("Output should be valid JSON");
+        assert_eq!(
+            json.get("goal").and_then(|v| v.as_str()),
+            Some("free 1GB RAM")
+        );
+        assert!(
+            json.get("goal_progress")
+                .and_then(|v| v.as_array())
+                .is_some(),
+            "expected goal_progress array in plan output"
+        );
+        assert!(
+            json.get("goal_summary").is_some(),
+            "expected goal_summary in plan output"
+        );
+
+        if let Some(stub_flags) = json.get("stub_flags") {
+            let flags_used: Vec<&str> = stub_flags
+                .get("flags_used")
+                .and_then(|v| v.as_array())
+                .map(|items| items.iter().filter_map(|v| v.as_str()).collect())
+                .unwrap_or_default();
+            assert!(
+                !flags_used.contains(&"--goal"),
+                "--goal should not be treated as stub flag anymore"
+            );
+        }
+    }
 }
 
 // ============================================================================
