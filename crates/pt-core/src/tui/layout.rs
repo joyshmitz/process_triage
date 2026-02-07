@@ -177,6 +177,12 @@ impl ResponsiveLayout {
             .constraints(constraints)
             .split(self.area);
 
+        let (header, search, content, status) = if header_height > 0 {
+            (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
+        } else {
+            (None, v_chunks[0], v_chunks[1], v_chunks[2])
+        };
+
         // Horizontal split of content: list | detail | aux
         let content_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -185,13 +191,7 @@ impl ResponsiveLayout {
                 Constraint::Percentage(35), // Detail
                 Constraint::Percentage(20), // Aux
             ])
-            .split(v_chunks[1]);
-
-        let (header, search, content, status) = if header_height > 0 {
-            (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
-        } else {
-            (None, v_chunks[0], v_chunks[1], v_chunks[2])
-        };
+            .split(content);
 
         MainAreas {
             header,
@@ -218,6 +218,12 @@ impl ResponsiveLayout {
             .constraints(constraints)
             .split(self.area);
 
+        let (header, search, content, status) = if header_height > 0 {
+            (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
+        } else {
+            (None, v_chunks[0], v_chunks[1], v_chunks[2])
+        };
+
         // Horizontal split of content: list | detail
         let content_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -225,13 +231,7 @@ impl ResponsiveLayout {
                 Constraint::Percentage(60), // List
                 Constraint::Percentage(40), // Detail
             ])
-            .split(v_chunks[1]);
-
-        let (header, search, content, status) = if header_height > 0 {
-            (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
-        } else {
-            (None, v_chunks[0], v_chunks[1], v_chunks[2])
-        };
+            .split(content);
 
         MainAreas {
             header,
@@ -258,19 +258,19 @@ impl ResponsiveLayout {
             .constraints(constraints)
             .split(self.area);
 
+        let (header, search, content, status) = if header_height > 0 {
+            (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
+        } else {
+            (None, v_chunks[0], v_chunks[1], v_chunks[2])
+        };
+
         let content_chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
                 Constraint::Percentage(65), // List
                 Constraint::Percentage(35), // Detail
             ])
-            .split(v_chunks[1]);
-
-        let (header, search, content, status) = if header_height > 0 {
-            (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
-        } else {
-            (None, v_chunks[0], v_chunks[1], v_chunks[2])
-        };
+            .split(content);
 
         MainAreas {
             header,
@@ -570,6 +570,54 @@ mod tests {
 
         // Search should be 3 rows
         assert_eq!(areas.search.height, 3);
+    }
+
+    #[test]
+    fn test_layout_main_areas_with_header_wide_uses_content_row() {
+        let area = Rect::new(0, 0, 220, 60);
+        let layout = ResponsiveLayout::new(area);
+        let areas = layout.main_areas_with_header(2);
+
+        assert_eq!(areas.header.unwrap().height, 2);
+        assert_eq!(areas.search.height, 3);
+        assert_eq!(areas.status.height, 1);
+        assert!(
+            areas.list.height > areas.search.height,
+            "list/detail panes should use main content row, not search row"
+        );
+        assert_eq!(areas.list.y, areas.search.y + areas.search.height);
+    }
+
+    #[test]
+    fn test_layout_main_areas_with_header_standard_uses_content_row() {
+        let area = Rect::new(0, 0, 140, 40);
+        let layout = ResponsiveLayout::new(area);
+        let areas = layout.main_areas_with_header(2);
+
+        assert_eq!(areas.header.unwrap().height, 2);
+        assert_eq!(areas.search.height, 3);
+        assert!(areas.detail.is_some());
+        assert!(
+            areas.list.height > areas.search.height,
+            "list/detail panes should use main content row, not search row"
+        );
+        assert_eq!(areas.list.y, areas.search.y + areas.search.height);
+    }
+
+    #[test]
+    fn test_layout_main_areas_with_header_compact_uses_content_row() {
+        let area = Rect::new(0, 0, 100, 40);
+        let layout = ResponsiveLayout::new(area);
+        let areas = layout.main_areas_with_header(2);
+
+        assert_eq!(areas.header.unwrap().height, 2);
+        assert_eq!(areas.search.height, 3);
+        assert!(areas.detail.is_some());
+        assert!(
+            areas.list.height > areas.search.height,
+            "list/detail panes should use main content row, not search row"
+        );
+        assert_eq!(areas.list.y, areas.search.y + areas.search.height);
     }
 
     #[test]

@@ -1679,11 +1679,13 @@ fn parse_output_format(value: &str) -> Option<OutputFormat> {
 // Command implementations (stubs)
 // ============================================================================
 
-fn run_interactive(global: &GlobalOpts, _args: &RunArgs) -> ExitCode {
+fn run_interactive(global: &GlobalOpts, args: &RunArgs) -> ExitCode {
     let _lock = match acquire_global_lock(global, "run") {
         Ok(lock) => lock,
         Err(code) => return code,
     };
+    #[cfg(not(feature = "ui"))]
+    let _ = args;
     #[cfg(feature = "ui")]
     {
         match run_interactive_tui(global, args) {
