@@ -386,4 +386,331 @@ mod tests {
         assert!(buffer_contains(&buf, area, "Command:"));
         assert!(buffer_contains(&buf, area, "node dev server"));
     }
+
+    // ── DetailView enum ─────────────────────────────────────────────
+
+    #[test]
+    fn detail_view_eq() {
+        assert_eq!(DetailView::Summary, DetailView::Summary);
+        assert_eq!(DetailView::GalaxyBrain, DetailView::GalaxyBrain);
+        assert_eq!(DetailView::Genealogy, DetailView::Genealogy);
+        assert_ne!(DetailView::Summary, DetailView::GalaxyBrain);
+    }
+
+    // ── ProcessDetail builder ───────────────────────────────────────
+
+    #[test]
+    fn detail_default() {
+        let d = ProcessDetail::default();
+        assert!(d.block.is_none());
+        assert!(d.theme.is_none());
+        assert!(d.row.is_none());
+        assert!(!d.selected);
+        assert_eq!(d.view, DetailView::Summary);
+    }
+
+    #[test]
+    fn detail_view_builder() {
+        let d = ProcessDetail::new().view(DetailView::GalaxyBrain);
+        assert_eq!(d.view, DetailView::GalaxyBrain);
+    }
+
+    #[test]
+    fn detail_row_builder_sets_selected() {
+        let row = sample_row();
+        let d = ProcessDetail::new().row(Some(&row), true);
+        assert!(d.selected);
+        assert!(d.row.is_some());
+    }
+
+    // ── Render: selected indicator ──────────────────────────────────
+
+    #[test]
+    fn detail_renders_selected_yes() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), true)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Selected:"));
+        assert!(buffer_contains(&buf, area, "yes"));
+    }
+
+    #[test]
+    fn detail_renders_selected_no() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        // "no" appears after "Selected:"
+        assert!(buffer_contains(&buf, area, "no"));
+    }
+
+    // ── Render: stats section ───────────────────────────────────────
+
+    #[test]
+    fn detail_renders_score() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Score:"));
+        assert!(buffer_contains(&buf, area, "91"));
+    }
+
+    #[test]
+    fn detail_renders_runtime() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Runtime:"));
+        assert!(buffer_contains(&buf, area, "3h 12m"));
+    }
+
+    #[test]
+    fn detail_renders_memory() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Memory:"));
+        assert!(buffer_contains(&buf, area, "1.2 GB"));
+    }
+
+    // ── Render: Summary view evidence ───────────────────────────────
+
+    #[test]
+    fn detail_renders_evidence_section() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .view(DetailView::Summary)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Evidence"));
+    }
+
+    #[test]
+    fn detail_renders_why_summary() {
+        let area = Rect::new(0, 0, 80, 20);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "abandoned"));
+    }
+
+    #[test]
+    fn detail_renders_no_evidence_when_summary_none() {
+        let area = Rect::new(0, 0, 80, 20);
+        let mut buf = Buffer::empty(area);
+        let mut row = sample_row();
+        row.why_summary = None;
+        row.top_evidence = vec![];
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "No evidence summary"));
+    }
+
+    // ── Render: Summary view action section ─────────────────────────
+
+    #[test]
+    fn detail_renders_recommended_action() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Action"));
+        assert!(buffer_contains(&buf, area, "Recommended:"));
+    }
+
+    #[test]
+    fn detail_renders_plan_preview_when_present() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let mut row = sample_row();
+        row.plan_preview = vec!["kill -9 4242".to_string(), "verify PID gone".to_string()];
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Plan:"));
+        assert!(buffer_contains(&buf, area, "kill -9 4242"));
+    }
+
+    #[test]
+    fn detail_renders_confidence() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Confidence:"));
+        assert!(buffer_contains(&buf, area, "high"));
+    }
+
+    // ── Render: GalaxyBrain view ────────────────────────────────────
+
+    #[test]
+    fn detail_galaxy_brain_pending() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row(); // galaxy_brain is None
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .view(DetailView::GalaxyBrain)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Galaxy Brain"));
+        assert!(buffer_contains(&buf, area, "math ledger pending"));
+    }
+
+    #[test]
+    fn detail_galaxy_brain_with_trace() {
+        let area = Rect::new(0, 0, 80, 20);
+        let mut buf = Buffer::empty(area);
+        let mut row = sample_row();
+        row.galaxy_brain = Some("P(abandoned|evidence) = 0.85\nBF = 5.67".to_string());
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .view(DetailView::GalaxyBrain)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Galaxy Brain"));
+        assert!(buffer_contains(&buf, area, "P(abandoned|evidence)"));
+    }
+
+    #[test]
+    fn detail_galaxy_brain_notes() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .view(DetailView::GalaxyBrain)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Notes"));
+        assert!(buffer_contains(&buf, area, "press g to toggle"));
+    }
+
+    // ── Render: Genealogy view ──────────────────────────────────────
+
+    #[test]
+    fn detail_genealogy_view() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .view(DetailView::Genealogy)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "Genealogy"));
+        assert!(buffer_contains(&buf, area, "process tree pending"));
+    }
+
+    #[test]
+    fn detail_genealogy_notes() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let row = sample_row();
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .view(DetailView::Genealogy)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "press s to return"));
+    }
+
+    // ── classification_style (without theme) ────────────────────────
+
+    #[test]
+    fn classification_style_kill_is_red() {
+        let d = ProcessDetail::new();
+        let style = d.classification_style("KILL");
+        assert_eq!(style.fg, Some(Color::Red));
+    }
+
+    #[test]
+    fn classification_style_review_is_yellow() {
+        let d = ProcessDetail::new();
+        let style = d.classification_style("REVIEW");
+        assert_eq!(style.fg, Some(Color::Yellow));
+    }
+
+    #[test]
+    fn classification_style_spare_is_green() {
+        let d = ProcessDetail::new();
+        let style = d.classification_style("SPARE");
+        assert_eq!(style.fg, Some(Color::Green));
+    }
+
+    #[test]
+    fn classification_style_unknown_is_default() {
+        let d = ProcessDetail::new();
+        let style = d.classification_style("OTHER");
+        assert_eq!(style, Style::default());
+    }
+
+    #[test]
+    fn classification_style_case_insensitive() {
+        let d = ProcessDetail::new();
+        let style = d.classification_style("kill");
+        assert_eq!(style.fg, Some(Color::Red));
+    }
+
+    // ── label_style / value_style (without theme) ───────────────────
+
+    #[test]
+    fn label_style_without_theme() {
+        let d = ProcessDetail::new();
+        let style = d.label_style();
+        assert_eq!(style.fg, Some(Color::DarkGray));
+    }
+
+    #[test]
+    fn value_style_without_theme() {
+        let d = ProcessDetail::new();
+        let style = d.value_style();
+        assert_eq!(style, Style::default());
+    }
+
+    // ── Render: REVIEW and SPARE rows ───────────────────────────────
+
+    #[test]
+    fn detail_renders_review_row() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let mut row = sample_row();
+        row.classification = "REVIEW".to_string();
+        row.score = 65;
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "REVIEW"));
+    }
+
+    #[test]
+    fn detail_renders_spare_row() {
+        let area = Rect::new(0, 0, 60, 16);
+        let mut buf = Buffer::empty(area);
+        let mut row = sample_row();
+        row.classification = "SPARE".to_string();
+        row.score = 20;
+        ProcessDetail::new()
+            .row(Some(&row), false)
+            .render(area, &mut buf);
+        assert!(buffer_contains(&buf, area, "SPARE"));
+    }
 }
