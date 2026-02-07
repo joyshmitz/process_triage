@@ -275,4 +275,219 @@ mod tests {
 
         assert_eq!(ranked[0].candidate_id, "a");
     }
+
+    // ── SequentialDecision serde ──────────────────────────────────────
+
+    #[test]
+    fn sequential_decision_serde_roundtrip() {
+        let sd = SequentialDecision {
+            action_now: Action::Keep,
+            should_probe: true,
+            recommended_probe: Some(ProbeType::QuickScan),
+            esn_estimate: Some(2.5),
+            rationale: "needs more data".to_string(),
+        };
+        let json = serde_json::to_string(&sd).unwrap();
+        let back: SequentialDecision = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.action_now, Action::Keep);
+        assert!(back.should_probe);
+        assert_eq!(back.recommended_probe, Some(ProbeType::QuickScan));
+    }
+
+    // ── SequentialLedgerEntry serde ───────────────────────────────────
+
+    #[test]
+    fn ledger_entry_serde_roundtrip() {
+        let entry = SequentialLedgerEntry {
+            probe: ProbeType::DeepScan,
+            voi: -0.5,
+            expected_loss_after: 1.2,
+        };
+        let json = serde_json::to_string(&entry).unwrap();
+        let back: SequentialLedgerEntry = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.probe, ProbeType::DeepScan);
+        assert!((back.voi - (-0.5)).abs() < 1e-9);
+    }
+
+    // ── EsnPriority serde ─────────────────────────────────────────────
+
+    #[test]
+    fn esn_priority_serde_roundtrip() {
+        let ep = EsnPriority {
+            candidate_id: "pid-42".to_string(),
+            esn_estimate: Some(3.0),
+            recommended_probe: None,
+            should_probe: false,
+        };
+        let json = serde_json::to_string(&ep).unwrap();
+        let back: EsnPriority = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.candidate_id, "pid-42");
+        assert!(!back.should_probe);
+    }
+
+    // ── EsnCandidate construction ─────────────────────────────────────
+
+    #[test]
+    fn esn_candidate_new() {
+        let c = EsnCandidate::new(
+            "x",
+            confident_posterior(),
+            ActionFeasibility::allow_all(),
+            vec![ProbeType::QuickScan, ProbeType::DeepScan],
+        );
+        assert_eq!(c.candidate_id, "x");
+        assert_eq!(c.available_probes.len(), 2);
+    }
+
+    // ── SequentialError display ───────────────────────────────────────
+
+    #[test]
+    fn sequential_error_display() {
+        let err = SequentialError::Voi(VoiError::NoProbesAvailable);
+        let msg = format!("{}", err);
+        assert!(msg.contains("voi error"));
+    }
+
+    // ── decide_sequential specifics ───────────────────────────────────
+
+    #[test]
+    fn decide_sequential_returns_ledger() {
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let feasibility = ActionFeasibility::allow_all();
+
+        let (_, ledger) = decide_sequential(
+            &uncertain_posterior(),
+            &policy,
+            &feasibility,
+            &cost_model,
+            None,
+        )
+        .unwrap();
+
+        // Should have ledger entries for available probe types
+        assert!(!ledger.is_empty());
+    }
+
+    #[test]
+    fn decide_sequential_confident_rationale_contains_act() {
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let feasibility = ActionFeasibility::allow_all();
+
+        let (decision, _) = decide_sequential(
+            &confident_posterior(),
+            &policy,
+            &feasibility,
+            &cost_model,
+            None,
+        )
+        .unwrap();
+
+        if !decision.should_probe {
+            assert!(
+                decision.rationale.contains("Act now"),
+                "rationale should say 'Act now': {}",
+                decision.rationale
+            );
+        }
+    }
+
+    #[test]
+    fn decide_sequential_with_specific_probes() {
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let feasibility = ActionFeasibility::allow_all();
+
+        let (decision, ledger) = decide_sequential(
+            &uncertain_posterior(),
+            &policy,
+            &feasibility,
+            &cost_model,
+            Some(&[ProbeType::QuickScan]),
+        )
+        .unwrap();
+
+        // Ledger entries should only be for the requested probe
+        for entry in &ledger {
+            assert_eq!(entry.probe, ProbeType::QuickScan);
+        }
+        if decision.should_probe {
+            assert_eq!(decision.recommended_probe, Some(ProbeType::QuickScan));
+        }
+    }
+
+    // ── prioritize_by_esn specifics ───────────────────────────────────
+
+    #[test]
+    fn prioritize_empty_candidates() {
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let ranked = prioritize_by_esn(&[], &policy, &cost_model).unwrap();
+        assert!(ranked.is_empty());
+    }
+
+    #[test]
+    fn prioritize_single_candidate() {
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let candidates = vec![EsnCandidate::new(
+            "only",
+            uncertain_posterior(),
+            ActionFeasibility::allow_all(),
+            vec![ProbeType::QuickScan],
+        )];
+        let ranked = prioritize_by_esn(&candidates, &policy, &cost_model).unwrap();
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].candidate_id, "only");
+    }
+
+    #[test]
+    fn prioritize_deterministic_tiebreak() {
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let post = confident_posterior();
+
+        let candidates = vec![
+            EsnCandidate::new("z", post.clone(), feasibility.clone(), vec![ProbeType::QuickScan]),
+            EsnCandidate::new("a", post.clone(), feasibility.clone(), vec![ProbeType::QuickScan]),
+        ];
+
+        let r1 = prioritize_by_esn(&candidates, &policy, &cost_model).unwrap();
+        let r2 = prioritize_by_esn(&candidates, &policy, &cost_model).unwrap();
+        // Should be deterministic
+        assert_eq!(r1[0].candidate_id, r2[0].candidate_id);
+        assert_eq!(r1[1].candidate_id, r2[1].candidate_id);
+    }
+
+    // ── Zombie posterior ──────────────────────────────────────────────
+
+    #[test]
+    fn decide_sequential_zombie_posterior() {
+        let zombie = ClassScores {
+            useful: 0.01,
+            useful_bad: 0.01,
+            abandoned: 0.03,
+            zombie: 0.95,
+        };
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let feasibility = ActionFeasibility::allow_all();
+
+        let (decision, _) = decide_sequential(
+            &zombie,
+            &policy,
+            &feasibility,
+            &cost_model,
+            None,
+        )
+        .unwrap();
+
+        // High-confidence zombie — should not recommend probing
+        assert!(
+            !decision.should_probe || decision.action_now != Action::Keep,
+            "zombie should either act or not need probing"
+        );
+    }
 }

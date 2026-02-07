@@ -315,4 +315,234 @@ mod tests {
         // With high confidence, VOI should be non-negative; default policy skips.
         assert!(plan.selections.is_empty());
     }
+
+    // ── ProbeBudget ───────────────────────────────────────────────────
+
+    #[test]
+    fn budget_new_clamps_negatives() {
+        let b = ProbeBudget::new(-5.0, -1.0);
+        assert_eq!(b.time_seconds, 0.0);
+        assert_eq!(b.overhead, 0.0);
+    }
+
+    #[test]
+    fn budget_can_afford_within_epsilon() {
+        let b = ProbeBudget::new(1.0, 0.5);
+        let cost = ProbeCost {
+            time_seconds: 1.0,
+            overhead: 0.5,
+            intrusiveness: 0.0,
+            risk: 0.0,
+        };
+        assert!(b.can_afford(&cost));
+    }
+
+    #[test]
+    fn budget_cannot_afford_excess() {
+        let b = ProbeBudget::new(1.0, 0.5);
+        let cost = ProbeCost {
+            time_seconds: 2.0,
+            overhead: 0.1,
+            intrusiveness: 0.0,
+            risk: 0.0,
+        };
+        assert!(!b.can_afford(&cost));
+    }
+
+    #[test]
+    fn budget_consume_reduces() {
+        let mut b = ProbeBudget::new(10.0, 1.0);
+        let cost = ProbeCost {
+            time_seconds: 3.0,
+            overhead: 0.4,
+            intrusiveness: 0.0,
+            risk: 0.0,
+        };
+        b.consume(&cost);
+        assert!((b.time_seconds - 7.0).abs() < 1e-9);
+        assert!((b.overhead - 0.6).abs() < 1e-9);
+    }
+
+    #[test]
+    fn budget_consume_floors_at_zero() {
+        let mut b = ProbeBudget::new(1.0, 0.1);
+        let cost = ProbeCost {
+            time_seconds: 5.0,
+            overhead: 1.0,
+            intrusiveness: 0.0,
+            risk: 0.0,
+        };
+        b.consume(&cost);
+        assert_eq!(b.time_seconds, 0.0);
+        assert_eq!(b.overhead, 0.0);
+    }
+
+    #[test]
+    fn budget_serde_roundtrip() {
+        let b = ProbeBudget::new(30.0, 0.5);
+        let json = serde_json::to_string(&b).unwrap();
+        let back: ProbeBudget = serde_json::from_str(&json).unwrap();
+        assert!((back.time_seconds - 30.0).abs() < 1e-9);
+        assert!((back.overhead - 0.5).abs() < 1e-9);
+    }
+
+    // ── ActiveSensingPolicy ───────────────────────────────────────────
+
+    #[test]
+    fn active_sensing_policy_defaults() {
+        let p = ActiveSensingPolicy::default();
+        assert_eq!(p.max_probes_per_candidate, 1);
+        assert!(p.require_negative_voi);
+        assert_eq!(p.min_ratio, 0.0);
+    }
+
+    #[test]
+    fn active_sensing_policy_serde_roundtrip() {
+        let p = ActiveSensingPolicy {
+            max_probes_per_candidate: 3,
+            require_negative_voi: false,
+            min_ratio: -1.0,
+        };
+        let json = serde_json::to_string(&p).unwrap();
+        let back: ActiveSensingPolicy = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.max_probes_per_candidate, 3);
+        assert!(!back.require_negative_voi);
+    }
+
+    // ── ProbeOpportunity serde ────────────────────────────────────────
+
+    #[test]
+    fn probe_opportunity_serde_roundtrip() {
+        let opp = ProbeOpportunity {
+            candidate_id: "p1".to_string(),
+            probe: ProbeType::QuickScan,
+            voi: -0.3,
+            ratio: 0.5,
+            cost: ProbeCost {
+                time_seconds: 1.0,
+                overhead: 0.1,
+                intrusiveness: 0.0,
+                risk: 0.0,
+            },
+            score: 3.0,
+        };
+        let json = serde_json::to_string(&opp).unwrap();
+        let back: ProbeOpportunity = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.candidate_id, "p1");
+        assert!((back.score - 3.0).abs() < 1e-9);
+    }
+
+    // ── ActiveSensingPlan serde ───────────────────────────────────────
+
+    #[test]
+    fn active_sensing_plan_serde_roundtrip() {
+        let plan = ActiveSensingPlan {
+            selections: vec![],
+            remaining_budget: ProbeBudget::new(5.0, 0.5),
+        };
+        let json = serde_json::to_string(&plan).unwrap();
+        let back: ActiveSensingPlan = serde_json::from_str(&json).unwrap();
+        assert!(back.selections.is_empty());
+    }
+
+    // ── ProbeCandidate ────────────────────────────────────────────────
+
+    #[test]
+    fn probe_candidate_new_string_id() {
+        let c = ProbeCandidate::new(
+            String::from("pid-99"),
+            uncertain_posterior(),
+            ActionFeasibility::allow_all(),
+            vec![],
+        );
+        assert_eq!(c.id, "pid-99");
+    }
+
+    #[test]
+    fn probe_candidate_empty_probes() {
+        let c = ProbeCandidate::new(
+            "x",
+            confident_posterior(),
+            ActionFeasibility::allow_all(),
+            vec![],
+        );
+        assert!(c.available_probes.is_empty());
+    }
+
+    // ── allocate_probes edge cases ────────────────────────────────────
+
+    #[test]
+    fn allocate_empty_candidates() {
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let sp = ActiveSensingPolicy::default();
+        let budget = ProbeBudget::new(60.0, 1.0);
+
+        let plan = allocate_probes(&[], &policy, &cost_model, &sp, budget).unwrap();
+        assert!(plan.selections.is_empty());
+    }
+
+    #[test]
+    fn allocate_zero_budget() {
+        let candidates = vec![ProbeCandidate::new(
+            "p1",
+            uncertain_posterior(),
+            ActionFeasibility::allow_all(),
+            vec![ProbeType::QuickScan],
+        )];
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let sp = ActiveSensingPolicy {
+            require_negative_voi: false,
+            min_ratio: f64::NEG_INFINITY,
+            ..Default::default()
+        };
+        let budget = ProbeBudget::new(0.0, 0.0);
+
+        let plan = allocate_probes(&candidates, &policy, &cost_model, &sp, budget).unwrap();
+        assert!(plan.selections.is_empty());
+    }
+
+    #[test]
+    fn allocate_max_probes_per_candidate_limit() {
+        let candidates = vec![ProbeCandidate::new(
+            "p1",
+            uncertain_posterior(),
+            ActionFeasibility::allow_all(),
+            vec![ProbeType::QuickScan, ProbeType::DeepScan, ProbeType::NetSnapshot],
+        )];
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let sp = ActiveSensingPolicy {
+            max_probes_per_candidate: 1,
+            require_negative_voi: false,
+            min_ratio: f64::NEG_INFINITY,
+        };
+        let budget = ProbeBudget::new(100.0, 10.0);
+
+        let plan = allocate_probes(&candidates, &policy, &cost_model, &sp, budget).unwrap();
+        assert!(plan.selections.len() <= 1);
+    }
+
+    #[test]
+    fn allocate_remaining_budget_non_negative() {
+        let candidates = vec![ProbeCandidate::new(
+            "p1",
+            uncertain_posterior(),
+            ActionFeasibility::allow_all(),
+            vec![ProbeType::QuickScan, ProbeType::DeepScan],
+        )];
+        let policy = Policy::default();
+        let cost_model = ProbeCostModel::default();
+        let sp = ActiveSensingPolicy {
+            max_probes_per_candidate: 5,
+            require_negative_voi: false,
+            min_ratio: f64::NEG_INFINITY,
+        };
+        let budget = ProbeBudget::new(100.0, 10.0);
+
+        let plan = allocate_probes(&candidates, &policy, &cost_model, &sp, budget).unwrap();
+        assert!(plan.remaining_budget.time_seconds >= 0.0);
+        assert!(plan.remaining_budget.overhead >= 0.0);
+    }
 }

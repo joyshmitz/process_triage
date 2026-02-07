@@ -1020,4 +1020,439 @@ mod tests {
         let json = serde_json::to_string_pretty(&policy).unwrap();
         assert!(json.contains("preset:developer"));
     }
+
+    // ── PresetName parse aliases ──────────────────────────────────────
+
+    #[test]
+    fn parse_srv_alias() {
+        assert_eq!(PresetName::parse("srv"), Some(PresetName::Server));
+    }
+
+    #[test]
+    fn parse_production_alias() {
+        assert_eq!(PresetName::parse("production"), Some(PresetName::Server));
+    }
+
+    #[test]
+    fn parse_automation_alias() {
+        assert_eq!(PresetName::parse("automation"), Some(PresetName::Ci));
+    }
+
+    #[test]
+    fn parse_headless_alias() {
+        assert_eq!(PresetName::parse("headless"), Some(PresetName::Ci));
+    }
+
+    #[test]
+    fn parse_safe_alias() {
+        assert_eq!(PresetName::parse("safe"), Some(PresetName::Paranoid));
+    }
+
+    #[test]
+    fn parse_cautious_alias() {
+        assert_eq!(PresetName::parse("cautious"), Some(PresetName::Paranoid));
+    }
+
+    #[test]
+    fn parse_case_insensitive() {
+        assert_eq!(PresetName::parse("DEVELOPER"), Some(PresetName::Developer));
+        assert_eq!(PresetName::parse("Server"), Some(PresetName::Server));
+        assert_eq!(PresetName::parse("CI"), Some(PresetName::Ci));
+    }
+
+    #[test]
+    fn parse_unknown_returns_none() {
+        assert!(PresetName::parse("").is_none());
+        assert!(PresetName::parse("enterprise").is_none());
+    }
+
+    // ── PresetName Display / FromStr ──────────────────────────────────
+
+    #[test]
+    fn display_matches_as_str() {
+        for &p in PresetName::ALL {
+            assert_eq!(format!("{}", p), p.as_str());
+        }
+    }
+
+    #[test]
+    fn from_str_roundtrip() {
+        for &p in PresetName::ALL {
+            let parsed: PresetName = p.as_str().parse().unwrap();
+            assert_eq!(parsed, p);
+        }
+    }
+
+    #[test]
+    fn from_str_unknown_error() {
+        let err = "nope".parse::<PresetName>().unwrap_err();
+        assert!(format!("{}", err).contains("Unknown preset"));
+        assert!(format!("{}", err).contains("nope"));
+    }
+
+    // ── PresetName ALL constant ───────────────────────────────────────
+
+    #[test]
+    fn all_has_four_entries() {
+        assert_eq!(PresetName::ALL.len(), 4);
+    }
+
+    // ── PresetName description ────────────────────────────────────────
+
+    #[test]
+    fn every_preset_has_description() {
+        for &p in PresetName::ALL {
+            assert!(!p.description().is_empty());
+        }
+    }
+
+    // ── PresetError variants ──────────────────────────────────────────
+
+    #[test]
+    fn preset_error_invalid_override_display() {
+        let err = PresetError::InvalidOverride("bad value".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("Invalid override"));
+        assert!(msg.contains("bad value"));
+    }
+
+    #[test]
+    fn preset_error_corrupt_file_display() {
+        let err = PresetError::CorruptPresetFile("truncated".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("Corrupt preset file"));
+        assert!(msg.contains("truncated"));
+    }
+
+    #[test]
+    fn preset_error_is_std_error() {
+        let err = PresetError::UnknownPreset("x".to_string());
+        let _: &dyn std::error::Error = &err;
+    }
+
+    // ── PresetName serde ──────────────────────────────────────────────
+
+    #[test]
+    fn preset_name_serde_roundtrip() {
+        for &p in PresetName::ALL {
+            let json = serde_json::to_string(&p).unwrap();
+            let back: PresetName = serde_json::from_str(&json).unwrap();
+            assert_eq!(back, p);
+        }
+    }
+
+    #[test]
+    fn preset_name_serde_lowercase() {
+        let json = serde_json::to_string(&PresetName::Ci).unwrap();
+        assert_eq!(json, "\"ci\"");
+    }
+
+    // ── get_preset dispatches ─────────────────────────────────────────
+
+    #[test]
+    fn get_preset_returns_correct_policy_id() {
+        for &p in PresetName::ALL {
+            let policy = get_preset(p);
+            let expected = format!("preset:{}", p.as_str());
+            assert_eq!(policy.policy_id.as_deref(), Some(expected.as_str()));
+        }
+    }
+
+    #[test]
+    fn get_preset_all_schema_1_0() {
+        for &p in PresetName::ALL {
+            assert_eq!(get_preset(p).schema_version, "1.0.0");
+        }
+    }
+
+    // ── Developer preset specifics ────────────────────────────────────
+
+    #[test]
+    fn developer_loss_matrix_aggressive() {
+        let p = get_preset(PresetName::Developer);
+        // Kill penalty for useful = 50 (lower than server)
+        assert!(p.loss_matrix.useful.kill < 100.0);
+        // High penalty for keeping abandoned
+        assert!(p.loss_matrix.abandoned.keep > 5.0);
+    }
+
+    #[test]
+    fn developer_guardrails_relaxed() {
+        let p = get_preset(PresetName::Developer);
+        assert_eq!(p.guardrails.max_kills_per_run, 20);
+        assert_eq!(p.guardrails.min_process_age_seconds, 1800);
+        assert!(p.guardrails.protected_patterns.len() <= 3);
+    }
+
+    #[test]
+    fn developer_robot_mode_disabled() {
+        let p = get_preset(PresetName::Developer);
+        assert!(!p.robot_mode.enabled);
+        assert_eq!(p.robot_mode.min_posterior, 0.90);
+        assert!(!p.robot_mode.require_known_signature);
+    }
+
+    #[test]
+    fn developer_fdr_10pct() {
+        let p = get_preset(PresetName::Developer);
+        assert_eq!(p.fdr_control.method, FdrMethod::Bh);
+        assert!((p.fdr_control.alpha - 0.10).abs() < 1e-9);
+    }
+
+    #[test]
+    fn developer_data_loss_tty_not_blocked() {
+        let p = get_preset(PresetName::Developer);
+        assert!(!p.data_loss_gates.block_if_active_tty);
+    }
+
+    // ── Server preset specifics ───────────────────────────────────────
+
+    #[test]
+    fn server_loss_matrix_conservative() {
+        let p = get_preset(PresetName::Server);
+        assert!(p.loss_matrix.useful.kill >= 1000.0);
+        assert!(p.loss_matrix.abandoned.keep < 5.0);
+    }
+
+    #[test]
+    fn server_guardrails_strict() {
+        let p = get_preset(PresetName::Server);
+        assert_eq!(p.guardrails.max_kills_per_run, 5);
+        assert_eq!(p.guardrails.min_process_age_seconds, 14400);
+        assert!(p.guardrails.protected_patterns.len() >= 8);
+        assert!(p.guardrails.force_review_patterns.len() >= 2);
+    }
+
+    #[test]
+    fn server_robot_mode_high_bar() {
+        let p = get_preset(PresetName::Server);
+        assert!(!p.robot_mode.enabled);
+        assert_eq!(p.robot_mode.min_posterior, 0.99);
+        assert!(p.robot_mode.require_known_signature);
+        assert!(p.robot_mode.require_human_for_supervised);
+    }
+
+    #[test]
+    fn server_fdr_1pct() {
+        let p = get_preset(PresetName::Server);
+        assert_eq!(p.fdr_control.method, FdrMethod::By);
+        assert!((p.fdr_control.alpha - 0.01).abs() < 1e-9);
+        assert!(p.fdr_control.alpha_investing.is_some());
+    }
+
+    #[test]
+    fn server_load_aware_enabled() {
+        let p = get_preset(PresetName::Server);
+        assert!(p.load_aware.enabled);
+    }
+
+    #[test]
+    fn server_decision_time_bound_enabled() {
+        let p = get_preset(PresetName::Server);
+        assert!(p.decision_time_bound.enabled);
+        assert_eq!(p.decision_time_bound.fallback_action, "keep");
+    }
+
+    // ── CI preset specifics ───────────────────────────────────────────
+
+    #[test]
+    fn ci_robot_mode_enabled() {
+        let p = get_preset(PresetName::Ci);
+        assert!(p.robot_mode.enabled);
+        assert_eq!(p.robot_mode.min_posterior, 0.95);
+        assert!(!p.robot_mode.require_human_for_supervised);
+    }
+
+    #[test]
+    fn ci_no_confirmation() {
+        let p = get_preset(PresetName::Ci);
+        assert_eq!(p.guardrails.require_confirmation, Some(false));
+    }
+
+    #[test]
+    fn ci_protects_ci_runners() {
+        let p = get_preset(PresetName::Ci);
+        let names: Vec<&str> = p
+            .guardrails
+            .protected_patterns
+            .iter()
+            .map(|pe| pe.pattern.as_str())
+            .collect();
+        assert!(names.iter().any(|n| n.contains("gitlab-runner") || n.contains("actions-runner")));
+    }
+
+    #[test]
+    fn ci_force_review_empty() {
+        let p = get_preset(PresetName::Ci);
+        assert!(p.guardrails.force_review_patterns.is_empty());
+    }
+
+    #[test]
+    fn ci_fdr_5pct() {
+        let p = get_preset(PresetName::Ci);
+        assert!((p.fdr_control.alpha - 0.05).abs() < 1e-9);
+    }
+
+    #[test]
+    fn ci_decision_time_short() {
+        let p = get_preset(PresetName::Ci);
+        assert!(p.decision_time_bound.max_seconds <= 300);
+    }
+
+    // ── Paranoid preset specifics ─────────────────────────────────────
+
+    #[test]
+    fn paranoid_loss_matrix_extreme() {
+        let p = get_preset(PresetName::Paranoid);
+        assert!(p.loss_matrix.useful.kill >= 10000.0);
+        assert!(p.loss_matrix.abandoned.kill >= 1.0);
+    }
+
+    #[test]
+    fn paranoid_guardrails_extreme() {
+        let p = get_preset(PresetName::Paranoid);
+        assert_eq!(p.guardrails.max_kills_per_run, 3);
+        assert_eq!(p.guardrails.min_process_age_seconds, 86400);
+        assert!(p.guardrails.protected_patterns.len() >= 15);
+    }
+
+    #[test]
+    fn paranoid_force_review_all() {
+        let p = get_preset(PresetName::Paranoid);
+        assert!(!p.guardrails.force_review_patterns.is_empty());
+        // The wildcard .* pattern forces review for everything
+        let has_wildcard = p
+            .guardrails
+            .force_review_patterns
+            .iter()
+            .any(|pe| pe.pattern == ".*");
+        assert!(has_wildcard);
+    }
+
+    #[test]
+    fn paranoid_robot_mode_extreme() {
+        let p = get_preset(PresetName::Paranoid);
+        assert!(!p.robot_mode.enabled);
+        assert!((p.robot_mode.min_posterior - 0.999).abs() < 1e-9);
+        assert_eq!(p.robot_mode.max_kills, 1);
+    }
+
+    #[test]
+    fn paranoid_fdr_0_1pct() {
+        let p = get_preset(PresetName::Paranoid);
+        assert_eq!(p.fdr_control.method, FdrMethod::By);
+        assert!((p.fdr_control.alpha - 0.001).abs() < 1e-9);
+        assert_eq!(p.fdr_control.min_candidates, Some(5));
+    }
+
+    #[test]
+    fn paranoid_data_loss_maximum_blocking() {
+        let p = get_preset(PresetName::Paranoid);
+        assert!(p.data_loss_gates.block_if_open_write_fds);
+        assert!(p.data_loss_gates.block_if_locked_files);
+        assert!(p.data_loss_gates.block_if_active_tty);
+        assert_eq!(p.data_loss_gates.block_if_recent_io_seconds, Some(3600));
+    }
+
+    #[test]
+    fn paranoid_load_aware_sensitive() {
+        let p = get_preset(PresetName::Paranoid);
+        assert!(p.load_aware.enabled);
+        assert!(p.load_aware.load_per_core_high <= 0.5);
+    }
+
+    #[test]
+    fn paranoid_decision_time_long() {
+        let p = get_preset(PresetName::Paranoid);
+        assert!(p.decision_time_bound.min_seconds >= 300);
+        assert!(p.decision_time_bound.max_seconds >= 1800);
+    }
+
+    // ── Cross-preset comparisons ──────────────────────────────────────
+
+    #[test]
+    fn presets_min_age_ordering() {
+        let dev = get_preset(PresetName::Developer);
+        let ci = get_preset(PresetName::Ci);
+        let srv = get_preset(PresetName::Server);
+        let par = get_preset(PresetName::Paranoid);
+        assert!(dev.guardrails.min_process_age_seconds < ci.guardrails.min_process_age_seconds);
+        assert!(ci.guardrails.min_process_age_seconds < srv.guardrails.min_process_age_seconds);
+        assert!(srv.guardrails.min_process_age_seconds < par.guardrails.min_process_age_seconds);
+    }
+
+    #[test]
+    fn presets_fdr_alpha_ordering() {
+        let dev = get_preset(PresetName::Developer);
+        let ci = get_preset(PresetName::Ci);
+        let srv = get_preset(PresetName::Server);
+        let par = get_preset(PresetName::Paranoid);
+        assert!(dev.fdr_control.alpha > ci.fdr_control.alpha);
+        assert!(ci.fdr_control.alpha > srv.fdr_control.alpha);
+        assert!(srv.fdr_control.alpha > par.fdr_control.alpha);
+    }
+
+    #[test]
+    fn presets_useful_kill_cost_ordering() {
+        let dev = get_preset(PresetName::Developer);
+        let ci = get_preset(PresetName::Ci);
+        let srv = get_preset(PresetName::Server);
+        let par = get_preset(PresetName::Paranoid);
+        assert!(dev.loss_matrix.useful.kill < ci.loss_matrix.useful.kill);
+        assert!(ci.loss_matrix.useful.kill < srv.loss_matrix.useful.kill);
+        assert!(srv.loss_matrix.useful.kill < par.loss_matrix.useful.kill);
+    }
+
+    #[test]
+    fn presets_max_kills_ordering() {
+        let dev = get_preset(PresetName::Developer);
+        let ci = get_preset(PresetName::Ci);
+        let srv = get_preset(PresetName::Server);
+        let par = get_preset(PresetName::Paranoid);
+        assert!(par.guardrails.max_kills_per_run <= srv.guardrails.max_kills_per_run);
+        assert!(srv.guardrails.max_kills_per_run <= ci.guardrails.max_kills_per_run);
+        assert!(ci.guardrails.max_kills_per_run <= dev.guardrails.max_kills_per_run);
+    }
+
+    // ── PresetInfo ────────────────────────────────────────────────────
+
+    #[test]
+    fn preset_info_fields_from_policy() {
+        let info = PresetInfo::from_preset(PresetName::Developer);
+        assert_eq!(info.name, "developer");
+        assert_eq!(info.min_process_age_seconds, 1800);
+        assert_eq!(info.max_kills_per_run, 20);
+        assert!(!info.robot_mode_enabled);
+    }
+
+    #[test]
+    fn preset_info_serde_roundtrip() {
+        let info = PresetInfo::from_preset(PresetName::Server);
+        let json = serde_json::to_string(&info).unwrap();
+        let back: PresetInfo = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.name, info.name);
+        assert!((back.fdr_alpha - info.fdr_alpha).abs() < 1e-9);
+    }
+
+    #[test]
+    fn list_presets_covers_all_names() {
+        let list = list_presets();
+        let names: Vec<&str> = list.iter().map(|p| p.name.as_str()).collect();
+        for &p in PresetName::ALL {
+            assert!(names.contains(&p.as_str()));
+        }
+    }
+
+    // ── All presets serde roundtrip ───────────────────────────────────
+
+    #[test]
+    fn all_presets_policy_roundtrip() {
+        for &p in PresetName::ALL {
+            let policy = get_preset(p);
+            let json = serde_json::to_string(&policy).unwrap();
+            let back: Policy = serde_json::from_str(&json).unwrap();
+            assert_eq!(back.policy_id, policy.policy_id);
+            assert_eq!(back.schema_version, "1.0.0");
+        }
+    }
 }

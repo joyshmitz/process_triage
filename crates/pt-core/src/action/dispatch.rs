@@ -172,4 +172,46 @@ mod tests {
         let err = runner.execute(&action).expect_err("expected error");
         assert!(format!("{:?}", err).contains("restart requires supervisor support"));
     }
+
+    #[test]
+    fn composite_runner_default_trait() {
+        let runner = CompositeActionRunner::default();
+        let mut action = make_action();
+        action.action = Action::Keep;
+        assert!(runner.execute(&action).is_ok());
+    }
+
+    #[test]
+    fn composite_runner_verify_keep() {
+        let runner = CompositeActionRunner::with_defaults();
+        let mut action = make_action();
+        action.action = Action::Keep;
+        assert!(runner.verify(&action).is_ok());
+    }
+
+    #[test]
+    fn composite_runner_verify_restart() {
+        let runner = CompositeActionRunner::with_defaults();
+        let mut action = make_action();
+        action.action = Action::Restart;
+        // verify for restart is Ok (no verification needed)
+        assert!(runner.verify(&action).is_ok());
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn composite_runner_freeze_not_supported_non_linux() {
+        let runner = CompositeActionRunner::with_defaults();
+        let mut action = make_action();
+        action.action = Action::Freeze;
+        let err = runner.execute(&action).expect_err("expected error");
+        assert!(format!("{:?}", err).contains("not supported"));
+    }
+
+    #[test]
+    fn composite_runner_debug_impl() {
+        let runner = CompositeActionRunner::with_defaults();
+        let dbg = format!("{:?}", runner);
+        assert!(dbg.contains("CompositeActionRunner"));
+    }
 }

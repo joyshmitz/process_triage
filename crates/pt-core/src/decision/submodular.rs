@@ -309,4 +309,247 @@ mod tests {
 
         best
     }
+
+    // ── FeatureKey ────────────────────────────────────────────────────
+
+    #[test]
+    fn feature_key_as_str() {
+        let k = FeatureKey::new("cpu");
+        assert_eq!(k.as_str(), "cpu");
+    }
+
+    #[test]
+    fn feature_key_from_str_ref() {
+        let k: FeatureKey = "net".into();
+        assert_eq!(k.as_str(), "net");
+    }
+
+    #[test]
+    fn feature_key_equality() {
+        assert_eq!(FeatureKey::new("a"), FeatureKey::new("a"));
+        assert_ne!(FeatureKey::new("a"), FeatureKey::new("b"));
+    }
+
+    #[test]
+    fn feature_key_serde_roundtrip() {
+        let k = FeatureKey::new("io");
+        let json = serde_json::to_string(&k).unwrap();
+        let back: FeatureKey = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, k);
+    }
+
+    #[test]
+    fn feature_key_hash_in_set() {
+        let mut s = HashSet::new();
+        s.insert(FeatureKey::new("a"));
+        s.insert(FeatureKey::new("a"));
+        assert_eq!(s.len(), 1);
+    }
+
+    // ── ProbeProfile ──────────────────────────────────────────────────
+
+    #[test]
+    fn probe_profile_negative_cost_clamped() {
+        let pp = ProbeProfile::new(ProbeType::QuickScan, -5.0, vec![]);
+        assert_eq!(pp.cost, 0.0);
+    }
+
+    #[test]
+    fn probe_profile_serde_roundtrip() {
+        let pp = ProbeProfile::new(ProbeType::DeepScan, 3.0, vec!["cpu".into(), "io".into()]);
+        let json = serde_json::to_string(&pp).unwrap();
+        let back: ProbeProfile = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.probe, ProbeType::DeepScan);
+        assert!((back.cost - 3.0).abs() < 1e-9);
+        assert_eq!(back.features.len(), 2);
+    }
+
+    // ── coverage_utility ──────────────────────────────────────────────
+
+    #[test]
+    fn coverage_utility_empty() {
+        assert_eq!(coverage_utility(&[], &weights()), 0.0);
+    }
+
+    #[test]
+    fn coverage_utility_deduplicates_features() {
+        let probes = vec![
+            ProbeProfile::new(ProbeType::QuickScan, 1.0, vec!["cpu".into()]),
+            ProbeProfile::new(ProbeType::DeepScan, 1.0, vec!["cpu".into()]),
+        ];
+        let u = coverage_utility(&probes, &weights());
+        // Only one unique feature, default weight = 1.0
+        assert!((u - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn coverage_utility_weighted() {
+        let mut w = HashMap::new();
+        w.insert(FeatureKey::new("cpu"), 5.0);
+        w.insert(FeatureKey::new("net"), 2.0);
+        let probes = vec![ProbeProfile::new(
+            ProbeType::QuickScan,
+            1.0,
+            vec!["cpu".into(), "net".into()],
+        )];
+        assert!((coverage_utility(&probes, &w) - 7.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn coverage_utility_negative_weight_clamped() {
+        let mut w = HashMap::new();
+        w.insert(FeatureKey::new("cpu"), -3.0);
+        let probes = vec![ProbeProfile::new(
+            ProbeType::QuickScan,
+            1.0,
+            vec!["cpu".into()],
+        )];
+        // Negative weights clamped to 0.0
+        assert_eq!(coverage_utility(&probes, &w), 0.0);
+    }
+
+    // ── coverage_marginal_gain ────────────────────────────────────────
+
+    #[test]
+    fn marginal_gain_all_new() {
+        let covered = HashSet::new();
+        let probe = ProbeProfile::new(ProbeType::QuickScan, 1.0, vec!["a".into(), "b".into()]);
+        let gain = coverage_marginal_gain(&covered, &probe, &weights());
+        assert!((gain - 2.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn marginal_gain_all_covered() {
+        let mut covered = HashSet::new();
+        covered.insert(FeatureKey::new("a"));
+        let probe = ProbeProfile::new(ProbeType::QuickScan, 1.0, vec!["a".into()]);
+        assert_eq!(coverage_marginal_gain(&covered, &probe, &weights()), 0.0);
+    }
+
+    #[test]
+    fn marginal_gain_partial_overlap() {
+        let mut covered = HashSet::new();
+        covered.insert(FeatureKey::new("a"));
+        let probe = ProbeProfile::new(
+            ProbeType::QuickScan,
+            1.0,
+            vec!["a".into(), "b".into(), "c".into()],
+        );
+        let gain = coverage_marginal_gain(&covered, &probe, &weights());
+        // Two new features (b, c) × default weight 1.0
+        assert!((gain - 2.0).abs() < 1e-9);
+    }
+
+    // ── greedy_select_with_budget ─────────────────────────────────────
+
+    #[test]
+    fn greedy_budget_empty_probes() {
+        let result = greedy_select_with_budget(&[], &weights(), 100.0);
+        assert!(result.selected.is_empty());
+        assert_eq!(result.total_cost, 0.0);
+        assert_eq!(result.total_utility, 0.0);
+    }
+
+    #[test]
+    fn greedy_budget_zero_budget() {
+        let probes = vec![ProbeProfile::new(
+            ProbeType::QuickScan,
+            1.0,
+            vec!["a".into()],
+        )];
+        let result = greedy_select_with_budget(&probes, &weights(), 0.0);
+        assert!(result.selected.is_empty());
+    }
+
+    #[test]
+    fn greedy_budget_zero_cost_probes_selected_first() {
+        let probes = vec![
+            ProbeProfile::new(ProbeType::QuickScan, 0.0, vec!["a".into()]),
+            ProbeProfile::new(ProbeType::DeepScan, 1.0, vec!["b".into()]),
+        ];
+        let result = greedy_select_with_budget(&probes, &weights(), 0.5);
+        // Zero-cost probe selected even with tiny budget; 1.0-cost is too expensive
+        assert!(result.selected.contains(&ProbeType::QuickScan));
+        assert!(!result.selected.contains(&ProbeType::DeepScan));
+    }
+
+    #[test]
+    fn greedy_budget_prefers_efficiency() {
+        // Probe A: covers cpu for cost 1; ratio = 1/1 = 1
+        // Probe B: covers cpu+io for cost 5; ratio = 2/5 = 0.4
+        let probes = vec![
+            ProbeProfile::new(ProbeType::QuickScan, 1.0, vec!["cpu".into()]),
+            ProbeProfile::new(
+                ProbeType::DeepScan,
+                5.0,
+                vec!["cpu".into(), "io".into()],
+            ),
+        ];
+        let result = greedy_select_with_budget(&probes, &weights(), 6.0);
+        // Greedy picks QuickScan first (better ratio), then DeepScan for marginal io
+        assert_eq!(result.selected[0], ProbeType::QuickScan);
+    }
+
+    // ── greedy_select_k ───────────────────────────────────────────────
+
+    #[test]
+    fn greedy_k_zero() {
+        let probes = vec![ProbeProfile::new(
+            ProbeType::QuickScan,
+            1.0,
+            vec!["a".into()],
+        )];
+        let result = greedy_select_k(&probes, &weights(), 0);
+        assert!(result.selected.is_empty());
+    }
+
+    #[test]
+    fn greedy_k_one() {
+        let probes = vec![
+            ProbeProfile::new(ProbeType::QuickScan, 1.0, vec!["a".into()]),
+            ProbeProfile::new(ProbeType::DeepScan, 1.0, vec!["a".into(), "b".into()]),
+        ];
+        let result = greedy_select_k(&probes, &weights(), 1);
+        assert_eq!(result.selected.len(), 1);
+        // Greedy picks the one with most gain: DeepScan (2 features vs 1)
+        assert_eq!(result.selected[0], ProbeType::DeepScan);
+    }
+
+    #[test]
+    fn greedy_k_selects_up_to_k() {
+        let probes = vec![
+            ProbeProfile::new(ProbeType::QuickScan, 1.0, vec!["a".into()]),
+            ProbeProfile::new(ProbeType::DeepScan, 1.0, vec!["b".into()]),
+            ProbeProfile::new(ProbeType::NetSnapshot, 1.0, vec!["c".into()]),
+        ];
+        let result = greedy_select_k(&probes, &weights(), 2);
+        assert_eq!(result.selected.len(), 2);
+    }
+
+    #[test]
+    fn greedy_k_stops_when_no_gain() {
+        // Two identical probes covering same feature
+        let probes = vec![
+            ProbeProfile::new(ProbeType::QuickScan, 1.0, vec!["a".into()]),
+            ProbeProfile::new(ProbeType::DeepScan, 1.0, vec!["a".into()]),
+        ];
+        let result = greedy_select_k(&probes, &weights(), 5);
+        // Only 1 selected since second adds no gain
+        assert_eq!(result.selected.len(), 1);
+    }
+
+    // ── SelectionResult serde ─────────────────────────────────────────
+
+    #[test]
+    fn selection_result_serde_roundtrip() {
+        let result = SelectionResult {
+            selected: vec![ProbeType::QuickScan, ProbeType::NetSnapshot],
+            total_cost: 3.5,
+            total_utility: 2.0,
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let back: SelectionResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.selected.len(), 2);
+        assert!((back.total_cost - 3.5).abs() < 1e-9);
+    }
 }
