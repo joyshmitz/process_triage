@@ -1104,3 +1104,312 @@ fn run_signature_stats(format: &OutputFormat, min_matches: u32, sort_by: &str) -
 
     ExitCode::Clean
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── parse_category ──────────────────────────────────────────────
+
+    #[test]
+    fn parse_category_agent() {
+        assert_eq!(parse_category("agent"), Some(SupervisorCategory::Agent));
+    }
+
+    #[test]
+    fn parse_category_ide() {
+        assert_eq!(parse_category("ide"), Some(SupervisorCategory::Ide));
+    }
+
+    #[test]
+    fn parse_category_ci() {
+        assert_eq!(parse_category("ci"), Some(SupervisorCategory::Ci));
+    }
+
+    #[test]
+    fn parse_category_orchestrator() {
+        assert_eq!(parse_category("orchestrator"), Some(SupervisorCategory::Orchestrator));
+    }
+
+    #[test]
+    fn parse_category_terminal() {
+        assert_eq!(parse_category("terminal"), Some(SupervisorCategory::Terminal));
+    }
+
+    #[test]
+    fn parse_category_other() {
+        assert_eq!(parse_category("other"), Some(SupervisorCategory::Other));
+    }
+
+    #[test]
+    fn parse_category_unknown_returns_none() {
+        assert_eq!(parse_category("unknown"), None);
+    }
+
+    #[test]
+    fn parse_category_empty_returns_none() {
+        assert_eq!(parse_category(""), None);
+    }
+
+    #[test]
+    fn parse_category_case_insensitive() {
+        assert_eq!(parse_category("Agent"), Some(SupervisorCategory::Agent));
+        assert_eq!(parse_category("IDE"), Some(SupervisorCategory::Ide));
+        assert_eq!(parse_category("CI"), Some(SupervisorCategory::Ci));
+        assert_eq!(parse_category("ORCHESTRATOR"), Some(SupervisorCategory::Orchestrator));
+    }
+
+    // ── format_signature_output ─────────────────────────────────────
+
+    #[test]
+    fn format_output_json() {
+        let val = serde_json::json!({"key": "value"});
+        let result = format_signature_output(&OutputFormat::Json, val);
+        assert!(result.contains("\"key\""));
+        assert!(result.contains("\"value\""));
+    }
+
+    #[test]
+    fn format_output_toon() {
+        let val = serde_json::json!({"key": "value"});
+        let result = format_signature_output(&OutputFormat::Toon, val);
+        assert!(!result.is_empty());
+    }
+
+    #[test]
+    fn format_output_md_falls_through_to_pretty_json() {
+        let val = serde_json::json!({"hello": 42});
+        let result = format_signature_output(&OutputFormat::Md, val);
+        assert!(result.contains("42"));
+    }
+
+    // ── BUNDLE_SIGNATURES_PATH ──────────────────────────────────────
+
+    #[test]
+    fn bundle_path_has_expected_structure() {
+        assert!(BUNDLE_SIGNATURES_PATH.starts_with("signatures/"));
+        assert!(BUNDLE_SIGNATURES_PATH.ends_with(".json"));
+    }
+
+    // ── user_signatures_path ────────────────────────────────────────
+
+    #[test]
+    fn user_signatures_path_ends_with_json() {
+        let path = user_signatures_path();
+        assert!(path.to_string_lossy().ends_with("signatures.json"));
+    }
+
+    #[test]
+    fn user_signatures_path_contains_process_triage() {
+        let path = user_signatures_path();
+        assert!(path.to_string_lossy().contains("process_triage"));
+    }
+
+    // ── disabled_signatures_path / pattern_stats_path ───────────────
+
+    #[test]
+    fn disabled_path_ends_with_disabled_json() {
+        let path = disabled_signatures_path();
+        assert!(path.to_string_lossy().ends_with("disabled.json"));
+    }
+
+    #[test]
+    fn pattern_stats_path_ends_with_json() {
+        let path = pattern_stats_path();
+        assert!(path.to_string_lossy().ends_with("pattern_stats.json"));
+    }
+
+    // ── SignatureSchema serde ───────────────────────────────────────
+
+    #[test]
+    fn signature_schema_roundtrip_serde() {
+        let schema = SignatureSchema {
+            schema_version: SIG_SCHEMA_VERSION,
+            signatures: vec![SupervisorSignature {
+                name: "test_sig".to_string(),
+                category: SupervisorCategory::Agent,
+                patterns: SignaturePatterns::default(),
+                priority: 50,
+                confidence_weight: 0.75,
+                notes: Some("test note".to_string()),
+                builtin: false,
+                priors: Default::default(),
+                expectations: Default::default(),
+            }],
+            metadata: None,
+        };
+
+        let json = serde_json::to_string_pretty(&schema).unwrap();
+        let deser: SignatureSchema = serde_json::from_str(&json).unwrap();
+        assert_eq!(deser.signatures.len(), 1);
+        assert_eq!(deser.signatures[0].name, "test_sig");
+        assert_eq!(deser.signatures[0].category, SupervisorCategory::Agent);
+        assert_eq!(deser.signatures[0].priority, 50);
+        assert!((deser.signatures[0].confidence_weight - 0.75).abs() < f64::EPSILON);
+    }
+
+    // ── SignatureDatabase with built-in sigs ────────────────────────
+
+    #[test]
+    fn default_signatures_are_not_empty() {
+        let mut db = SignatureDatabase::new();
+        db.add_default_signatures();
+        assert!(!db.signatures().is_empty());
+    }
+
+    #[test]
+    fn default_signatures_have_names() {
+        let mut db = SignatureDatabase::new();
+        db.add_default_signatures();
+        for sig in db.signatures() {
+            assert!(!sig.name.is_empty());
+        }
+    }
+
+    #[test]
+    fn default_signatures_are_builtin() {
+        let mut db = SignatureDatabase::new();
+        db.add_default_signatures();
+        for sig in db.signatures() {
+            assert!(sig.builtin, "expected builtin=true for {}", sig.name);
+        }
+    }
+
+    // ── ProcessMatchContext matching ─────────────────────────────────
+
+    #[test]
+    fn match_process_no_panic_on_known_comm() {
+        let mut db = SignatureDatabase::new();
+        db.add_default_signatures();
+
+        let ctx = ProcessMatchContext {
+            comm: "claude",
+            cmdline: Some("claude --model opus"),
+            cwd: None,
+            env_vars: None,
+            socket_paths: None,
+            parent_comm: None,
+        };
+        let _matches = db.match_process(&ctx);
+    }
+
+    #[test]
+    fn match_process_unknown_returns_empty_or_low() {
+        let mut db = SignatureDatabase::new();
+        db.add_default_signatures();
+
+        let ctx = ProcessMatchContext {
+            comm: "totally_unique_nonexistent_process_xyz123",
+            cmdline: None,
+            cwd: None,
+            env_vars: None,
+            socket_paths: None,
+            parent_comm: None,
+        };
+        let matches = db.match_process(&ctx);
+        assert!(matches.is_empty() || matches[0].score < 0.5);
+    }
+
+    // ── env var parsing logic ───────────────────────────────────────
+
+    #[test]
+    fn env_var_parsing_key_value() {
+        let mut env_map: HashMap<String, String> = HashMap::new();
+        let env_var = "NODE_ENV=production";
+        if let Some((key, value)) = env_var.split_once('=') {
+            env_map.insert(key.to_string(), value.to_string());
+        }
+        assert_eq!(env_map.get("NODE_ENV").unwrap(), "production");
+    }
+
+    #[test]
+    fn env_var_parsing_key_only() {
+        let mut env_map: HashMap<String, String> = HashMap::new();
+        let env_var = "DEBUG";
+        if let Some((key, value)) = env_var.split_once('=') {
+            env_map.insert(key.to_string(), value.to_string());
+        } else {
+            env_map.insert(env_var.to_string(), ".*".to_string());
+        }
+        assert_eq!(env_map.get("DEBUG").unwrap(), ".*");
+    }
+
+    #[test]
+    fn env_var_parsing_value_with_equals() {
+        let mut env_map: HashMap<String, String> = HashMap::new();
+        let env_var = "PATH=/usr/bin=/opt";
+        if let Some((key, value)) = env_var.split_once('=') {
+            env_map.insert(key.to_string(), value.to_string());
+        }
+        assert_eq!(env_map.get("PATH").unwrap(), "/usr/bin=/opt");
+    }
+
+    // ── SignaturePatterns ───────────────────────────────────────────
+
+    #[test]
+    fn signature_patterns_default_is_empty() {
+        let p = SignaturePatterns::default();
+        assert!(p.process_names.is_empty());
+        assert!(p.arg_patterns.is_empty());
+        assert!(p.environment_vars.is_empty());
+    }
+
+    #[test]
+    fn supervisor_signature_construction() {
+        let sig = SupervisorSignature {
+            name: "test_tool".to_string(),
+            category: SupervisorCategory::Ide,
+            patterns: SignaturePatterns {
+                process_names: vec!["^test.*".to_string()],
+                arg_patterns: vec!["--debug".to_string()],
+                environment_vars: {
+                    let mut m = HashMap::new();
+                    m.insert("EDITOR".to_string(), ".*vim.*".to_string());
+                    m
+                },
+                ..Default::default()
+            },
+            priority: 200,
+            confidence_weight: 0.9,
+            notes: None,
+            builtin: false,
+            priors: Default::default(),
+            expectations: Default::default(),
+        };
+        assert_eq!(sig.name, "test_tool");
+        assert_eq!(sig.category, SupervisorCategory::Ide);
+        assert_eq!(sig.patterns.process_names.len(), 1);
+        assert_eq!(sig.patterns.arg_patterns.len(), 1);
+        assert_eq!(sig.patterns.environment_vars.len(), 1);
+    }
+
+    #[test]
+    fn signature_database_add_user_sig() {
+        let mut db = SignatureDatabase::new();
+        let sig = SupervisorSignature {
+            name: "custom_tool".to_string(),
+            category: SupervisorCategory::Other,
+            patterns: SignaturePatterns::default(),
+            priority: 10,
+            confidence_weight: 0.5,
+            notes: None,
+            builtin: false,
+            priors: Default::default(),
+            expectations: Default::default(),
+        };
+        let _ = db.add(sig);
+        assert!(db.signatures().iter().any(|s| s.name == "custom_tool"));
+    }
+
+    // ── ExitCode constants ──────────────────────────────────────────
+
+    #[test]
+    fn exit_code_clean_is_success() {
+        assert_eq!(ExitCode::Clean as i32, 0);
+    }
+
+    #[test]
+    fn exit_code_args_error_is_nonzero() {
+        assert_ne!(ExitCode::ArgsError as i32, 0);
+    }
+}

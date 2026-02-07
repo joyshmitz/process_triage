@@ -629,4 +629,555 @@ mod tests {
         let result = compute_posterior(&priors, &evidence).expect("posterior");
         assert!(result.posterior.useful.is_finite());
     }
+
+    // ── ClassScores ─────────────────────────────────────────────────
+
+    #[test]
+    fn class_scores_default_is_zero() {
+        let s = ClassScores::default();
+        assert_eq!(s.useful, 0.0);
+        assert_eq!(s.useful_bad, 0.0);
+        assert_eq!(s.abandoned, 0.0);
+        assert_eq!(s.zombie, 0.0);
+    }
+
+    #[test]
+    fn class_scores_from_vec() {
+        let s = ClassScores::from_vec(&[0.1, 0.2, 0.3, 0.4]);
+        assert!(approx_eq(s.useful, 0.1, 1e-15));
+        assert!(approx_eq(s.useful_bad, 0.2, 1e-15));
+        assert!(approx_eq(s.abandoned, 0.3, 1e-15));
+        assert!(approx_eq(s.zombie, 0.4, 1e-15));
+    }
+
+    #[test]
+    fn class_scores_as_vec_roundtrip() {
+        let s = ClassScores {
+            useful: 1.0,
+            useful_bad: 2.0,
+            abandoned: 3.0,
+            zombie: 4.0,
+        };
+        let v = s.as_vec();
+        assert_eq!(v, [1.0, 2.0, 3.0, 4.0]);
+    }
+
+    #[test]
+    fn class_scores_serde_roundtrip() {
+        let s = ClassScores {
+            useful: 0.5,
+            useful_bad: 0.2,
+            abandoned: 0.2,
+            zombie: 0.1,
+        };
+        let json = serde_json::to_string(&s).unwrap();
+        let deser: ClassScores = serde_json::from_str(&json).unwrap();
+        assert_eq!(s, deser);
+    }
+
+    // ── EvidenceTerm / PosteriorResult serde ────────────────────────
+
+    #[test]
+    fn evidence_term_serde_roundtrip() {
+        let term = EvidenceTerm {
+            feature: "cpu".to_string(),
+            log_likelihood: ClassScores {
+                useful: -1.0,
+                useful_bad: -2.0,
+                abandoned: -0.5,
+                zombie: -3.0,
+            },
+        };
+        let json = serde_json::to_string(&term).unwrap();
+        let deser: EvidenceTerm = serde_json::from_str(&json).unwrap();
+        assert_eq!(term, deser);
+    }
+
+    #[test]
+    fn posterior_result_serde_roundtrip() {
+        let result = PosteriorResult {
+            posterior: ClassScores {
+                useful: 0.4,
+                useful_bad: 0.1,
+                abandoned: 0.3,
+                zombie: 0.2,
+            },
+            log_posterior: ClassScores {
+                useful: -0.9,
+                useful_bad: -2.3,
+                abandoned: -1.2,
+                zombie: -1.6,
+            },
+            log_odds_abandoned_useful: 0.3,
+            evidence_terms: vec![EvidenceTerm {
+                feature: "prior".to_string(),
+                log_likelihood: ClassScores::default(),
+            }],
+        };
+        let json = serde_json::to_string(&result).unwrap();
+        let deser: PosteriorResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(result, deser);
+    }
+
+    // ── PosteriorError ──────────────────────────────────────────────
+
+    #[test]
+    fn error_invalid_evidence_display() {
+        let err = PosteriorError::InvalidEvidence {
+            field: "cpu.occupancy",
+            message: "expected in [0,1], got 2".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("cpu.occupancy"));
+        assert!(msg.contains("expected in [0,1]"));
+    }
+
+    #[test]
+    fn error_invalid_priors_display() {
+        let err = PosteriorError::InvalidPriors {
+            field: "runtime_gamma",
+            message: "shape must be > 0".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("runtime_gamma"));
+        assert!(msg.contains("shape must be > 0"));
+    }
+
+    // ── Evidence default ────────────────────────────────────────────
+
+    #[test]
+    fn evidence_default_all_none() {
+        let e = Evidence::default();
+        assert!(e.cpu.is_none());
+        assert!(e.runtime_seconds.is_none());
+        assert!(e.orphan.is_none());
+        assert!(e.tty.is_none());
+        assert!(e.net.is_none());
+        assert!(e.io_active.is_none());
+        assert!(e.state_flag.is_none());
+        assert!(e.command_category.is_none());
+    }
+
+    // ── add_scores ──────────────────────────────────────────────────
+
+    #[test]
+    fn add_scores_sums_elementwise() {
+        let a = ClassScores {
+            useful: 1.0,
+            useful_bad: 2.0,
+            abandoned: 3.0,
+            zombie: 4.0,
+        };
+        let b = ClassScores {
+            useful: 10.0,
+            useful_bad: 20.0,
+            abandoned: 30.0,
+            zombie: 40.0,
+        };
+        let c = add_scores(a, b);
+        assert!(approx_eq(c.useful, 11.0, 1e-15));
+        assert!(approx_eq(c.useful_bad, 22.0, 1e-15));
+        assert!(approx_eq(c.abandoned, 33.0, 1e-15));
+        assert!(approx_eq(c.zombie, 44.0, 1e-15));
+    }
+
+    #[test]
+    fn add_scores_identity_with_zeros() {
+        let a = ClassScores {
+            useful: 5.0,
+            useful_bad: 6.0,
+            abandoned: 7.0,
+            zombie: 8.0,
+        };
+        let zero = ClassScores::default();
+        let c = add_scores(a, zero);
+        assert_eq!(c.useful, 5.0);
+        assert_eq!(c.useful_bad, 6.0);
+    }
+
+    // ── ln_checked ──────────────────────────────────────────────────
+
+    #[test]
+    fn ln_checked_positive_value() {
+        let result = ln_checked(1.0, "test").unwrap();
+        assert!(approx_eq(result, 0.0, 1e-15));
+    }
+
+    #[test]
+    fn ln_checked_large_value() {
+        let result = ln_checked(std::f64::consts::E, "test").unwrap();
+        assert!(approx_eq(result, 1.0, 1e-15));
+    }
+
+    #[test]
+    fn ln_checked_zero_errors() {
+        let err = ln_checked(0.0, "test_field").unwrap_err();
+        match err {
+            PosteriorError::InvalidPriors { field, .. } => assert_eq!(field, "test_field"),
+            _ => panic!("wrong error type"),
+        }
+    }
+
+    #[test]
+    fn ln_checked_negative_errors() {
+        assert!(ln_checked(-1.0, "test").is_err());
+    }
+
+    #[test]
+    fn ln_checked_nan_errors() {
+        assert!(ln_checked(f64::NAN, "test").is_err());
+    }
+
+    // ── log_lik_beta_bernoulli ──────────────────────────────────────
+
+    #[test]
+    fn beta_bernoulli_true_uniform() {
+        let params = BetaParams::new(1.0, 1.0);
+        let result = log_lik_beta_bernoulli(true, &params, "test").unwrap();
+        // With uniform Beta(1,1), P(true) = alpha/(alpha+beta) = 0.5
+        assert!(approx_eq(result, (0.5f64).ln(), 1e-12));
+    }
+
+    #[test]
+    fn beta_bernoulli_false_uniform() {
+        let params = BetaParams::new(1.0, 1.0);
+        let result = log_lik_beta_bernoulli(false, &params, "test").unwrap();
+        assert!(approx_eq(result, (0.5f64).ln(), 1e-12));
+    }
+
+    #[test]
+    fn beta_bernoulli_asymmetric() {
+        let params = BetaParams::new(9.0, 1.0);
+        let result_true = log_lik_beta_bernoulli(true, &params, "test").unwrap();
+        let result_false = log_lik_beta_bernoulli(false, &params, "test").unwrap();
+        // P(true) = 9/10 = 0.9, P(false) = 1/10 = 0.1
+        assert!(approx_eq(result_true, (0.9f64).ln(), 1e-12));
+        assert!(approx_eq(result_false, (0.1f64).ln(), 1e-12));
+    }
+
+    #[test]
+    fn beta_bernoulli_invalid_alpha_errors() {
+        let params = BetaParams::new(0.0, 1.0);
+        assert!(log_lik_beta_bernoulli(true, &params, "test").is_err());
+    }
+
+    #[test]
+    fn beta_bernoulli_invalid_beta_errors() {
+        let params = BetaParams::new(1.0, -1.0);
+        assert!(log_lik_beta_bernoulli(true, &params, "test").is_err());
+    }
+
+    // ── log_lik_optional_beta_bernoulli ─────────────────────────────
+
+    #[test]
+    fn optional_beta_bernoulli_none_returns_zero() {
+        let result = log_lik_optional_beta_bernoulli(true, None, "test").unwrap();
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn optional_beta_bernoulli_some_delegates() {
+        let params = BetaParams::new(1.0, 1.0);
+        let result = log_lik_optional_beta_bernoulli(true, Some(&params), "test").unwrap();
+        assert!(approx_eq(result, (0.5f64).ln(), 1e-12));
+    }
+
+    // ── log_dirichlet_categorical ───────────────────────────────────
+
+    #[test]
+    fn dirichlet_categorical_uniform() {
+        let params = DirichletParams {
+            alpha: vec![1.0, 1.0, 1.0],
+        };
+        let result = log_dirichlet_categorical(0, &params, "test").unwrap();
+        // P(0) = 1/3
+        assert!(approx_eq(result, (1.0f64 / 3.0).ln(), 1e-12));
+    }
+
+    #[test]
+    fn dirichlet_categorical_asymmetric() {
+        let params = DirichletParams {
+            alpha: vec![3.0, 1.0],
+        };
+        let result = log_dirichlet_categorical(0, &params, "test").unwrap();
+        // P(0) = 3/4 = 0.75
+        assert!(approx_eq(result, (0.75f64).ln(), 1e-12));
+    }
+
+    #[test]
+    fn dirichlet_categorical_out_of_range_errors() {
+        let params = DirichletParams {
+            alpha: vec![1.0, 1.0],
+        };
+        assert!(log_dirichlet_categorical(5, &params, "test").is_err());
+    }
+
+    #[test]
+    fn dirichlet_categorical_zero_alpha_errors() {
+        let params = DirichletParams {
+            alpha: vec![0.0, 1.0],
+        };
+        assert!(log_dirichlet_categorical(0, &params, "test").is_err());
+    }
+
+    // ── log_binomial_continuous ──────────────────────────────────────
+
+    #[test]
+    fn binomial_continuous_valid() {
+        let result = log_binomial_continuous(10.0, 3.0).unwrap();
+        assert!(result.is_finite());
+    }
+
+    #[test]
+    fn binomial_continuous_k_equals_n() {
+        let result = log_binomial_continuous(5.0, 5.0).unwrap();
+        // C(5,5) = 1, log(1) = 0
+        assert!(approx_eq(result, 0.0, 1e-10));
+    }
+
+    #[test]
+    fn binomial_continuous_k_zero() {
+        let result = log_binomial_continuous(5.0, 0.0).unwrap();
+        // C(5,0) = 1, log(1) = 0
+        assert!(approx_eq(result, 0.0, 1e-10));
+    }
+
+    #[test]
+    fn binomial_continuous_negative_n_errors() {
+        assert!(log_binomial_continuous(-1.0, 0.0).is_err());
+    }
+
+    #[test]
+    fn binomial_continuous_k_greater_than_n_errors() {
+        assert!(log_binomial_continuous(3.0, 5.0).is_err());
+    }
+
+    // ── log_lik_runtime ─────────────────────────────────────────────
+
+    #[test]
+    fn runtime_no_gamma_returns_zero() {
+        let class = ClassParams {
+            prior_prob: 0.25,
+            cpu_beta: BetaParams::new(1.0, 1.0),
+            runtime_gamma: None,
+            orphan_beta: BetaParams::new(1.0, 1.0),
+            tty_beta: BetaParams::new(1.0, 1.0),
+            net_beta: BetaParams::new(1.0, 1.0),
+            io_active_beta: None,
+            hazard_gamma: None,
+            competing_hazards: None,
+        };
+        assert_eq!(log_lik_runtime(100.0, &class).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn runtime_negative_errors() {
+        let priors = base_priors();
+        assert!(log_lik_runtime(-1.0, &priors.classes.useful).is_err());
+    }
+
+    #[test]
+    fn runtime_zero_errors() {
+        let priors = base_priors();
+        assert!(log_lik_runtime(0.0, &priors.classes.useful).is_err());
+    }
+
+    #[test]
+    fn runtime_nan_errors() {
+        let priors = base_priors();
+        assert!(log_lik_runtime(f64::NAN, &priors.classes.useful).is_err());
+    }
+
+    // ── compute_posterior additional tests ───────────────────────────
+
+    #[test]
+    fn posterior_sums_to_one() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Fraction { occupancy: 0.3 }),
+            runtime_seconds: Some(100.0),
+            orphan: Some(true),
+            tty: Some(false),
+            ..Evidence::default()
+        };
+        let result = compute_posterior(&priors, &evidence).expect("posterior");
+        let sum = result.posterior.useful
+            + result.posterior.useful_bad
+            + result.posterior.abandoned
+            + result.posterior.zombie;
+        assert!(approx_eq(sum, 1.0, 1e-10));
+    }
+
+    #[test]
+    fn posterior_includes_evidence_terms() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            orphan: Some(true),
+            tty: Some(false),
+            ..Evidence::default()
+        };
+        let result = compute_posterior(&priors, &evidence).expect("posterior");
+        let feature_names: Vec<&str> = result.evidence_terms.iter().map(|t| t.feature.as_str()).collect();
+        assert!(feature_names.contains(&"prior"));
+        assert!(feature_names.contains(&"orphan"));
+        assert!(feature_names.contains(&"tty"));
+    }
+
+    #[test]
+    fn posterior_with_io_active_evidence() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            io_active: Some(true),
+            ..Evidence::default()
+        };
+        let result = compute_posterior(&priors, &evidence).expect("posterior");
+        assert!(result.posterior.useful.is_finite());
+        let sum = result.posterior.useful
+            + result.posterior.useful_bad
+            + result.posterior.abandoned
+            + result.posterior.zombie;
+        assert!(approx_eq(sum, 1.0, 1e-10));
+    }
+
+    #[test]
+    fn posterior_with_net_evidence() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            net: Some(false),
+            ..Evidence::default()
+        };
+        let result = compute_posterior(&priors, &evidence).expect("posterior");
+        assert!(result.posterior.useful.is_finite());
+    }
+
+    #[test]
+    fn posterior_zero_prior_errors() {
+        let mut priors = base_priors();
+        priors.classes.useful.prior_prob = 0.0;
+        let evidence = Evidence::default();
+        assert!(compute_posterior(&priors, &evidence).is_err());
+    }
+
+    #[test]
+    fn posterior_negative_prior_errors() {
+        let mut priors = base_priors();
+        priors.classes.zombie.prior_prob = -0.1;
+        let evidence = Evidence::default();
+        assert!(compute_posterior(&priors, &evidence).is_err());
+    }
+
+    #[test]
+    fn posterior_cpu_nan_errors() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Fraction { occupancy: f64::NAN }),
+            ..Evidence::default()
+        };
+        assert!(compute_posterior(&priors, &evidence).is_err());
+    }
+
+    #[test]
+    fn posterior_cpu_negative_errors() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Fraction { occupancy: -0.1 }),
+            ..Evidence::default()
+        };
+        assert!(compute_posterior(&priors, &evidence).is_err());
+    }
+
+    #[test]
+    fn posterior_cpu_binomial_valid() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Binomial { k: 3.0, n: 10.0, eta: None }),
+            ..Evidence::default()
+        };
+        let result = compute_posterior(&priors, &evidence).expect("posterior");
+        let sum = result.posterior.useful
+            + result.posterior.useful_bad
+            + result.posterior.abandoned
+            + result.posterior.zombie;
+        assert!(approx_eq(sum, 1.0, 1e-10));
+    }
+
+    #[test]
+    fn posterior_cpu_binomial_invalid_k_errors() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Binomial { k: 15.0, n: 10.0, eta: None }),
+            ..Evidence::default()
+        };
+        assert!(compute_posterior(&priors, &evidence).is_err());
+    }
+
+    #[test]
+    fn posterior_cpu_binomial_with_eta() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Binomial { k: 3.0, n: 10.0, eta: Some(0.5) }),
+            ..Evidence::default()
+        };
+        let result = compute_posterior(&priors, &evidence).expect("posterior");
+        assert!(result.posterior.useful.is_finite());
+    }
+
+    #[test]
+    fn posterior_cpu_binomial_zero_eta_errors() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Binomial { k: 3.0, n: 10.0, eta: Some(0.0) }),
+            ..Evidence::default()
+        };
+        assert!(compute_posterior(&priors, &evidence).is_err());
+    }
+
+    #[test]
+    fn posterior_all_evidence_types() {
+        let priors = base_priors();
+        let evidence = Evidence {
+            cpu: Some(CpuEvidence::Fraction { occupancy: 0.5 }),
+            runtime_seconds: Some(3600.0),
+            orphan: Some(true),
+            tty: Some(false),
+            net: Some(true),
+            io_active: Some(false),
+            state_flag: None,
+            command_category: None,
+        };
+        let result = compute_posterior(&priors, &evidence).expect("posterior");
+        // 7 evidence terms: prior + cpu + runtime + orphan + tty + net + io_active
+        assert_eq!(result.evidence_terms.len(), 7);
+        let sum = result.posterior.useful
+            + result.posterior.useful_bad
+            + result.posterior.abandoned
+            + result.posterior.zombie;
+        assert!(approx_eq(sum, 1.0, 1e-10));
+    }
+
+    #[test]
+    fn posterior_asymmetric_priors_shift_result() {
+        let mut priors = base_priors();
+        priors.classes.abandoned.prior_prob = 0.9;
+        priors.classes.useful.prior_prob = 0.03;
+        priors.classes.useful_bad.prior_prob = 0.03;
+        priors.classes.zombie.prior_prob = 0.04;
+        let evidence = Evidence::default();
+        let result = compute_posterior(&priors, &evidence).expect("posterior");
+        // Abandoned should dominate
+        assert!(result.posterior.abandoned > result.posterior.useful);
+        assert!(result.posterior.abandoned > 0.8);
+    }
+
+    #[test]
+    fn log_odds_sign_matches_ratio() {
+        let mut priors = base_priors();
+        priors.classes.abandoned.prior_prob = 0.6;
+        priors.classes.useful.prior_prob = 0.2;
+        priors.classes.useful_bad.prior_prob = 0.1;
+        priors.classes.zombie.prior_prob = 0.1;
+        let result = compute_posterior(&priors, &Evidence::default()).expect("posterior");
+        // abandoned > useful => log_odds > 0
+        assert!(result.log_odds_abandoned_useful > 0.0);
+    }
 }
