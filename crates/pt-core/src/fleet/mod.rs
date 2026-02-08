@@ -3,3 +3,4 @@
 pub mod discovery;
 pub mod inventory;
 pub mod ssh_scan;
+pub mod transfer;
