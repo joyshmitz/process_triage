@@ -1270,9 +1270,9 @@ struct AgentReportArgs {
     #[arg(long)]
     embed_assets: bool,
 
-    /// Output format: html (default), slack, prose
-    #[arg(long, default_value = "html")]
-    format: String,
+    /// Report output format: html (default), slack, prose
+    #[arg(long = "report-format", default_value = "html")]
+    report_format: String,
 
     /// Prose style: terse, conversational (default), formal, technical
     #[arg(long, default_value = "conversational")]
@@ -13252,8 +13252,6 @@ fn run_agent_tail(_global: &GlobalOpts, args: &AgentTailArgs) -> ExitCode {
 #[cfg(feature = "report")]
 fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
     use pt_report::{ReportConfig, ReportGenerator, ReportTheme};
-    use std::fs::File;
-    use std::io::{BufReader, Write};
 
     // Validate inputs: need either session or bundle
     if args.session.is_none() && args.bundle.is_none() {
@@ -13297,15 +13295,7 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
             return ExitCode::ArgsError;
         }
 
-        let file = match File::open(path) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("agent report: failed to open bundle: {}", e);
-                return ExitCode::InternalError;
-            }
-        };
-
-        let mut reader = match pt_bundle::BundleReader::new(BufReader::new(file)) {
+        let mut reader = match pt_bundle::BundleReader::open(path) {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("agent report: failed to read bundle: {}", e);
@@ -13355,7 +13345,7 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
     };
 
     // Handle different output formats
-    match args.format.to_lowercase().as_str() {
+    match args.report_format.to_lowercase().as_str() {
         "html" => {
             // Write HTML to file or stdout
             if let Some(ref out_path) = args.out {
@@ -13421,7 +13411,7 @@ fn run_agent_report(global: &GlobalOpts, args: &AgentReportArgs) -> ExitCode {
         _ => {
             eprintln!(
                 "agent report: invalid format '{}', use: html, slack, prose",
-                args.format
+                args.report_format
             );
             return ExitCode::ArgsError;
         }
@@ -13936,7 +13926,7 @@ fn generate_report_from_session(
     handle: &pt_core::session::SessionHandle,
 ) -> pt_report::Result<String> {
     use pt_report::sections::*;
-    use pt_report::{ReportConfig, ReportData};
+    use pt_report::ReportData;
 
     // Read manifest for session metadata
     let manifest = handle
