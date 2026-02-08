@@ -28,6 +28,7 @@ use pt_core::exit_codes::ExitCode;
 use pt_core::fleet::discovery::{
     FleetDiscoveryConfig, InventoryProvider, ProviderRegistry, StaticInventoryProvider,
 };
+use pt_core::fleet::ssh_scan::{ssh_scan_fleet, scan_result_to_host_input, SshScanConfig};
 #[cfg(feature = "ui")]
 use pt_core::inference::galaxy_brain::{
     render as render_galaxy_brain, GalaxyBrainConfig, MathMode, Verbosity,
@@ -44,7 +45,7 @@ use pt_core::session::compare::generate_comparison_report;
 use pt_core::session::diff::{
     compute_diff, DeltaKind, DiffConfig, InferenceSummary, ProcessDelta, SessionDiff,
 };
-use pt_core::session::fleet::{create_fleet_session, CandidateInfo, HostInput};
+use pt_core::session::fleet::{create_fleet_session, HostInput};
 use pt_core::session::snapshot_persist::{
     load_inference_unchecked, load_inventory_unchecked, persist_inference, persist_inventory,
     InferenceArtifact, InventoryArtifact, PersistedInference, PersistedProcess,
@@ -3991,16 +3992,35 @@ fn run_agent_fleet_plan(global: &GlobalOpts, args: &AgentFleetPlanArgs) -> ExitC
             }
         };
 
-    let mut host_inputs: Vec<HostInput> = Vec::new();
-    for host in &hosts {
-        host_inputs.push(HostInput {
-            host_id: host.to_string(),
-            session_id: SessionId::new().0,
-            scanned_at: chrono::Utc::now().to_rfc3339(),
-            total_processes: 0,
-            candidates: Vec::<CandidateInfo>::new(),
-        });
-    }
+    // Perform SSH scanning of remote hosts
+    let ssh_config = SshScanConfig {
+        connect_timeout: args.timeout.min(30),
+        command_timeout: args.timeout,
+        parallel: args.parallel as usize,
+        continue_on_error: args.continue_on_error,
+        ..SshScanConfig::default()
+    };
+
+    eprintln!(
+        "[fleet] Scanning {} hosts (parallel={}, timeout={}s)...",
+        hosts.len(),
+        ssh_config.parallel,
+        ssh_config.command_timeout,
+    );
+
+    let scan_result = ssh_scan_fleet(&hosts, &ssh_config);
+
+    eprintln!(
+        "[fleet] Scan complete: {}/{} succeeded in {}ms",
+        scan_result.successful, scan_result.total_hosts, scan_result.duration_ms,
+    );
+
+    // Convert scan results to fleet session inputs
+    let host_inputs: Vec<HostInput> = scan_result
+        .results
+        .iter()
+        .map(scan_result_to_host_input)
+        .collect();
 
     let fleet_session_id = SessionId::new();
     let fleet_session = create_fleet_session(
@@ -4010,15 +4030,30 @@ fn run_agent_fleet_plan(global: &GlobalOpts, args: &AgentFleetPlanArgs) -> ExitC
         args.max_fdr,
     );
 
+    let mut warnings: Vec<String> = Vec::new();
+    for r in &scan_result.results {
+        if !r.success {
+            warnings.push(format!(
+                "host '{}' scan failed: {}",
+                r.host,
+                r.error.as_deref().unwrap_or("unknown error")
+            ));
+        }
+    }
+
     let response = serde_json::json!({
         "schema_version": SCHEMA_VERSION,
         "fleet_session_id": fleet_session_id.0,
         "generated_at": chrono::Utc::now().to_rfc3339(),
         "command": "agent fleet plan",
-        "status": "stubbed_plan",
-        "warnings": [
-            "remote scanning is not yet implemented; fleet plan contains empty candidates"
-        ],
+        "status": if scan_result.failed == 0 { "ok" } else { "partial" },
+        "warnings": warnings,
+        "scan_summary": {
+            "total_hosts": scan_result.total_hosts,
+            "successful": scan_result.successful,
+            "failed": scan_result.failed,
+            "duration_ms": scan_result.duration_ms,
+        },
         "inputs": {
             "hosts_spec": args.hosts,
             "inventory_path": args.inventory,
@@ -4050,9 +4085,21 @@ fn run_agent_fleet_plan(global: &GlobalOpts, args: &AgentFleetPlanArgs) -> ExitC
         _ => {
             println!("# pt-core agent fleet plan");
             println!();
-            println!("Hosts: {}", hosts.len());
+            println!(
+                "Scanned {} hosts: {} succeeded, {} failed ({}ms)",
+                scan_result.total_hosts,
+                scan_result.successful,
+                scan_result.failed,
+                scan_result.duration_ms,
+            );
             println!("Fleet session: {}", fleet_session_id.0);
-            println!("Note: remote scanning not yet implemented.");
+            if !warnings.is_empty() {
+                println!();
+                println!("Warnings:");
+                for w in &warnings {
+                    println!("  - {}", w);
+                }
+            }
         }
     }
 
