@@ -376,7 +376,7 @@ jobs:
           grep -q '^PackageIdentifier: ProcessTriage\.pt$' packages/pt.winget.yaml
           grep -q '^ManifestType: version$' packages/pt.winget.yaml
           grep -q '^ManifestType: installer$' packages/pt.winget.installer.yaml
-          grep -q '^Architecture: x64$' packages/pt.winget.installer.yaml
+          grep -Eq '^[[:space:]]*-[[:space:]]*Architecture:[[:space:]]*x64$' packages/pt.winget.installer.yaml
           grep -q '^ManifestType: defaultLocale$' packages/pt.winget.locale.en-US.yaml
           echo "Winget manifests: OK"
 
@@ -400,8 +400,28 @@ jobs:
             exit 0
           fi
 
+          extract_installer_url() {
+            local arch="$1"
+            awk -v arch="$arch" '
+              $0 ~ "^[[:space:]]*-[[:space:]]*Architecture:[[:space:]]*" arch "$" {
+                in_target = 1
+                next
+              }
+              in_target && $0 ~ /^[[:space:]]*InstallerUrl:[[:space:]]*/ {
+                line = $0
+                sub(/^[[:space:]]*InstallerUrl:[[:space:]]*/, "", line)
+                gsub(/[[:space:]]+$/, "", line)
+                print line
+                exit
+              }
+              in_target && $0 ~ /^[[:space:]]*-[[:space:]]*Architecture:[[:space:]]*/ {
+                in_target = 0
+              }
+            ' packages/pt.winget.installer.yaml
+          }
+
           # x64 is required whenever Winget manifests are generated.
-          x64_url=$(sed -n '/Architecture: x64/{n;s/^[[:space:]]*InstallerUrl:[[:space:]]*//p;q;}' packages/pt.winget.installer.yaml)
+          x64_url=$(extract_installer_url x64)
           if [[ -z "$x64_url" ]]; then
             echo "::error::Missing x64 InstallerUrl in pt.winget.installer.yaml"
             exit 1
@@ -414,7 +434,7 @@ jobs:
           fi
 
           # arm64 is optional. If present, it must resolve.
-          arm64_url=$(sed -n '/Architecture: arm64/{n;s/^[[:space:]]*InstallerUrl:[[:space:]]*//p;q;}' packages/pt.winget.installer.yaml || true)
+          arm64_url=$(extract_installer_url arm64 || true)
           if [[ -n "$arm64_url" ]]; then
             if curl --head --fail --silent "$arm64_url" > /dev/null; then
               echo "  Winget Windows arm64 URL: OK"
