@@ -3,7 +3,7 @@
 //! Tests the full MCP server against JSON-RPC 2.0 and MCP protocol spec.
 
 use pt_core::mcp::protocol::{
-    JsonRpcResponse, MCP_PROTOCOL_VERSION, INVALID_PARAMS, METHOD_NOT_FOUND, PARSE_ERROR,
+    JsonRpcResponse, INVALID_PARAMS, MCP_PROTOCOL_VERSION, METHOD_NOT_FOUND, PARSE_ERROR,
 };
 use pt_core::mcp::McpServer;
 
@@ -19,7 +19,12 @@ fn send(server: &mut McpServer, json: &str) -> JsonRpcResponse {
     server.handle_message(json).expect("expected a response")
 }
 
-fn send_rpc(server: &mut McpServer, id: u64, method: &str, params: serde_json::Value) -> JsonRpcResponse {
+fn send_rpc(
+    server: &mut McpServer,
+    id: u64,
+    method: &str,
+    params: serde_json::Value,
+) -> JsonRpcResponse {
     let msg = serde_json::json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -30,13 +35,21 @@ fn send_rpc(server: &mut McpServer, id: u64, method: &str, params: serde_json::V
 }
 
 fn assert_success(resp: &JsonRpcResponse) -> &serde_json::Value {
-    assert!(resp.error.is_none(), "expected success but got error: {:?}", resp.error);
+    assert!(
+        resp.error.is_none(),
+        "expected success but got error: {:?}",
+        resp.error
+    );
     resp.result.as_ref().expect("missing result")
 }
 
 fn assert_error(resp: &JsonRpcResponse, expected_code: i32) -> &str {
     let err = resp.error.as_ref().expect("expected error response");
-    assert_eq!(err.code, expected_code, "expected error code {} but got {}", expected_code, err.code);
+    assert_eq!(
+        err.code, expected_code,
+        "expected error code {} but got {}",
+        expected_code, err.code
+    );
     &err.message
 }
 
@@ -61,7 +74,10 @@ fn jsonrpc_id_preserved_integer() {
 #[test]
 fn jsonrpc_id_preserved_string() {
     let mut s = server();
-    let resp = send(&mut s, r#"{"jsonrpc":"2.0","id":"my-req-123","method":"ping"}"#);
+    let resp = send(
+        &mut s,
+        r#"{"jsonrpc":"2.0","id":"my-req-123","method":"ping"}"#,
+    );
     assert_eq!(resp.id, Some(serde_json::json!("my-req-123")));
 }
 
@@ -92,7 +108,10 @@ fn jsonrpc_notification_no_response() {
     let mut s = server();
     // Notifications have no id
     let resp = s.handle_message(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#);
-    assert!(resp.is_none(), "notifications should not produce a response");
+    assert!(
+        resp.is_none(),
+        "notifications should not produce a response"
+    );
 }
 
 #[test]
@@ -187,7 +206,11 @@ fn tools_list_returns_all_tools() {
     let resp = send_rpc(&mut s, 1, "tools/list", serde_json::json!({}));
     let result = assert_success(&resp);
     let tools = result["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 5, "expected 5 tools (scan, explain, history, signatures, capabilities)");
+    assert_eq!(
+        tools.len(),
+        5,
+        "expected 5 tools (scan, explain, history, signatures, capabilities)"
+    );
 }
 
 #[test]
@@ -197,7 +220,11 @@ fn tools_list_all_have_pt_prefix() {
     let result = assert_success(&resp);
     for tool in result["tools"].as_array().unwrap() {
         let name = tool["name"].as_str().unwrap();
-        assert!(name.starts_with("pt_"), "tool '{}' missing pt_ prefix", name);
+        assert!(
+            name.starts_with("pt_"),
+            "tool '{}' missing pt_ prefix",
+            name
+        );
     }
 }
 
@@ -208,8 +235,16 @@ fn tools_list_all_have_valid_input_schema() {
     let result = assert_success(&resp);
     for tool in result["tools"].as_array().unwrap() {
         let schema = &tool["inputSchema"];
-        assert_eq!(schema["type"], "object", "tool {} schema type should be object", tool["name"]);
-        assert!(schema.get("properties").is_some(), "tool {} missing properties", tool["name"]);
+        assert_eq!(
+            schema["type"], "object",
+            "tool {} schema type should be object",
+            tool["name"]
+        );
+        assert!(
+            schema.get("properties").is_some(),
+            "tool {} missing properties",
+            tool["name"]
+        );
     }
 }
 
@@ -220,7 +255,11 @@ fn tools_list_all_have_descriptions() {
     let result = assert_success(&resp);
     for tool in result["tools"].as_array().unwrap() {
         let desc = tool["description"].as_str().unwrap_or("");
-        assert!(!desc.is_empty(), "tool {} has empty description", tool["name"]);
+        assert!(
+            !desc.is_empty(),
+            "tool {} has empty description",
+            tool["name"]
+        );
     }
 }
 
@@ -261,7 +300,8 @@ fn tools_call_signatures_returns_content() {
     assert!(!content.is_empty());
     assert_eq!(content[0]["type"], "text");
     // The text should be valid JSON with a count field.
-    let parsed: serde_json::Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
     assert!(parsed["count"].as_u64().unwrap() > 0);
 }
 
@@ -307,7 +347,8 @@ fn tools_call_capabilities_returns_platform_info() {
     let result = assert_success(&resp);
     assert_eq!(result["isError"], false);
     let content = result["content"].as_array().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
     // Capabilities should have platform and probe info.
     assert!(parsed.get("platform").is_some() || parsed.get("os_type").is_some());
 }
@@ -330,7 +371,10 @@ fn tools_call_explain_requires_pid_or_comm() {
     assert_eq!(result["isError"], true);
     let content = result["content"].as_array().unwrap();
     let text = content[0]["text"].as_str().unwrap();
-    assert!(text.contains("pid"), "error should mention 'pid' requirement");
+    assert!(
+        text.contains("pid"),
+        "error should mention 'pid' requirement"
+    );
 }
 
 #[test]
@@ -346,7 +390,10 @@ fn tools_call_explain_nonexistent_pid() {
     assert_eq!(result["isError"], false);
     let content = result["content"].as_array().unwrap();
     let text = content[0]["text"].as_str().unwrap();
-    assert!(text.contains("not found"), "should indicate process not found");
+    assert!(
+        text.contains("not found"),
+        "should indicate process not found"
+    );
 }
 
 // ===========================================================================
@@ -365,7 +412,8 @@ fn tools_call_history_returns_sessions() {
     let result = assert_success(&resp);
     assert_eq!(result["isError"], false);
     let content = result["content"].as_array().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
     assert!(parsed.get("sessions").is_some());
 }
 
@@ -398,7 +446,8 @@ fn tools_call_scan_returns_processes() {
     let result = assert_success(&resp);
     assert_eq!(result["isError"], false);
     let content = result["content"].as_array().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
     assert!(parsed["total_processes"].as_u64().unwrap() > 0);
     assert!(parsed.get("scanned_at").is_some());
     assert!(parsed.get("platform").is_some());
@@ -417,7 +466,8 @@ fn tools_call_scan_with_min_score() {
     let result = assert_success(&resp);
     assert_eq!(result["isError"], false);
     let content = result["content"].as_array().unwrap();
-    let parsed: serde_json::Value = serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(content[0]["text"].as_str().unwrap()).unwrap();
     // With min_score=0.5, we should get fewer (or equal) processes.
     assert!(parsed["returned"].as_u64().unwrap() <= parsed["total_processes"].as_u64().unwrap());
 }
@@ -485,7 +535,11 @@ fn resources_list_all_have_pt_uri_prefix() {
     let result = assert_success(&resp);
     for res in result["resources"].as_array().unwrap() {
         let uri = res["uri"].as_str().unwrap();
-        assert!(uri.starts_with("pt://"), "resource '{}' missing pt:// prefix", uri);
+        assert!(
+            uri.starts_with("pt://"),
+            "resource '{}' missing pt:// prefix",
+            uri
+        );
     }
 }
 
@@ -608,12 +662,7 @@ fn resources_read_unknown_uri() {
 #[test]
 fn resources_read_missing_uri_param() {
     let mut s = server();
-    let resp = send_rpc(
-        &mut s,
-        1,
-        "resources/read",
-        serde_json::json!({}),
-    );
+    let resp = send_rpc(&mut s, 1, "resources/read", serde_json::json!({}));
     assert_error(&resp, INVALID_PARAMS);
 }
 
@@ -692,8 +741,8 @@ fn security_malformed_json_handled_gracefully() {
         "[]",
         "true",
         "42",
-        r#"{"jsonrpc":"1.0"}"#,  // Wrong version (still parseable)
-        r#"{"jsonrpc":"2.0","id":1}"#,  // Missing method
+        r#"{"jsonrpc":"1.0"}"#,        // Wrong version (still parseable)
+        r#"{"jsonrpc":"2.0","id":1}"#, // Missing method
     ];
     for input in cases {
         let resp = s.handle_message(input);
@@ -744,18 +793,23 @@ fn security_extra_fields_ignored() {
 #[test]
 fn all_resources_return_valid_json_content() {
     let mut s = server();
-    let uris = ["pt://config/priors", "pt://config/policy", "pt://signatures/builtin", "pt://version"];
+    let uris = [
+        "pt://config/priors",
+        "pt://config/policy",
+        "pt://signatures/builtin",
+        "pt://version",
+    ];
 
     for uri in &uris {
-        let resp = send_rpc(
-            &mut s,
-            1,
-            "resources/read",
-            serde_json::json!({"uri": uri}),
-        );
+        let resp = send_rpc(&mut s, 1, "resources/read", serde_json::json!({"uri": uri}));
         let result = assert_success(&resp);
         let contents = result["contents"].as_array().unwrap();
-        assert_eq!(contents.len(), 1, "resource {} should return 1 content block", uri);
+        assert_eq!(
+            contents.len(),
+            1,
+            "resource {} should return 1 content block",
+            uri
+        );
         assert_eq!(contents[0]["uri"], *uri);
         // Content should be parseable JSON
         let text = contents[0]["text"].as_str().unwrap();
@@ -781,8 +835,14 @@ fn tool_scan_schema_has_min_score_and_deep() {
         .expect("pt_scan tool not found");
 
     let props = &scan["inputSchema"]["properties"];
-    assert!(props.get("min_score").is_some(), "pt_scan should have min_score parameter");
-    assert!(props.get("deep").is_some(), "pt_scan should have deep parameter");
+    assert!(
+        props.get("min_score").is_some(),
+        "pt_scan should have min_score parameter"
+    );
+    assert!(
+        props.get("deep").is_some(),
+        "pt_scan should have deep parameter"
+    );
 }
 
 #[test]
@@ -798,8 +858,14 @@ fn tool_explain_schema_has_pid_and_comm() {
         .expect("pt_explain tool not found");
 
     let props = &explain["inputSchema"]["properties"];
-    assert!(props.get("pid").is_some(), "pt_explain should have pid parameter");
-    assert!(props.get("comm").is_some(), "pt_explain should have comm parameter");
+    assert!(
+        props.get("pid").is_some(),
+        "pt_explain should have pid parameter"
+    );
+    assert!(
+        props.get("comm").is_some(),
+        "pt_explain should have comm parameter"
+    );
 }
 
 #[test]
@@ -815,7 +881,10 @@ fn tool_history_schema_has_limit() {
         .expect("pt_history tool not found");
 
     let props = &history["inputSchema"]["properties"];
-    assert!(props.get("limit").is_some(), "pt_history should have limit parameter");
+    assert!(
+        props.get("limit").is_some(),
+        "pt_history should have limit parameter"
+    );
 }
 
 #[test]
@@ -848,7 +917,10 @@ fn tool_capabilities_schema_is_empty() {
         .expect("pt_capabilities tool not found");
 
     let props = caps["inputSchema"]["properties"].as_object().unwrap();
-    assert!(props.is_empty(), "pt_capabilities should have no parameters");
+    assert!(
+        props.is_empty(),
+        "pt_capabilities should have no parameters"
+    );
 }
 
 // ===========================================================================

@@ -22,10 +22,7 @@ fn key(code: KeyCode) -> Event {
 }
 
 fn key_ctrl(c: char) -> Event {
-    Event::Key(KeyEvent::new(
-        KeyCode::Char(c),
-        KeyModifiers::CONTROL,
-    ))
+    Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL))
 }
 
 fn key_char(c: char) -> Event {
@@ -89,14 +86,43 @@ fn make_row(
 
 fn sample_rows() -> Vec<ProcessRow> {
     vec![
-        make_row(1001, 95, "KILL", "3d 2h", "2.1 GB", "node dev-server --watch",
-            Some("Galaxy-Brain Mode\nPosterior: P(abandoned)=0.95")),
-        make_row(1002, 72, "REVIEW", "12h 30m", "512 MB", "python train.py --epochs 100",
-            Some("Galaxy-Brain Mode\nPosterior: P(abandoned)=0.72")),
+        make_row(
+            1001,
+            95,
+            "KILL",
+            "3d 2h",
+            "2.1 GB",
+            "node dev-server --watch",
+            Some("Galaxy-Brain Mode\nPosterior: P(abandoned)=0.95"),
+        ),
+        make_row(
+            1002,
+            72,
+            "REVIEW",
+            "12h 30m",
+            "512 MB",
+            "python train.py --epochs 100",
+            Some("Galaxy-Brain Mode\nPosterior: P(abandoned)=0.72"),
+        ),
         make_row(1003, 15, "SPARE", "5m", "64 MB", "vim session.rs", None),
-        make_row(1004, 88, "KILL", "7d 4h", "4.0 GB", "jupyter notebook --port 8888",
-            Some("Galaxy-Brain Mode\nPosterior: P(abandoned)=0.88")),
-        make_row(1005, 45, "REVIEW", "1h 15m", "256 MB", "cargo test --workspace", None),
+        make_row(
+            1004,
+            88,
+            "KILL",
+            "7d 4h",
+            "4.0 GB",
+            "jupyter notebook --port 8888",
+            Some("Galaxy-Brain Mode\nPosterior: P(abandoned)=0.88"),
+        ),
+        make_row(
+            1005,
+            45,
+            "REVIEW",
+            "1h 15m",
+            "256 MB",
+            "cargo test --workspace",
+            None,
+        ),
     ]
 }
 
@@ -216,13 +242,16 @@ fn search_type_and_filter() {
     let mut app = app_with_rows();
 
     // Enter search mode and type "node"
-    apply_events(&mut app, &[
-        key_char('/'),
-        key_char('n'),
-        key_char('o'),
-        key_char('d'),
-        key_char('e'),
-    ]);
+    apply_events(
+        &mut app,
+        &[
+            key_char('/'),
+            key_char('n'),
+            key_char('o'),
+            key_char('d'),
+            key_char('e'),
+        ],
+    );
 
     // Search query should be populated
     assert_eq!(app.search.value, "node");
@@ -232,12 +261,15 @@ fn search_type_and_filter() {
 fn search_backspace_deletes() {
     let mut app = app_with_rows();
 
-    apply_events(&mut app, &[
-        key_char('/'),
-        key_char('a'),
-        key_char('b'),
-        key(KeyCode::Backspace),
-    ]);
+    apply_events(
+        &mut app,
+        &[
+            key_char('/'),
+            key_char('a'),
+            key_char('b'),
+            key(KeyCode::Backspace),
+        ],
+    );
 
     assert_eq!(app.search.value, "a");
 }
@@ -246,11 +278,10 @@ fn search_backspace_deletes() {
 fn search_enter_confirms_and_returns_to_normal() {
     let mut app = app_with_rows();
 
-    apply_events(&mut app, &[
-        key_char('/'),
-        key_char('k'),
-        key(KeyCode::Enter),
-    ]);
+    apply_events(
+        &mut app,
+        &[key_char('/'), key_char('k'), key(KeyCode::Enter)],
+    );
 
     assert_eq!(app.state, AppState::Normal);
     // Search should have been committed
@@ -317,15 +348,18 @@ fn navigate_and_toggle_multiple() {
     let mut app = app_with_rows();
 
     // Select rows 0, 2, 4 by navigating and toggling
-    apply_events(&mut app, &[
-        key_char(' '),           // select row 0
-        key_char('j'),           // move to row 1
-        key_char('j'),           // move to row 2
-        key_char(' '),           // select row 2
-        key_char('j'),           // move to row 3
-        key_char('j'),           // move to row 4
-        key_char(' '),           // select row 4
-    ]);
+    apply_events(
+        &mut app,
+        &[
+            key_char(' '), // select row 0
+            key_char('j'), // move to row 1
+            key_char('j'), // move to row 2
+            key_char(' '), // select row 2
+            key_char('j'), // move to row 3
+            key_char('j'), // move to row 4
+            key_char(' '), // select row 4
+        ],
+    );
     assert_eq!(app.process_table.selected_count(), 3);
 }
 
@@ -423,7 +457,10 @@ fn execute_shows_confirmation_dialog() {
     apply_events(&mut app, &[key_char(' '), key_char('e')]);
 
     // Should show confirmation dialog
-    assert!(app.confirm_dialog.visible, "Confirmation dialog should be visible");
+    assert!(
+        app.confirm_dialog.visible,
+        "Confirmation dialog should be visible"
+    );
 }
 
 #[test]
@@ -431,10 +468,7 @@ fn execute_abort_with_escape() {
     let mut app = app_with_rows();
 
     // Select, execute, then abort
-    apply_events(&mut app, &[
-        key_char(' '),
-        key_char('e'),
-    ]);
+    apply_events(&mut app, &[key_char(' '), key_char('e')]);
     assert!(app.confirm_dialog.visible);
 
     apply_events(&mut app, &[key(KeyCode::Esc)]);
@@ -447,10 +481,7 @@ fn execute_confirm_with_enter() {
     let mut app = app_with_rows();
 
     // Select, execute, then confirm
-    apply_events(&mut app, &[
-        key_char(' '),
-        key_char('e'),
-    ]);
+    apply_events(&mut app, &[key_char(' '), key_char('e')]);
     assert!(app.confirm_dialog.visible);
 
     apply_events(&mut app, &[key(KeyCode::Enter)]);
@@ -475,10 +506,7 @@ fn execute_with_no_selection_shows_status() {
 fn confirmation_dialog_tab_toggles() {
     let mut app = app_with_rows();
 
-    apply_events(&mut app, &[
-        key_char(' '),
-        key_char('e'),
-    ]);
+    apply_events(&mut app, &[key_char(' '), key_char('e')]);
     assert!(app.confirm_dialog.visible);
 
     // Tab should toggle between options
@@ -491,17 +519,17 @@ fn confirmation_dialog_tab_toggles() {
 fn confirmation_dialog_left_right() {
     let mut app = app_with_rows();
 
-    apply_events(&mut app, &[
-        key_char(' '),
-        key_char('e'),
-    ]);
+    apply_events(&mut app, &[key_char(' '), key_char('e')]);
     assert!(app.confirm_dialog.visible);
 
     // Navigate left/right
-    apply_events(&mut app, &[
-        key_char('l'), // right
-        key_char('h'), // left
-    ]);
+    apply_events(
+        &mut app,
+        &[
+            key_char('l'), // right
+            key_char('h'), // left
+        ],
+    );
     let _terminal = render(&mut app, 120, 40);
 }
 
@@ -529,7 +557,10 @@ fn help_renders_keybindings() {
     let buf = terminal.backend().buffer();
     let area = Rect::new(0, 0, 100, 30);
 
-    assert!(buffer_contains(buf, area, "TUI Help"), "Help title should be visible");
+    assert!(
+        buffer_contains(buf, area, "TUI Help"),
+        "Help title should be visible"
+    );
 }
 
 #[test]
@@ -697,16 +728,19 @@ fn workflow_search_filter_select_abort() {
     let mut app = app_with_rows();
 
     // 1. Search for "python"
-    apply_events(&mut app, &[
-        key_char('/'),
-        key_char('p'),
-        key_char('y'),
-        key_char('t'),
-        key_char('h'),
-        key_char('o'),
-        key_char('n'),
-        key(KeyCode::Enter),
-    ]);
+    apply_events(
+        &mut app,
+        &[
+            key_char('/'),
+            key_char('p'),
+            key_char('y'),
+            key_char('t'),
+            key_char('h'),
+            key_char('o'),
+            key_char('n'),
+            key(KeyCode::Enter),
+        ],
+    );
     assert_eq!(app.state, AppState::Normal);
 
     // 2. Select all visible
@@ -771,15 +805,18 @@ fn empty_process_list_navigation_safe() {
     let mut app = App::new();
 
     // Navigation on empty list should not crash
-    apply_events(&mut app, &[
-        key_char('j'),
-        key_char('k'),
-        key(KeyCode::Home),
-        key(KeyCode::End),
-        key_char(' '),
-        key_char('A'),
-        key_char('u'),
-    ]);
+    apply_events(
+        &mut app,
+        &[
+            key_char('j'),
+            key_char('k'),
+            key(KeyCode::Home),
+            key(KeyCode::End),
+            key_char(' '),
+            key_char('A'),
+            key_char('u'),
+        ],
+    );
     let _terminal = render(&mut app, 120, 40);
 }
 

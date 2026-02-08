@@ -389,7 +389,11 @@ fn scan_result_conversion_mixed_processes() {
     assert_eq!(input.candidates.len(), 3);
     assert_eq!(input.total_processes, 4);
 
-    let sigs: Vec<&str> = input.candidates.iter().map(|c| c.signature.as_str()).collect();
+    let sigs: Vec<&str> = input
+        .candidates
+        .iter()
+        .map(|c| c.signature.as_str())
+        .collect();
     assert!(sigs.contains(&"zombie1"));
     assert!(sigs.contains(&"abandoned1"));
     assert!(sigs.contains(&"debugged"));
@@ -538,14 +542,8 @@ fn fleet_session_host_with_no_candidates() {
 fn fdr_pooling_high_evidence_kills_approved() {
     // All kills have high e-values → all should be approved.
     let inputs = vec![
-        host_input(
-            "h1",
-            vec![kill_candidate_with_evalue(1, "z1", 0.99, 500.0)],
-        ),
-        host_input(
-            "h2",
-            vec![kill_candidate_with_evalue(2, "z2", 0.98, 400.0)],
-        ),
+        host_input("h1", vec![kill_candidate_with_evalue(1, "z1", 0.99, 500.0)]),
+        host_input("h2", vec![kill_candidate_with_evalue(2, "z2", 0.98, 400.0)]),
     ];
     let session = create_fleet_session("fdr-high", None, &inputs, 0.05);
 
@@ -562,10 +560,7 @@ fn fdr_pooling_low_evidence_kills_rejected() {
             "h1",
             vec![kill_candidate_with_evalue(1, "weak1", 0.99, 500.0)],
         ),
-        host_input(
-            "h2",
-            vec![kill_candidate_with_evalue(2, "weak2", 0.3, 0.5)],
-        ),
+        host_input("h2", vec![kill_candidate_with_evalue(2, "weak2", 0.3, 0.5)]),
     ];
     let session = create_fleet_session("fdr-low", None, &inputs, 0.05);
 
@@ -578,15 +573,13 @@ fn fdr_pooling_low_evidence_kills_rejected() {
 #[test]
 fn fdr_rejected_kills_downgraded_to_review() {
     // When a kill is rejected by FDR, it should appear as "review" in action counts.
-    let inputs = vec![
-        host_input(
-            "h1",
-            vec![
-                kill_candidate_with_evalue(1, "strong", 0.99, 500.0),
-                kill_candidate_with_evalue(2, "weak", 0.80, 1.0),
-            ],
-        ),
-    ];
+    let inputs = vec![host_input(
+        "h1",
+        vec![
+            kill_candidate_with_evalue(1, "strong", 0.99, 500.0),
+            kill_candidate_with_evalue(2, "weak", 0.80, 1.0),
+        ],
+    )];
     let session = create_fleet_session("fdr-downgrade", None, &inputs, 0.05);
 
     let fdr = &session.safety_budget.pooled_fdr;
@@ -632,10 +625,7 @@ fn fdr_per_host_tracking() {
                 kill_candidate_with_evalue(2, "z2", 0.98, 400.0),
             ],
         ),
-        host_input(
-            "h2",
-            vec![kill_candidate_with_evalue(3, "z3", 0.97, 350.0)],
-        ),
+        host_input("h2", vec![kill_candidate_with_evalue(3, "z3", 0.97, 350.0)]),
     ];
     let session = create_fleet_session("fdr-hosts", None, &inputs, 0.05);
 
@@ -681,14 +671,7 @@ fn safety_budget_alpha_spending() {
     assert!((session.safety_budget.alpha_spent - 0.02).abs() < f64::EPSILON);
     assert!((session.safety_budget.alpha_remaining - 0.08).abs() < f64::EPSILON);
     assert!(
-        (*session
-            .safety_budget
-            .host_allocations
-            .get("h1")
-            .unwrap()
-            - 0.03)
-            .abs()
-            < f64::EPSILON
+        (*session.safety_budget.host_allocations.get("h1").unwrap() - 0.03).abs() < f64::EPSILON
     );
 
     record_alpha_spend(&mut session.safety_budget, "h2", 0.05);
@@ -704,15 +687,7 @@ fn safety_budget_alpha_cannot_go_negative() {
     // Overspend
     record_alpha_spend(&mut session.safety_budget, "h1", 0.10);
     assert!((session.safety_budget.alpha_remaining).abs() < f64::EPSILON);
-    assert!(
-        (*session
-            .safety_budget
-            .host_allocations
-            .get("h1")
-            .unwrap())
-        .abs()
-            < f64::EPSILON
-    );
+    assert!((*session.safety_budget.host_allocations.get("h1").unwrap()).abs() < f64::EPSILON);
 }
 
 // ===========================================================================
@@ -1039,7 +1014,10 @@ fn fdr_selected_plus_rejected_equals_total() {
     let session = create_fleet_session("fdr-math", None, &inputs, 0.05);
     let fdr = &session.safety_budget.pooled_fdr;
 
-    assert_eq!(fdr.selected_kills + fdr.rejected_kills, fdr.total_kill_candidates);
+    assert_eq!(
+        fdr.selected_kills + fdr.rejected_kills,
+        fdr.total_kill_candidates
+    );
 }
 
 #[test]
@@ -1052,14 +1030,8 @@ fn fdr_host_counts_sum_to_total() {
                 kill_candidate_with_evalue(2, "b", 0.95, 200.0),
             ],
         ),
-        host_input(
-            "h2",
-            vec![kill_candidate_with_evalue(3, "c", 0.90, 100.0)],
-        ),
-        host_input(
-            "h3",
-            vec![kill_candidate_with_evalue(4, "d", 0.85, 80.0)],
-        ),
+        host_input("h2", vec![kill_candidate_with_evalue(3, "c", 0.90, 100.0)]),
+        host_input("h3", vec![kill_candidate_with_evalue(4, "d", 0.85, 80.0)]),
     ];
     let session = create_fleet_session("fdr-counts", None, &inputs, 0.05);
     let fdr = &session.safety_budget.pooled_fdr;
@@ -1076,20 +1048,14 @@ fn fdr_host_counts_sum_to_total() {
 
 #[test]
 fn fdr_method_is_eby() {
-    let inputs = vec![host_input(
-        "h1",
-        vec![kill_candidate(1, "z", 0.9)],
-    )];
+    let inputs = vec![host_input("h1", vec![kill_candidate(1, "z", 0.9)])];
     let session = create_fleet_session("fdr-method", None, &inputs, 0.05);
     assert_eq!(session.safety_budget.pooled_fdr.method, "eby");
 }
 
 #[test]
 fn fdr_alpha_matches_max_fdr() {
-    let inputs = vec![host_input(
-        "h1",
-        vec![kill_candidate(1, "z", 0.9)],
-    )];
+    let inputs = vec![host_input("h1", vec![kill_candidate(1, "z", 0.9)])];
     for alpha in [0.01, 0.05, 0.10, 0.20] {
         let session = create_fleet_session("fdr-alpha", None, &inputs, alpha);
         assert!(
@@ -1169,10 +1135,7 @@ fn fleet_session_many_candidates_per_host() {
 
     assert_eq!(session.aggregate.total_hosts, 5);
     assert_eq!(session.aggregate.total_candidates, 2500);
-    assert_eq!(
-        session.safety_budget.pooled_fdr.total_kill_candidates,
-        2500
-    );
+    assert_eq!(session.safety_budget.pooled_fdr.total_kill_candidates, 2500);
 
     // Patterns should be detected (sig_N appears on all 5 hosts).
     assert!(!session.aggregate.recurring_patterns.is_empty());
@@ -1287,7 +1250,9 @@ fn inventory_format_detection_by_extension() {
     assert!(result.is_err());
     let err_str = format!("{}", result.unwrap_err());
     assert!(
-        err_str.contains("unsupported") || err_str.contains("format") || err_str.contains("extension"),
+        err_str.contains("unsupported")
+            || err_str.contains("format")
+            || err_str.contains("extension"),
         "Expected format error but got: {}",
         err_str
     );
