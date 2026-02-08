@@ -1668,10 +1668,55 @@ fn resolve_output_format(current: OutputFormat, source: Option<ValueSource>) -> 
 }
 
 fn parse_output_format(value: &str) -> Option<OutputFormat> {
-    match value.trim().to_lowercase().as_str() {
+    let normalized = value.trim().to_lowercase().replace('_', "-");
+    match normalized.as_str() {
         "json" => Some(OutputFormat::Json),
         "toon" => Some(OutputFormat::Toon),
+        "md" | "markdown" => Some(OutputFormat::Md),
+        "jsonl" | "json-lines" | "lines" => Some(OutputFormat::Jsonl),
+        "summary" | "brief" => Some(OutputFormat::Summary),
+        "metrics" | "kv" | "key-value" => Some(OutputFormat::Metrics),
+        "slack" => Some(OutputFormat::Slack),
+        "exitcode" | "exit-code" => Some(OutputFormat::Exitcode),
+        "prose" | "narrative" => Some(OutputFormat::Prose),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod output_format_tests {
+    use super::parse_output_format;
+    use pt_common::OutputFormat;
+
+    #[test]
+    fn parse_output_format_supports_all_canonical_variants() {
+        assert_eq!(parse_output_format("json"), Some(OutputFormat::Json));
+        assert_eq!(parse_output_format("toon"), Some(OutputFormat::Toon));
+        assert_eq!(parse_output_format("md"), Some(OutputFormat::Md));
+        assert_eq!(parse_output_format("jsonl"), Some(OutputFormat::Jsonl));
+        assert_eq!(parse_output_format("summary"), Some(OutputFormat::Summary));
+        assert_eq!(parse_output_format("metrics"), Some(OutputFormat::Metrics));
+        assert_eq!(parse_output_format("slack"), Some(OutputFormat::Slack));
+        assert_eq!(parse_output_format("exitcode"), Some(OutputFormat::Exitcode));
+        assert_eq!(parse_output_format("prose"), Some(OutputFormat::Prose));
+    }
+
+    #[test]
+    fn parse_output_format_supports_aliases_and_case_whitespace() {
+        assert_eq!(parse_output_format("  MARKDOWN  "), Some(OutputFormat::Md));
+        assert_eq!(parse_output_format("lines"), Some(OutputFormat::Jsonl));
+        assert_eq!(parse_output_format("json_lines"), Some(OutputFormat::Jsonl));
+        assert_eq!(parse_output_format("brief"), Some(OutputFormat::Summary));
+        assert_eq!(parse_output_format("key-value"), Some(OutputFormat::Metrics));
+        assert_eq!(parse_output_format("exit-code"), Some(OutputFormat::Exitcode));
+        assert_eq!(parse_output_format("narrative"), Some(OutputFormat::Prose));
+    }
+
+    #[test]
+    fn parse_output_format_rejects_unknown_values() {
+        assert_eq!(parse_output_format("compact"), None);
+        assert_eq!(parse_output_format("csv"), None);
+        assert_eq!(parse_output_format(""), None);
     }
 }
 
