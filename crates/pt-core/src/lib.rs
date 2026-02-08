@@ -26,6 +26,7 @@ pub mod inbox;
 pub mod inference;
 pub mod install;
 pub mod logging;
+pub mod mcp;
 pub mod output;
 pub mod plan;
 pub mod schema;

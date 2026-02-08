@@ -342,6 +342,9 @@ enum Commands {
     /// Update management: rollback, backup, version history
     Update(UpdateArgs),
 
+    /// MCP server for AI agent integration
+    Mcp(McpArgs),
+
     /// Print version information
     Version,
 }
@@ -1527,6 +1530,13 @@ struct SchemaArgs {
 }
 
 #[derive(Args, Debug)]
+struct McpArgs {
+    /// Transport: stdio (default) for standard MCP integration
+    #[arg(long, default_value = "stdio")]
+    transport: String,
+}
+
+#[derive(Args, Debug)]
 struct UpdateArgs {
     #[command(subcommand)]
     command: UpdateCommands,
@@ -1643,6 +1653,7 @@ fn main() {
             pt_core::signature_cli::run_signature(&cli.global.format, &args)
         }
         Some(Commands::Schema(args)) => run_schema(&cli.global, &args),
+        Some(Commands::Mcp(args)) => run_mcp(&args),
         Some(Commands::Update(args)) => run_update(&cli.global, &args),
         Some(Commands::Version) => {
             print_version(&cli.global);
@@ -7069,6 +7080,20 @@ fn collect_shadow_files(dir: &PathBuf, files: &mut Vec<PathBuf>) -> std::io::Res
         }
     }
     Ok(())
+}
+
+fn run_mcp(args: &McpArgs) -> ExitCode {
+    if args.transport != "stdio" {
+        eprintln!("Only 'stdio' transport is currently supported");
+        return ExitCode::ArgsError;
+    }
+
+    let mut server = pt_core::mcp::McpServer::new();
+    if let Err(e) = server.run_stdio() {
+        eprintln!("MCP server error: {}", e);
+        return ExitCode::IoError;
+    }
+    ExitCode::Clean
 }
 
 fn run_schema(global: &GlobalOpts, args: &SchemaArgs) -> ExitCode {
