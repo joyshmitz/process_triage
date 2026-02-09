@@ -2,6 +2,22 @@
 //!
 //! Manages the overall TUI application state, terminal setup/teardown,
 //! and the main render/event loop.
+//!
+//! ## ftui Model Contract
+//!
+//! `App` implements `ftui::Model`:
+//! - `init()` initializes model state (and may return a startup `Cmd`)
+//! - `update(msg)` applies a single `Msg` and may return a `Cmd`
+//! - `view(frame)` renders state into a frame (pure w.r.t. input state)
+//! - `subscriptions()` registers periodic ticks and other streams
+//!
+//! Async work (refresh, execute, evidence export) is injected via closures and executed via
+//! `Cmd::task`, returning completion messages back into `update()`.
+//!
+//! ## Running
+//!
+//! `run_ftui(...)` wires terminal lifecycle via `ftui::Program`. Inline mode (`--inline`)
+//! anchors the UI at the bottom of the terminal so logs/progress can scroll above it.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -928,5 +944,319 @@ mod tests {
         let subs = <App as FtuiModel>::subscriptions(&app);
         assert_eq!(subs.len(), 1);
         assert_eq!(subs[0].id(), 0x5054_5449_434B);
+    }
+
+    #[test]
+    fn test_toggle_help_msg() {
+        let mut app = App::new();
+        assert_eq!(app.state, AppState::Normal);
+
+        <App as FtuiModel>::update(&mut app, Msg::ToggleHelp);
+        assert_eq!(app.state, AppState::Help);
+
+        <App as FtuiModel>::update(&mut app, Msg::ToggleHelp);
+        assert_eq!(app.state, AppState::Normal);
+    }
+
+    #[test]
+    fn test_enter_search_mode_msg() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(&mut app, Msg::EnterSearchMode);
+        assert_eq!(app.state, AppState::Searching);
+        assert!(app.search.focused);
+        assert!(!app.process_table.focused);
+    }
+
+    #[test]
+    fn test_search_commit_returns_to_normal() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(&mut app, Msg::EnterSearchMode);
+        <App as FtuiModel>::update(&mut app, Msg::SearchInput('f'));
+        <App as FtuiModel>::update(&mut app, Msg::SearchInput('o'));
+        <App as FtuiModel>::update(&mut app, Msg::SearchCommit);
+        assert_eq!(app.state, AppState::Normal);
+        assert!(app.process_table.focused);
+    }
+
+    #[test]
+    fn test_search_cancel_returns_to_normal() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(&mut app, Msg::EnterSearchMode);
+        <App as FtuiModel>::update(&mut app, Msg::SearchCancel);
+        assert_eq!(app.state, AppState::Normal);
+        assert!(app.process_table.focused);
+    }
+
+    #[test]
+    fn test_focus_next_prev_cycle() {
+        let mut app = App::new();
+        assert!(app.process_table.focused);
+
+        <App as FtuiModel>::update(&mut app, Msg::FocusNext);
+        assert!(app.search.focused);
+        assert!(!app.process_table.focused);
+
+        <App as FtuiModel>::update(&mut app, Msg::FocusPrev);
+        assert!(app.process_table.focused);
+        assert!(!app.search.focused);
+    }
+
+    #[test]
+    fn test_resize_updates_layout() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(&mut app, Msg::Resized { width: 200, height: 50 });
+        // Layout breakpoint should update (200 is wide enough for Wide)
+        assert_eq!(app.breakpoint(), Breakpoint::Wide);
+    }
+
+    #[test]
+    fn test_focus_changed_sets_status() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(&mut app, Msg::FocusChanged(true));
+        assert_eq!(app.status_message.as_deref(), Some("Terminal focus gained"));
+
+        <App as FtuiModel>::update(&mut app, Msg::FocusChanged(false));
+        assert_eq!(app.status_message.as_deref(), Some("Terminal focus lost"));
+    }
+
+    #[test]
+    fn test_paste_enters_search_mode() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(
+            &mut app,
+            Msg::PasteReceived {
+                text: "hello".to_string(),
+                bracketed: true,
+            },
+        );
+        assert_eq!(app.state, AppState::Searching);
+        assert_eq!(app.search.value(), "hello");
+    }
+
+    #[test]
+    fn test_toggle_detail_visibility() {
+        let mut app = App::new();
+        assert!(app.is_detail_visible());
+
+        <App as FtuiModel>::update(&mut app, Msg::ToggleDetail);
+        assert!(!app.is_detail_visible());
+
+        <App as FtuiModel>::update(&mut app, Msg::ToggleDetail);
+        assert!(app.is_detail_visible());
+    }
+
+    #[test]
+    fn test_set_detail_view() {
+        let mut app = App::new();
+        assert_eq!(app.current_detail_view(), DetailView::Summary);
+
+        <App as FtuiModel>::update(&mut app, Msg::SetDetailView(DetailView::GalaxyBrain));
+        assert_eq!(app.current_detail_view(), DetailView::GalaxyBrain);
+        assert!(app.is_detail_visible());
+
+        <App as FtuiModel>::update(&mut app, Msg::SetDetailView(DetailView::Genealogy));
+        assert_eq!(app.current_detail_view(), DetailView::Genealogy);
+    }
+
+    #[test]
+    fn test_switch_theme_msg() {
+        let mut app = App::new();
+
+        <App as FtuiModel>::update(&mut app, Msg::SwitchTheme("light".to_string()));
+        assert_eq!(app.theme.mode, Theme::light().mode);
+
+        <App as FtuiModel>::update(&mut app, Msg::SwitchTheme("high_contrast".to_string()));
+        assert_eq!(app.theme.mode, Theme::high_contrast().mode);
+
+        <App as FtuiModel>::update(&mut app, Msg::SwitchTheme("no_color".to_string()));
+        assert_eq!(app.theme.mode, Theme::no_color().mode);
+
+        <App as FtuiModel>::update(&mut app, Msg::SwitchTheme("dark".to_string()));
+        assert_eq!(app.theme.mode, Theme::dark().mode);
+    }
+
+    #[test]
+    fn test_noop_does_nothing() {
+        let mut app = App::new();
+        let state_before = app.state;
+        <App as FtuiModel>::update(&mut app, Msg::Noop);
+        assert_eq!(app.state, state_before);
+    }
+
+    fn make_row(pid: u32) -> ProcessRow {
+        ProcessRow {
+            pid,
+            score: 50,
+            classification: "REVIEW".to_string(),
+            runtime: "1h".to_string(),
+            memory: "10M".to_string(),
+            command: format!("proc_{}", pid),
+            selected: false,
+            galaxy_brain: None,
+            why_summary: None,
+            top_evidence: vec![],
+            confidence: None,
+            plan_preview: vec![],
+        }
+    }
+
+    #[test]
+    fn test_processes_scanned_updates_table() {
+        let mut app = App::new();
+        let rows = vec![make_row(42)];
+        <App as FtuiModel>::update(&mut app, Msg::ProcessesScanned(rows));
+        assert_eq!(app.process_table.rows.len(), 1);
+        assert_eq!(app.process_table.rows[0].pid, 42);
+    }
+
+    #[test]
+    fn test_refresh_complete_ok() {
+        let mut app = App::new();
+        let rows = vec![make_row(99)];
+        <App as FtuiModel>::update(&mut app, Msg::RefreshComplete(Ok(rows)));
+        assert_eq!(app.process_table.rows.len(), 1);
+        assert!(app.status_message.as_deref().unwrap().contains("refreshed"));
+    }
+
+    #[test]
+    fn test_refresh_complete_err() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(
+            &mut app,
+            Msg::RefreshComplete(Err("network error".to_string())),
+        );
+        assert!(app.status_message.as_deref().unwrap().contains("failed"));
+    }
+
+    #[test]
+    fn test_execution_complete_ok_real_mode() {
+        let mut app = App::new();
+        let outcome = ExecutionOutcome {
+            mode: None,
+            attempted: 3,
+            succeeded: 2,
+            failed: 1,
+        };
+        <App as FtuiModel>::update(&mut app, Msg::ExecutionComplete(Ok(outcome)));
+        let status = app.status_message.as_deref().unwrap();
+        assert!(status.contains("2 succeeded"));
+        assert!(status.contains("1 failed"));
+    }
+
+    #[test]
+    fn test_execution_complete_dry_run() {
+        let mut app = App::new();
+        let outcome = ExecutionOutcome {
+            mode: Some("dry_run".to_string()),
+            attempted: 5,
+            succeeded: 0,
+            failed: 0,
+        };
+        <App as FtuiModel>::update(&mut app, Msg::ExecutionComplete(Ok(outcome)));
+        assert!(app.status_message.as_deref().unwrap().contains("dry_run"));
+    }
+
+    #[test]
+    fn test_execution_complete_err() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(
+            &mut app,
+            Msg::ExecutionComplete(Err("permission denied".to_string())),
+        );
+        assert!(app.status_message.as_deref().unwrap().contains("failed"));
+    }
+
+    #[test]
+    fn test_goal_summary_set_clear() {
+        let mut app = App::new();
+        assert!(app.goal_summary.is_none());
+
+        app.set_goal_summary(vec!["line1".to_string(), "line2".to_string()]);
+        assert!(app.goal_summary.is_some());
+        assert_eq!(app.goal_summary.as_ref().unwrap().len(), 2);
+
+        app.set_goal_summary(vec![]);
+        assert!(app.goal_summary.is_none());
+
+        app.set_goal_summary(vec!["ok".to_string()]);
+        app.clear_goal_summary();
+        assert!(app.goal_summary.is_none());
+    }
+
+    #[test]
+    fn test_request_refresh_take_refresh() {
+        let mut app = App::new();
+        assert!(!app.take_refresh());
+
+        app.request_refresh();
+        assert!(app.take_refresh());
+        assert!(!app.take_refresh()); // consumed
+    }
+
+    #[test]
+    fn test_request_execute_take_execute() {
+        let mut app = App::new();
+        assert!(!app.take_execute());
+
+        app.request_execute();
+        assert!(app.take_execute());
+        assert!(!app.take_execute()); // consumed
+    }
+
+    #[test]
+    fn test_with_theme_builder() {
+        let app = App::new().with_theme(Theme::light());
+        assert_eq!(app.theme.mode, Theme::light().mode);
+    }
+
+    #[test]
+    fn test_key_event_normal_escape_quits() {
+        let mut app = App::new();
+        <App as FtuiModel>::update(
+            &mut app,
+            Msg::KeyPressed(FtuiKeyEvent::new(FtuiKeyCode::Escape)),
+        );
+        assert_eq!(app.state, AppState::Quitting);
+    }
+
+    #[test]
+    fn test_key_event_search_escape_exits() {
+        let mut app = App::new();
+        app.state = AppState::Searching;
+        <App as FtuiModel>::update(
+            &mut app,
+            Msg::KeyPressed(FtuiKeyEvent::new(FtuiKeyCode::Escape)),
+        );
+        assert_eq!(app.state, AppState::Normal);
+    }
+
+    #[test]
+    fn test_key_event_help_escape_exits() {
+        let mut app = App::new();
+        app.state = AppState::Help;
+        <App as FtuiModel>::update(
+            &mut app,
+            Msg::KeyPressed(FtuiKeyEvent::new(FtuiKeyCode::Escape)),
+        );
+        assert_eq!(app.state, AppState::Normal);
+    }
+
+    #[test]
+    fn test_key_event_confirm_escape_cancels() {
+        let mut app = App::new();
+        app.state = AppState::Confirming;
+        <App as FtuiModel>::update(
+            &mut app,
+            Msg::KeyPressed(FtuiKeyEvent::new(FtuiKeyCode::Escape)),
+        );
+        assert_eq!(app.state, AppState::Normal);
+    }
+
+    #[test]
+    fn test_default_impl_matches_new() {
+        let a = App::new();
+        let b = App::default();
+        assert_eq!(a.state, b.state);
+        assert_eq!(a.should_quit(), b.should_quit());
     }
 }

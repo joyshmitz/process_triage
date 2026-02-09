@@ -20,26 +20,29 @@ Treat "never delete files without permission" as a hard invariant.
 
 ## Project Overview
 
-`pt` (Process Triage) is an interactive CLI for identifying and killing abandoned/zombie processes. It uses heuristics to score processes and learns from user decisions.
+`pt` (Process Triage) is a safety-first CLI for identifying and cleaning up abandoned/zombie processes. The user-facing entrypoint is a small Bash wrapper (`pt`) that locates/updates/execs the Rust core engine (`pt-core`).
 
 ### Architecture
 
 ```
 process_triage/
-├── pt                  # Main executable (single file)
-├── test/
-│   └── pt.bats         # BATS test suite
-├── README.md
-├── AGENTS.md
-└── LICENSE
+├── pt                  # Bash wrapper (find/exec pt-core, self-update)
+├── install.sh          # Installer for wrapper + pt-core binaries
+├── crates/             # Rust workspace
+│   ├── pt-core/        # Main inference engine + TUI (ftui behind feature "ui")
+│   ├── pt-common/      # Shared types
+│   ├── pt-math/        # Statistical computations
+│   └── ...             # config/redaction/telemetry/bundling/reporting
+├── docs/               # User + agent docs
+└── test/               # BATS test suite (wrapper + selected E2E checks)
 ```
 
 ### Key Design Decisions
 
-1. **Bash-first**: No compiled dependencies, runs anywhere
-2. **gum for UI**: Beautiful, consistent interactive components
-3. **Learning memory**: JSON-based decision history with pattern normalization
-4. **Safety by default**: Never auto-kills, always confirms, protects system services
+1. **Bash wrapper, Rust core**: The wrapper keeps install/update/discovery simple; `pt-core` owns inference + execution.
+2. **ftui for the TUI**: Premium terminal UI is implemented with ftui (Elm-style `Model`: `init`/`update`/`view`/`subscriptions`) behind `--features ui`.
+3. **Safety by default**: Never auto-kills; protected processes; identity validation; staged signals (SIGTERM then SIGKILL).
+4. **Agent/robot interface**: Structured JSON/TOON output, explicit safety gates, deterministic snapshot-friendly rendering.
 
 ---
 
@@ -47,15 +50,32 @@ process_triage/
 
 ### Code Style
 
-- Use `shellcheck` for all bash code
-- Prefer `[[` over `[` for conditionals
-- Quote all variables: `"$var"` not `$var`
-- Use `local` for function variables
-- Prefer `printf` over `echo` for portable output
+- **Bash (`pt`, scripts)**: `shellcheck`, prefer `[[` over `[`, quote variables, use `local`, prefer `printf` over `echo`.
+- **Rust (workspace)**: `cargo fmt` and `cargo clippy` (aim for zero warnings). Ensure code compiles with and without `--features ui`.
+
+### Running The TUI (ftui)
+
+```bash
+# Run the interactive TUI from source
+cargo run -p pt-core --features ui -- run
+
+# Inline mode preserves terminal scrollback by confining UI to a bottom region
+cargo run -p pt-core --features ui -- run --inline
+```
+
+### Snapshot Workflow (ftui-harness)
+
+```bash
+# Run snapshot tests (expects committed baselines)
+cargo test -p pt-core --features ui --test tui_golden --test tui_integration
+
+# Update baselines
+BLESS=1 cargo test -p pt-core --features ui --test tui_golden --test tui_integration
+```
 
 ### Testing
 
-Tests use BATS (Bash Automated Testing System):
+Wrapper tests use BATS (Bash Automated Testing System):
 
 ```bash
 # Run all tests
@@ -68,13 +88,20 @@ bats test/pt.bats
 bats --verbose-run test/
 ```
 
+Rust tests:
+
+```bash
+# Workspace tests
+cargo test --workspace
+```
+
 ### Adding New Features
 
-1. Write BATS tests first
-2. Implement in appropriate lib file
-3. Export function if needed in bin/pt
-4. Update README if user-facing
-5. Run `shellcheck bin/pt lib/*.sh`
+1. Add/adjust tests (Rust unit/integration tests; BATS for wrapper behavior)
+2. Implement the change
+3. Run `cargo fmt` / `cargo clippy` (as applicable)
+4. Run relevant tests (`cargo test`, BATS, snapshot tests)
+5. Update README/docs if behavior is user-facing
 
 ---
 
@@ -134,36 +161,29 @@ Protected (never flagged):
 
 ### Common Issues
 
-**gum not found**: Run `pt` and it will auto-install, or:
-```bash
-sudo apt install gum  # Debian/Ubuntu
-brew install gum      # macOS
-```
+**TUI won't run**: The TUI requires building `pt-core` with `--features ui`.
 
 **No candidates found**: System may be clean, or minimum age (1 hour) not reached.
 
-**Decision memory not working**: Install jq:
-```bash
-sudo apt install jq
-```
+**Snapshot tests failing**: If rendering changes are intentional, update baselines with `BLESS=1 ...` (see Snapshot Workflow above).
 
 ### Debug Mode
 
-Set `PT_DEBUG=1` to see verbose output:
+Set `RUST_LOG` to see verbose output from `pt-core`:
 ```bash
-PT_DEBUG=1 pt scan
+RUST_LOG=pt_core=debug pt scan
 ```
 
 ---
 
 ## Contributing to This Codebase
 
-When modifying `pt`:
+When modifying `pt` / `pt-core`:
 
 1. **Test changes**: Run `bats test/` before committing
-2. **Check with shellcheck**: `shellcheck bin/pt lib/*.sh`
-3. **Update docs**: If changing user-facing behavior, update README
-4. **Preserve safety**: Never remove confirmation prompts or protected patterns
+2. **Rust quality gates**: Run `cargo fmt` and `cargo clippy` (aim for zero warnings) when touching Rust code
+3. **Update docs**: If changing user-facing behavior, update README/docs
+4. **Preserve safety**: Never remove safety gates or protected patterns
 
 ---
 

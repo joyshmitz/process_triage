@@ -3,6 +3,19 @@
 //! This module provides an interactive terminal user interface for process
 //! triage operations using ftui's Elm-style architecture.
 //!
+//! # Architecture (Elm-Style)
+//!
+//! The core mental model is:
+//!
+//! - `Event` (terminal input/resize/tick) is mapped into a domain `Msg` (`msg.rs`)
+//! - `App::update(msg)` mutates state and optionally returns a `Cmd`
+//! - `Cmd` executes async work (scan/refresh/execute/export) and sends a follow-up `Msg`
+//! - `App::view(frame)` renders the current state into an ftui frame
+//! - `subscriptions()` registers tick/event streams (e.g. periodic `Tick`)
+//!
+//! This keeps state transitions explicit and makes the UI testable via message-driven
+//! integration tests and deterministic snapshot rendering.
+//!
 //! # Features
 //!
 //! - Interactive process list with sorting and filtering

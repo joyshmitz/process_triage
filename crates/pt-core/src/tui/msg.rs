@@ -3,6 +3,11 @@
 //! This module defines a single `Msg` enum that captures user input, view/state
 //! transitions, and async command completions. It is intentionally exhaustive
 //! so all transitions can be handled with explicit `match` arms in the model.
+//!
+//! When adding new variants:
+//! - Prefer reusing existing navigation/selection messages over adding key-specific variants
+//! - Keep `From<ftui::Event>` mapping shallow (Event -> Msg::KeyPressed/Resized/etc.)
+//! - Update `App::update` to handle the new transition explicitly
 
 use std::path::PathBuf;
 
@@ -117,13 +122,13 @@ mod tests {
     fn key_event_maps_to_keypressed_msg() {
         let event = Event::Key(KeyEvent::new(KeyCode::Char('q')).with_modifiers(Modifiers::CTRL));
         let msg = Msg::from(event);
-        match msg {
-            Msg::KeyPressed(key) => {
-                assert!(matches!(key.code, KeyCode::Char('q')));
-                assert!(key.modifiers.contains(Modifiers::CTRL));
-            }
-            _ => panic!("expected Msg::KeyPressed"),
-        }
+        let Msg::KeyPressed(key) = msg else {
+            assert!(false, "expected Msg::KeyPressed");
+            return;
+        };
+
+        assert!(matches!(key.code, KeyCode::Char('q')));
+        assert!(key.modifiers.contains(Modifiers::CTRL));
     }
 
     #[test]
@@ -132,13 +137,13 @@ mod tests {
             width: 123,
             height: 45,
         });
-        match msg {
-            Msg::Resized { width, height } => {
-                assert_eq!(width, 123);
-                assert_eq!(height, 45);
-            }
-            _ => panic!("expected Msg::Resized"),
-        }
+        let Msg::Resized { width, height } = msg else {
+            assert!(false, "expected Msg::Resized");
+            return;
+        };
+
+        assert_eq!(width, 123);
+        assert_eq!(height, 45);
     }
 
     #[test]
