@@ -87,6 +87,10 @@ fn sample_row(trace: Option<String>) -> ProcessRow {
         command: "node dev server".to_string(),
         selected: false,
         galaxy_brain: trace,
+        why_summary: Some("Old + idle + orphaned".to_string()),
+        top_evidence: vec!["PPID=1".to_string(), "Idle>2h".to_string()],
+        confidence: Some("high".to_string()),
+        plan_preview: vec!["SIGTERM -> SIGKILL".to_string()],
     }
 }
 
@@ -154,7 +158,9 @@ fn detail_galaxy_brain_placeholder_when_missing() {
 
 #[test]
 fn detail_galaxy_brain_truncates_long_trace() {
-    let area = Rect::new(0, 0, 60, 12);
+    // Ensure the detail widget has enough vertical space to render
+    // a truncation indicator line.
+    let area = Rect::new(0, 0, 60, 24);
     let mut buf = Buffer::empty(area);
     let long_trace = (0..40)
         .map(|i| format!("line {}", i))
@@ -172,12 +178,12 @@ fn detail_galaxy_brain_truncates_long_trace() {
 
 #[test]
 fn responsive_layout_breakpoints_match_sizes() {
-    let compact = ResponsiveLayout::new(Rect::new(0, 0, 80, 24));
+    let compact = ResponsiveLayout::from_ratatui(Rect::new(0, 0, 80, 24));
     assert_eq!(compact.breakpoint(), Breakpoint::Compact);
 
-    let standard = ResponsiveLayout::new(Rect::new(0, 0, 120, 40));
+    let standard = ResponsiveLayout::from_ratatui(Rect::new(0, 0, 120, 40));
     assert_eq!(standard.breakpoint(), Breakpoint::Standard);
 
-    let wide = ResponsiveLayout::new(Rect::new(0, 0, 200, 60));
+    let wide = ResponsiveLayout::from_ratatui(Rect::new(0, 0, 200, 60));
     assert_eq!(wide.breakpoint(), Breakpoint::Wide);
 }

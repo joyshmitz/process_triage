@@ -136,15 +136,12 @@ impl<'a> ConfirmDialog<'a> {
         };
 
         // Build dialog with custom Yes/No buttons
-        let dialog = FtuiDialog::custom(
-            format!(" {} ", self.title),
-            full_message,
-        )
-        .button(FtuiDialogButton::new(self.yes_label, "yes"))
-        .button(FtuiDialogButton::new(self.no_label, "no"))
-        .build()
-        .button_style(button_style)
-        .focused_button_style(focused_style);
+        let dialog = FtuiDialog::custom(format!(" {} ", self.title), full_message)
+            .button(FtuiDialogButton::new(self.yes_label, "yes"))
+            .button(FtuiDialogButton::new(self.no_label, "no"))
+            .build()
+            .button_style(button_style)
+            .focused_button_style(focused_style);
 
         // Map our state to ftui DialogState for rendering
         let mut ftui_state = FtuiDialogState::new();

@@ -4,6 +4,7 @@
 //! and the main render/event loop.
 
 use std::io::{self, Stdout};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::{
@@ -15,7 +16,7 @@ use ftui::runtime::{Every, Subscription};
 use ftui::{
     Cell as FtuiCell, Cmd as FtuiCmd, Frame as FtuiFrame, KeyCode as FtuiKeyCode,
     KeyEvent as FtuiKeyEvent, KeyEventKind as FtuiKeyEventKind, Model as FtuiModel,
-    Modifiers as FtuiModifiers,
+    Modifiers as FtuiModifiers, Program, ProgramConfig,
 };
 use ratatui::{
     backend::CrosstermBackend,
@@ -26,11 +27,11 @@ use ratatui::{
 
 use super::events::KeyBindings;
 use super::layout::{to_ratatui_rect, Breakpoint, LayoutState, ResponsiveLayout};
-use super::msg::Msg;
+use super::msg::{ExecutionOutcome, Msg};
 use super::theme::Theme;
 use super::widgets::{
-    ConfirmChoice, ConfirmDialog, ConfirmDialogState, DetailView, ProcessDetail, ProcessTable,
-    ProcessTableState, SearchInput, SearchInputState,
+    ConfirmChoice, ConfirmDialog, ConfirmDialogState, DetailView, ProcessDetail, ProcessRow,
+    ProcessTable, ProcessTableState, SearchInput, SearchInputState,
 };
 use super::{TuiError, TuiResult};
 
@@ -93,6 +94,12 @@ pub struct App {
     detail_view: DetailView,
     /// Optional goal summary lines to display.
     goal_summary: Option<Vec<String>>,
+    /// Injected refresh operation for ftui Cmd::task (Send + 'static).
+    /// Returns new process rows on success.
+    refresh_op: Option<Arc<dyn Fn() -> Result<Vec<ProcessRow>, String> + Send + Sync>>,
+    /// Injected execute operation for ftui Cmd::task (Send + 'static).
+    /// Takes selected PIDs, returns execution outcome.
+    execute_op: Option<Arc<dyn Fn(Vec<u32>) -> Result<ExecutionOutcome, String> + Send + Sync>>,
 }
 
 impl Default for App {
@@ -124,6 +131,8 @@ impl App {
             detail_visible: true,
             detail_view: DetailView::Summary,
             goal_summary: None,
+            refresh_op: None,
+            execute_op: None,
         }
     }
 
@@ -164,6 +173,22 @@ impl App {
     pub fn with_key_bindings(mut self, bindings: KeyBindings) -> Self {
         self.key_bindings = bindings;
         self
+    }
+
+    /// Set the async refresh operation for ftui Cmd::task.
+    pub fn set_refresh_op(
+        &mut self,
+        op: Arc<dyn Fn() -> Result<Vec<ProcessRow>, String> + Send + Sync>,
+    ) {
+        self.refresh_op = Some(op);
+    }
+
+    /// Set the async execute operation for ftui Cmd::task.
+    pub fn set_execute_op(
+        &mut self,
+        op: Arc<dyn Fn(Vec<u32>) -> Result<ExecutionOutcome, String> + Send + Sync>,
+    ) {
+        self.execute_op = Some(op);
     }
 
     /// Set a status message.
@@ -953,20 +978,36 @@ Help: ?  Quit: q
             }
 
             Msg::RequestExecute => {
-                let selected = self.process_table.selected_count();
+                let selected_pids = self.process_table.get_selected();
+                let selected_count = selected_pids.len();
                 tracing::info!(
                     target: "tui.user_input",
                     action = "execute_requested",
-                    selected_count = selected,
+                    selected_count,
                     "Execution requested"
                 );
-                self.set_status(format!(
-                    "Execution requested for {} process(es) (skeleton mode)",
-                    selected
-                ));
-                FtuiCmd::task_named("execute-selected", || {
-                    Msg::ExecutionComplete(Ok(Default::default()))
-                })
+                if let Some(execute) = self.execute_op.clone() {
+                    self.set_status(format!(
+                        "Executing actions on {} process(es)...",
+                        selected_count
+                    ));
+                    FtuiCmd::task_named("execute-selected", move || {
+                        Msg::ExecutionComplete(execute(selected_pids))
+                    })
+                } else {
+                    self.set_status(format!(
+                        "Execution requested for {} process(es) (skeleton mode)",
+                        selected_count
+                    ));
+                    FtuiCmd::task_named("execute-selected", move || {
+                        Msg::ExecutionComplete(Ok(ExecutionOutcome {
+                            mode: Some("skeleton".to_string()),
+                            attempted: selected_count,
+                            succeeded: 0,
+                            failed: 0,
+                        }))
+                    })
+                }
             }
             Msg::ConfirmExecute => {
                 self.handle_confirmation(ConfirmChoice::Yes);
@@ -978,24 +1019,60 @@ Help: ?  Quit: q
             }
             Msg::RequestRefresh => {
                 tracing::info!(target: "tui.user_input", action = "refresh_requested", "Refresh requested");
-                self.set_status("Refreshing process list (skeleton mode)...");
-                FtuiCmd::task_named("refresh-processes", || Msg::RefreshComplete(Vec::new()))
+                if let Some(refresh) = self.refresh_op.clone() {
+                    self.set_status("Refreshing process list...");
+                    FtuiCmd::task_named(
+                        "refresh-processes",
+                        move || Msg::RefreshComplete(refresh()),
+                    )
+                } else {
+                    self.set_status("Refreshing process list (skeleton mode)...");
+                    let prior_rows = self.process_table.rows.clone();
+                    FtuiCmd::task_named("refresh-processes", move || {
+                        Msg::RefreshComplete(Ok(prior_rows))
+                    })
+                }
             }
             Msg::ExportEvidenceLedger => {
                 self.set_status("Evidence ledger export is not wired yet");
                 FtuiCmd::none()
             }
 
-            Msg::ProcessesScanned(rows) | Msg::RefreshComplete(rows) => {
+            Msg::ProcessesScanned(rows) => {
                 self.process_table.set_rows(rows);
                 self.set_status("Process list refreshed");
                 FtuiCmd::none()
             }
+            Msg::RefreshComplete(Ok(rows)) => {
+                self.process_table.set_rows(rows);
+                self.set_status("Process list refreshed");
+                FtuiCmd::none()
+            }
+            Msg::RefreshComplete(Err(error)) => {
+                tracing::error!(target: "tui.async_complete", error = %error, "Refresh failed");
+                self.set_status(format!("Refresh failed: {}", error));
+                FtuiCmd::none()
+            }
             Msg::ExecutionComplete(Ok(outcome)) => {
-                self.set_status(format!(
-                    "Execution complete: {} succeeded, {} failed ({} attempted)",
-                    outcome.succeeded, outcome.failed, outcome.attempted
-                ));
+                if let Some(mode) = outcome.mode.as_deref() {
+                    self.set_status(match mode {
+                        "dry_run" => format!(
+                            "Plan saved (dry_run): {} action(s) (no execution)",
+                            outcome.attempted
+                        ),
+                        "shadow" => format!(
+                            "Plan saved (shadow): {} action(s) (no execution)",
+                            outcome.attempted
+                        ),
+                        "skeleton" => "Execution not wired yet (skeleton mode)".to_string(),
+                        other => format!("Execution finished ({})", other),
+                    });
+                } else {
+                    self.set_status(format!(
+                        "Execution complete: {} succeeded, {} failed ({} attempted)",
+                        outcome.succeeded, outcome.failed, outcome.attempted
+                    ));
+                }
                 FtuiCmd::none()
             }
             Msg::ExecutionComplete(Err(error)) => {
@@ -1058,7 +1135,7 @@ Help: ?  Quit: q
     }
 
     fn handle_ftui_normal_key(&mut self, key: FtuiKeyEvent) -> FtuiCmd<Msg> {
-        if self.key_bindings.is_quit(&key) {
+        if matches!(key.code, FtuiKeyCode::Escape) || self.key_bindings.is_quit(&key) {
             tracing::info!(target: "tui.user_input", action = "quit", "Quit requested");
             self.state = AppState::Quitting;
             return FtuiCmd::quit();
@@ -1261,7 +1338,25 @@ fn draw_ftui_text(frame: &mut FtuiFrame, x: u16, y: u16, text: &str) {
     }
 }
 
+/// Run the TUI using the ftui runtime.
+///
+/// This is the preferred entry point for the TUI. It delegates terminal setup,
+/// event polling, and teardown entirely to ftui's `Program` runtime.
+///
+/// The `App` model implements `ftui::Model`, so it drives the Elm-style
+/// init → update → view loop. Callbacks for refresh/execute are wired
+/// through `Cmd::task` closures (see bd-2b3l for data wiring).
+pub fn run_ftui(app: App) -> TuiResult<()> {
+    let config = ProgramConfig::fullscreen();
+    let mut program =
+        Program::with_config(app, config).map_err(|e| TuiError::TerminalInit(e.to_string()))?;
+    program
+        .run()
+        .map_err(|e| TuiError::TerminalInit(e.to_string()))
+}
+
 /// Initialize the terminal for TUI rendering.
+#[cfg(feature = "ui-legacy")]
 fn init_terminal() -> TuiResult<Terminal<CrosstermBackend<Stdout>>> {
     enable_raw_mode().map_err(|e| TuiError::TerminalInit(e.to_string()))?;
     let mut stdout = io::stdout();
@@ -1271,6 +1366,7 @@ fn init_terminal() -> TuiResult<Terminal<CrosstermBackend<Stdout>>> {
 }
 
 /// Restore the terminal to its original state.
+#[cfg(feature = "ui-legacy")]
 fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> TuiResult<()> {
     disable_raw_mode().map_err(|e| TuiError::TerminalRestore(e.to_string()))?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)
@@ -1281,14 +1377,17 @@ fn restore_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> TuiRes
     Ok(())
 }
 
-/// Run the TUI application.
+/// Run the TUI application (legacy crossterm event loop).
 ///
-/// This is the main entry point for the TUI. It sets up the terminal,
+/// This is the legacy entry point for the TUI. It sets up the terminal,
 /// runs the event loop, and restores the terminal on exit.
+/// Prefer `run_ftui()` for new code.
+#[cfg(feature = "ui-legacy")]
 pub fn run_tui(mut app: App) -> TuiResult<()> {
     run_tui_with_handlers(&mut app, |_| Ok(()), |_| Ok(()))
 }
 
+#[cfg(feature = "ui-legacy")]
 pub fn run_tui_with_refresh<F>(app: &mut App, mut on_refresh: F) -> TuiResult<()>
 where
     F: FnMut(&mut App) -> TuiResult<()>,
@@ -1296,6 +1395,7 @@ where
     run_tui_with_handlers(app, &mut on_refresh, |_| Ok(()))
 }
 
+#[cfg(feature = "ui-legacy")]
 pub fn run_tui_with_handlers<F, G>(
     app: &mut App,
     mut on_refresh: F,
@@ -1317,7 +1417,8 @@ where
     restore_result
 }
 
-/// Main event loop.
+/// Main event loop (legacy crossterm).
+#[cfg(feature = "ui-legacy")]
 fn run_event_loop<F, G>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,

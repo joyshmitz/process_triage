@@ -35,6 +35,10 @@ fn sample_row() -> ProcessRow {
         command: "node dev server".to_string(),
         selected: false,
         galaxy_brain: Some("Galaxy-Brain Mode\nPosterior Distribution".to_string()),
+        why_summary: Some("Old + idle + orphaned".to_string()),
+        top_evidence: vec!["PPID=1".to_string(), "Idle>2h".to_string()],
+        confidence: Some("high".to_string()),
+        plan_preview: vec!["SIGTERM -> SIGKILL".to_string()],
     }
 }
 

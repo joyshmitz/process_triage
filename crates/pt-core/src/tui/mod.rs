@@ -21,22 +21,23 @@
 
 mod app;
 mod events;
-mod msg;
 pub mod layout;
+mod msg;
 mod theme;
 pub mod widgets;
 
-pub use app::{run_tui, run_tui_with_handlers, run_tui_with_refresh, App, AppState};
+pub use app::{run_ftui, App, AppState};
+#[cfg(feature = "ui-legacy")]
+pub use app::{run_tui, run_tui_with_handlers, run_tui_with_refresh};
 pub use events::{handle_event, AppAction, KeyBindings};
-pub use msg::{ExecutionOutcome, Msg};
+#[cfg(feature = "ui-legacy")]
+pub use layout::{
+    from_ratatui_rect, to_ratatui_rect, DetailAreasLegacy, GalaxyBrainAreasLegacy, MainAreasLegacy,
+};
 pub use layout::{
     Breakpoint, DetailAreas, GalaxyBrainAreas, LayoutState, MainAreas, ResponsiveLayout,
 };
-#[cfg(feature = "ui-legacy")]
-pub use layout::{
-    from_ratatui_rect, to_ratatui_rect, DetailAreasLegacy, GalaxyBrainAreasLegacy,
-    MainAreasLegacy,
-};
+pub use msg::{ExecutionOutcome, Msg};
 pub use theme::{Theme, ThemeMode};
 
 use thiserror::Error;

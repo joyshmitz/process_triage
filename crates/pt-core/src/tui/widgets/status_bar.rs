@@ -60,15 +60,8 @@ impl StatusMode {
                 ("Esc", "cancel"),
                 ("\u{2191}\u{2193}", "history"),
             ],
-            StatusMode::Confirming => &[
-                ("Tab", "switch"),
-                ("Enter", "confirm"),
-                ("Esc", "cancel"),
-            ],
-            StatusMode::Help => &[
-                ("?", "close"),
-                ("Esc", "close"),
-            ],
+            StatusMode::Confirming => &[("Tab", "switch"), ("Enter", "confirm"), ("Esc", "cancel")],
+            StatusMode::Help => &[("?", "close"), ("Esc", "close")],
         }
     }
 }
@@ -189,11 +182,7 @@ impl<'a> StatusBar<'a> {
     /// Note: this builds a single-line Paragraph instead of StatusLine because
     /// StatusLine requires `&'a str` references that outlive the dynamic strings
     /// we compute per-frame. The visual result is identical.
-    pub fn render_ftui(
-        &self,
-        area: ftui::layout::Rect,
-        frame: &mut ftui::render::frame::Frame,
-    ) {
+    pub fn render_ftui(&self, area: ftui::layout::Rect, frame: &mut ftui::render::frame::Frame) {
         let style = self
             .theme
             .map(|t| t.stylesheet().get_or_default("status.normal"))
@@ -297,9 +286,7 @@ mod tests {
 
     #[test]
     fn test_build_left_custom_message() {
-        let bar = StatusBar::new()
-            .selected_count(3)
-            .message("Custom status");
+        let bar = StatusBar::new().selected_count(3).message("Custom status");
         assert_eq!(bar.build_left_text(), "Custom status");
     }
 
@@ -310,11 +297,15 @@ mod tests {
             "[Normal]"
         );
         assert_eq!(
-            StatusBar::new().mode(StatusMode::Searching).build_mode_text(),
+            StatusBar::new()
+                .mode(StatusMode::Searching)
+                .build_mode_text(),
             "[Search]"
         );
         assert_eq!(
-            StatusBar::new().mode(StatusMode::Confirming).build_mode_text(),
+            StatusBar::new()
+                .mode(StatusMode::Confirming)
+                .build_mode_text(),
             "[Confirm]"
         );
         assert_eq!(

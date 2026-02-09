@@ -3,8 +3,8 @@
 //! Uses ftui's Paragraph and layout primitives as the primary rendering path,
 //! with ratatui legacy compat behind the `ui-legacy` feature gate.
 
-use ftui::layout::Flex;
 use ftui::layout::Constraint as FtuiConstraint;
+use ftui::layout::Flex;
 use ftui::text::{Line as FtuiLine, Span as FtuiSpan, Text as FtuiText};
 use ftui::widgets::block::{Alignment as FtuiAlignment, Block as FtuiBlock};
 use ftui::widgets::paragraph::Paragraph as FtuiParagraph;
@@ -116,11 +116,7 @@ impl<'a> ProcessDetail<'a> {
     // ── ftui rendering ──────────────────────────────────────────────
 
     /// Render the detail pane using ftui widgets.
-    pub fn render_ftui(
-        &self,
-        area: ftui::layout::Rect,
-        frame: &mut ftui::render::frame::Frame,
-    ) {
+    pub fn render_ftui(&self, area: ftui::layout::Rect, frame: &mut ftui::render::frame::Frame) {
         let border_style = self
             .theme
             .map(|t| t.stylesheet().get_or_default("border.normal"))
@@ -564,13 +560,25 @@ impl<'a> Widget for ProcessDetail<'a> {
 
                     if let Some(trace) = row.galaxy_brain.as_deref() {
                         let trace_lines: Vec<&str> = trace.lines().collect();
-                        let max_lines = evidence_height.saturating_sub(1).max(1);
-                        for line in trace_lines.iter().take(max_lines) {
+                        // Keep the final visible line available for the truncation indicator
+                        // when the trace is longer than we can display.
+                        let can_show_indicator = evidence_height >= 3;
+                        let max_trace_lines = if can_show_indicator {
+                            evidence_height.saturating_sub(2)
+                        } else {
+                            evidence_height.saturating_sub(1)
+                        }
+                        .max(1);
+
+                        for line in trace_lines.iter().take(max_trace_lines) {
                             lines.push(Line::from(vec![Span::styled(*line, self.value_style())]));
                         }
-                        if trace_lines.len() > max_lines {
+                        if can_show_indicator && trace_lines.len() > max_trace_lines {
                             lines.push(Line::from(vec![Span::styled(
-                                format!("… {} more lines", trace_lines.len() - max_lines),
+                                format!(
+                                    "… {} more lines",
+                                    trace_lines.len().saturating_sub(max_trace_lines)
+                                ),
                                 self.label_style(),
                             )]));
                         }
@@ -769,9 +777,7 @@ mod tests {
     #[test]
     fn build_summary_truncates_to_height() {
         let mut row = sample_row();
-        row.top_evidence = (0..20)
-            .map(|i| format!("evidence item {}", i))
-            .collect();
+        row.top_evidence = (0..20).map(|i| format!("evidence item {}", i)).collect();
         let d = ProcessDetail::new();
         let (evidence, _) = d.build_summary_sections(&row, 5);
         assert!(evidence.len() <= 5);

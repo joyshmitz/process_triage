@@ -42,41 +42,119 @@ struct Section {
 }
 
 const NAVIGATION: &[Binding] = &[
-    Binding { key: "j / Down", desc: "Move down" },
-    Binding { key: "k / Up", desc: "Move up" },
-    Binding { key: "Home", desc: "Go to top" },
-    Binding { key: "End", desc: "Go to bottom" },
-    Binding { key: "Ctrl+d", desc: "Page down" },
-    Binding { key: "Ctrl+u", desc: "Page up" },
-    Binding { key: "Tab", desc: "Cycle focus" },
-    Binding { key: "n / N", desc: "Next/prev match" },
+    Binding {
+        key: "j / Down",
+        desc: "Move down",
+    },
+    Binding {
+        key: "k / Up",
+        desc: "Move up",
+    },
+    Binding {
+        key: "Home",
+        desc: "Go to top",
+    },
+    Binding {
+        key: "End",
+        desc: "Go to bottom",
+    },
+    Binding {
+        key: "Ctrl+d",
+        desc: "Page down",
+    },
+    Binding {
+        key: "Ctrl+u",
+        desc: "Page up",
+    },
+    Binding {
+        key: "Tab",
+        desc: "Cycle focus",
+    },
+    Binding {
+        key: "n / N",
+        desc: "Next/prev match",
+    },
 ];
 
 const ACTIONS: &[Binding] = &[
-    Binding { key: "/", desc: "Start search" },
-    Binding { key: "Space", desc: "Toggle selection" },
-    Binding { key: "a", desc: "Select recommended" },
-    Binding { key: "A", desc: "Select all" },
-    Binding { key: "u", desc: "Unselect all" },
-    Binding { key: "x", desc: "Invert selection" },
-    Binding { key: "e", desc: "Execute action" },
-    Binding { key: "r", desc: "Refresh list" },
-    Binding { key: "Enter", desc: "Toggle detail pane" },
-    Binding { key: "s", desc: "Summary view" },
-    Binding { key: "t", desc: "Genealogy view" },
-    Binding { key: "g", desc: "Galaxy-brain view" },
-    Binding { key: "v", desc: "Toggle goal view" },
+    Binding {
+        key: "/",
+        desc: "Start search",
+    },
+    Binding {
+        key: "Space",
+        desc: "Toggle selection",
+    },
+    Binding {
+        key: "a",
+        desc: "Select recommended",
+    },
+    Binding {
+        key: "A",
+        desc: "Select all",
+    },
+    Binding {
+        key: "u",
+        desc: "Unselect all",
+    },
+    Binding {
+        key: "x",
+        desc: "Invert selection",
+    },
+    Binding {
+        key: "e",
+        desc: "Execute action",
+    },
+    Binding {
+        key: "r",
+        desc: "Refresh list",
+    },
+    Binding {
+        key: "Enter",
+        desc: "Toggle detail pane",
+    },
+    Binding {
+        key: "s",
+        desc: "Summary view",
+    },
+    Binding {
+        key: "t",
+        desc: "Genealogy view",
+    },
+    Binding {
+        key: "g",
+        desc: "Galaxy-brain view",
+    },
+    Binding {
+        key: "v",
+        desc: "Toggle goal view",
+    },
 ];
 
 const GENERAL: &[Binding] = &[
-    Binding { key: "?", desc: "Toggle help" },
-    Binding { key: "q / Esc", desc: "Quit" },
+    Binding {
+        key: "?",
+        desc: "Toggle help",
+    },
+    Binding {
+        key: "q / Esc",
+        desc: "Quit",
+    },
 ];
 
 const SECTIONS: &[Section] = &[
-    Section { title: "Navigation", bindings: NAVIGATION },
-    Section { title: "Actions", bindings: ACTIONS },
-    Section { title: "General", bindings: GENERAL },
+    Section {
+        title: "Navigation",
+        bindings: NAVIGATION,
+    },
+    Section {
+        title: "Actions",
+        bindings: ACTIONS,
+    },
+    Section {
+        title: "General",
+        bindings: GENERAL,
+    },
 ];
 
 /// Key column width for full layout.
@@ -145,11 +223,7 @@ impl<'a> HelpOverlay<'a> {
 
         let key_style = theme
             .map(|t| t.stylesheet().get_or_default("table.selected"))
-            .unwrap_or_else(|| {
-                FtuiStyle::new()
-                    .fg(PackedRgba::rgb(0, 255, 255))
-                    .bold()
-            });
+            .unwrap_or_else(|| FtuiStyle::new().fg(PackedRgba::rgb(0, 255, 255)).bold());
 
         let desc_style = theme
             .map(|t| {
@@ -191,11 +265,7 @@ impl<'a> HelpOverlay<'a> {
     // ── ftui rendering ────────────────────────────────────────────────
 
     /// Render the help overlay using ftui Modal + Paragraph.
-    pub fn render_ftui(
-        &self,
-        area: ftui::layout::Rect,
-        frame: &mut ftui::render::frame::Frame,
-    ) {
+    pub fn render_ftui(&self, area: ftui::layout::Rect, frame: &mut ftui::render::frame::Frame) {
         let lines = match self.breakpoint {
             Breakpoint::Minimal => Self::build_compact_lines(),
             _ => Self::build_full_lines(self.theme),

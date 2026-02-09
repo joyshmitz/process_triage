@@ -13,6 +13,9 @@ use super::widgets::{DetailView, ProcessRow};
 /// Async execution summary returned to the update loop.
 #[derive(Debug, Clone, Default)]
 pub struct ExecutionOutcome {
+    /// Execution mode hint for status messaging (e.g. "dry_run", "shadow", "skeleton").
+    /// When `None`, the outcome represents a real execution attempt.
+    pub mode: Option<String>,
     pub attempted: usize,
     pub succeeded: usize,
     pub failed: usize,
@@ -72,7 +75,7 @@ pub enum Msg {
     // Async result messages
     ProcessesScanned(Vec<ProcessRow>),
     ExecutionComplete(Result<ExecutionOutcome, String>),
-    RefreshComplete(Vec<ProcessRow>),
+    RefreshComplete(Result<Vec<ProcessRow>, String>),
     LedgerExported(Result<PathBuf, String>),
 
     // Theme messages
@@ -152,6 +155,7 @@ mod tests {
     fn async_payloads_are_send_and_static() {
         assert_send_static::<Vec<ProcessRow>>();
         assert_send_static::<Result<ExecutionOutcome, String>>();
+        assert_send_static::<Result<Vec<ProcessRow>, String>>();
         assert_send_static::<Result<PathBuf, String>>();
     }
 }

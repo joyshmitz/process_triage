@@ -58,9 +58,10 @@ impl Default for KeyBindings {
                 KeyEvent::new(KeyCode::Char('k')),
             ],
             toggle: vec![KeyEvent::new(KeyCode::Char(' '))],
-            select_all: vec![KeyEvent::new(KeyCode::Char('a')).with_modifiers(Modifiers::CTRL)],
-            deselect_all: vec![KeyEvent::new(KeyCode::Char('u')).with_modifiers(Modifiers::CTRL)],
-            execute: vec![KeyEvent::new(KeyCode::Char('x'))],
+            // Match legacy behavior in `tui/app.rs`.
+            select_all: vec![KeyEvent::new(KeyCode::Char('A'))],
+            deselect_all: vec![KeyEvent::new(KeyCode::Char('u'))],
+            execute: vec![KeyEvent::new(KeyCode::Char('e'))],
             next_tab: vec![KeyEvent::new(KeyCode::Tab)],
             prev_tab: vec![KeyEvent::new(KeyCode::BackTab)],
         }
@@ -68,60 +69,75 @@ impl Default for KeyBindings {
 }
 
 impl KeyBindings {
+    fn matches_any(bindings: &[KeyEvent], key: &KeyEvent) -> bool {
+        // Ignore KeyEventKind when matching: ftui will emit both Press and Repeat,
+        // and we want bindings to apply to either.
+        //
+        // Modifier matching allows an extra SHIFT bit. Many terminals report SHIFT
+        // even when the shifted character is already encoded in KeyCode::Char('?').
+        bindings
+            .iter()
+            .any(|b| b.code == key.code && mods_match(b.modifiers, key.modifiers))
+    }
+
     /// Check if a key event matches any quit binding.
     pub fn is_quit(&self, key: &KeyEvent) -> bool {
-        self.quit.iter().any(|k| k == key)
+        Self::matches_any(&self.quit, key)
     }
 
     /// Check if a key event matches any confirm binding.
     pub fn is_confirm(&self, key: &KeyEvent) -> bool {
-        self.confirm.iter().any(|k| k == key)
+        Self::matches_any(&self.confirm, key)
     }
 
     /// Check if a key event matches any cancel binding.
     pub fn is_cancel(&self, key: &KeyEvent) -> bool {
-        self.cancel.iter().any(|k| k == key)
+        Self::matches_any(&self.cancel, key)
     }
 
     /// Check if a key event matches any help binding.
     pub fn is_help(&self, key: &KeyEvent) -> bool {
-        self.help.iter().any(|k| k == key)
+        Self::matches_any(&self.help, key)
     }
 
     /// Check if a key event matches any search binding.
     pub fn is_search(&self, key: &KeyEvent) -> bool {
-        self.search.iter().any(|k| k == key)
+        Self::matches_any(&self.search, key)
     }
 
     /// Check if a key event matches any next binding.
     pub fn is_next(&self, key: &KeyEvent) -> bool {
-        self.next.iter().any(|k| k == key)
+        Self::matches_any(&self.next, key)
     }
 
     /// Check if a key event matches any prev binding.
     pub fn is_prev(&self, key: &KeyEvent) -> bool {
-        self.prev.iter().any(|k| k == key)
+        Self::matches_any(&self.prev, key)
     }
 
     /// Check if a key event matches any toggle binding.
     pub fn is_toggle(&self, key: &KeyEvent) -> bool {
-        self.toggle.iter().any(|k| k == key)
+        Self::matches_any(&self.toggle, key)
     }
 
     /// Check if a key event matches any execute binding.
     pub fn is_execute(&self, key: &KeyEvent) -> bool {
-        self.execute.iter().any(|k| k == key)
+        Self::matches_any(&self.execute, key)
     }
 
     /// Check if a key event matches any next-tab binding.
     pub fn is_next_tab(&self, key: &KeyEvent) -> bool {
-        self.next_tab.iter().any(|k| k == key)
+        Self::matches_any(&self.next_tab, key)
     }
 
     /// Check if a key event matches any prev-tab binding.
     pub fn is_prev_tab(&self, key: &KeyEvent) -> bool {
-        self.prev_tab.iter().any(|k| k == key)
+        Self::matches_any(&self.prev_tab, key)
     }
+}
+
+fn mods_match(binding: Modifiers, observed: Modifiers) -> bool {
+    observed == binding || observed == (binding | Modifiers::SHIFT)
 }
 
 /// Application-level action resulting from event handling.
@@ -184,6 +200,11 @@ mod tests {
 
         let ctrl_c = KeyEvent::new(KeyCode::Char('c')).with_modifiers(Modifiers::CTRL);
         assert!(bindings.is_quit(&ctrl_c));
+
+        // Esc is cancel by default; app state decides whether it quits.
+        let esc = KeyEvent::new(KeyCode::Escape);
+        assert!(!bindings.is_quit(&esc));
+        assert!(bindings.is_cancel(&esc));
 
         // Test navigation
         let down = KeyEvent::new(KeyCode::Down);

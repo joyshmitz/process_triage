@@ -151,7 +151,11 @@ impl Theme {
             .background(ftui::Color::rgb(DARK_BG.r, DARK_BG.g, DARK_BG.b))
             .text(ftui::Color::rgb(DARK_FG.r, DARK_FG.g, DARK_FG.b))
             .error(ftui::Color::rgb(DARK_KILL.r, DARK_KILL.g, DARK_KILL.b))
-            .warning(ftui::Color::rgb(DARK_REVIEW.r, DARK_REVIEW.g, DARK_REVIEW.b))
+            .warning(ftui::Color::rgb(
+                DARK_REVIEW.r,
+                DARK_REVIEW.g,
+                DARK_REVIEW.b,
+            ))
             .success(ftui::Color::rgb(DARK_SPARE.r, DARK_SPARE.g, DARK_SPARE.b))
             .primary(ftui::Color::rgb(
                 DARK_HIGHLIGHT.r,
@@ -159,7 +163,11 @@ impl Theme {
                 DARK_HIGHLIGHT.b,
             ))
             .text_muted(ftui::Color::rgb(DARK_MUTED.r, DARK_MUTED.g, DARK_MUTED.b))
-            .border(ftui::Color::rgb(DARK_BORDER.r, DARK_BORDER.g, DARK_BORDER.b))
+            .border(ftui::Color::rgb(
+                DARK_BORDER.r,
+                DARK_BORDER.g,
+                DARK_BORDER.b,
+            ))
             .border_focused(ftui::Color::rgb(
                 DARK_BORDER_FOCUSED.r,
                 DARK_BORDER_FOCUSED.g,
@@ -553,19 +561,11 @@ fn build_stylesheet(colors: &ClassificationColors, bold_classifications: bool) -
 
     let kill_style = if bold_classifications {
         FtuiStyle::new()
-            .fg(PackedRgba::rgb(
-                colors.kill.r,
-                colors.kill.g,
-                colors.kill.b,
-            ))
+            .fg(PackedRgba::rgb(colors.kill.r, colors.kill.g, colors.kill.b))
             .bold()
     } else {
         FtuiStyle::new()
-            .fg(PackedRgba::rgb(
-                colors.kill.r,
-                colors.kill.g,
-                colors.kill.b,
-            ))
+            .fg(PackedRgba::rgb(colors.kill.r, colors.kill.g, colors.kill.b))
             .bold()
     };
 
@@ -590,11 +590,7 @@ fn build_stylesheet(colors: &ClassificationColors, bold_classifications: bool) -
     sheet.define(
         "table.header",
         FtuiStyle::new()
-            .fg(PackedRgba::rgb(
-                colors.fg.r,
-                colors.fg.g,
-                colors.fg.b,
-            ))
+            .fg(PackedRgba::rgb(colors.fg.r, colors.fg.g, colors.fg.b))
             .bold(),
     );
     sheet.define(
@@ -614,11 +610,7 @@ fn build_stylesheet(colors: &ClassificationColors, bold_classifications: bool) -
     sheet.define(
         "status.error",
         FtuiStyle::new()
-            .fg(PackedRgba::rgb(
-                colors.kill.r,
-                colors.kill.g,
-                colors.kill.b,
-            ))
+            .fg(PackedRgba::rgb(colors.kill.r, colors.kill.g, colors.kill.b))
             .bold(),
     );
     sheet.define(
@@ -709,7 +701,10 @@ mod tests {
     fn test_dark_theme_classification_colors_meet_wcag_aa() {
         let theme = Theme::dark();
         let failures = theme.validate_wcag_aa();
-        assert!(failures.is_empty(), "Dark theme WCAG AA failures: {failures:?}");
+        assert!(
+            failures.is_empty(),
+            "Dark theme WCAG AA failures: {failures:?}"
+        );
     }
 
     #[test]

@@ -60,10 +60,12 @@ use pt_core::supervision::{
     detect_supervision, is_human_supervised, AppActionType, AppSupervisionAnalyzer,
     AppSupervisorType, ContainerActionType, ContainerSupervisionAnalyzer,
 };
+#[cfg(all(feature = "ui", feature = "ui-legacy"))]
+use pt_core::tui::run_tui_with_handlers;
 #[cfg(feature = "ui")]
 use pt_core::tui::widgets::ProcessRow;
 #[cfg(feature = "ui")]
-use pt_core::tui::{run_tui_with_handlers, App};
+use pt_core::tui::{run_ftui, App, ExecutionOutcome};
 use pt_core::verify::{parse_agent_plan, verify_plan, VerifyError};
 use pt_telemetry::retention::{RetentionConfig, RetentionEnforcer, RetentionError};
 use pt_telemetry::shadow::{Observation, ShadowStorage, ShadowStorageConfig};
@@ -71,16 +73,16 @@ use pt_telemetry::writer::default_telemetry_dir;
 #[cfg(feature = "daemon")]
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-#[cfg(feature = "ui")]
+#[cfg(all(feature = "ui", feature = "ui-legacy"))]
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-#[cfg(feature = "ui")]
+#[cfg(all(feature = "ui", feature = "ui-legacy"))]
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Process Triage Core - Intelligent process classification and cleanup
 #[derive(Parser)]
@@ -1887,7 +1889,6 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
     let policy = config.policy.clone();
 
     let initial = build_tui_data_from_live_scan(global, args, &priors, &policy)?;
-    let plan_cache = Rc::new(RefCell::new(initial.plan_candidates));
 
     let _ = handle.update_state(SessionState::Planned);
 
@@ -1900,124 +1901,262 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
         app.process_table.rows.len()
     ));
 
-    let plan_cache_refresh = Rc::clone(&plan_cache);
-    let plan_cache_execute = Rc::clone(&plan_cache);
-    let session_id_for_plan = session_id.clone();
-    let policy_for_plan = policy.clone();
-    let handle_for_plan = handle.clone();
+    // Choose runtime: ftui by default, legacy via PT_TUI_LEGACY=1
+    let use_legacy = std::env::var("PT_TUI_LEGACY").is_ok();
 
-    run_tui_with_handlers(
-        &mut app,
-        |app| {
-            match build_tui_data_from_live_scan(global, args, &priors, &policy) {
-                Ok(output) => {
-                    let count = output.rows.len();
-                    app.process_table.set_rows(output.rows);
-                    app.process_table.select_recommended();
-                    *plan_cache_refresh.borrow_mut() = output.plan_candidates;
-                    app.set_status(format!("Refreshed • {} candidates", count));
-                }
-                Err(err) => {
-                    app.set_status(format!("Refresh failed: {}", err));
-                }
-            }
-            Ok(())
-        },
-        |app| {
-            let selected = app.process_table.get_selected();
-            if selected.is_empty() {
-                app.set_status("No processes selected");
-                return Ok(());
-            }
-            match build_plan_from_selection(
-                &session_id_for_plan,
-                &policy_for_plan,
-                &selected,
-                &plan_cache_execute.borrow(),
-            ) {
-                Ok(plan) => {
-                    if plan.actions.is_empty() {
-                        app.set_status("No actions to apply for selected processes");
+    if use_legacy {
+        #[cfg(feature = "ui-legacy")]
+        {
+            let plan_cache = Rc::new(RefCell::new(initial.plan_candidates));
+            let plan_cache_refresh = Rc::clone(&plan_cache);
+            let plan_cache_execute = Rc::clone(&plan_cache);
+            let session_id_for_plan = session_id.clone();
+            let policy_for_plan = policy.clone();
+            let handle_for_plan = handle.clone();
+
+            run_tui_with_handlers(
+                &mut app,
+                |app| {
+                    match build_tui_data_from_live_scan(global, args, &priors, &policy) {
+                        Ok(output) => {
+                            let count = output.rows.len();
+                            app.process_table.set_rows(output.rows);
+                            app.process_table.select_recommended();
+                            *plan_cache_refresh.borrow_mut() = output.plan_candidates;
+                            app.set_status(format!("Refreshed • {} candidates", count));
+                        }
+                        Err(err) => {
+                            app.set_status(format!("Refresh failed: {}", err));
+                        }
+                    }
+                    Ok(())
+                },
+                |app| {
+                    let selected = app.process_table.get_selected();
+                    if selected.is_empty() {
+                        app.set_status("No processes selected");
                         return Ok(());
                     }
-                    app.process_table.apply_plan_preview(&plan);
-                    app.request_redraw();
-                    match write_plan_to_session(&handle_for_plan, &plan) {
-                        Ok(path) => {
-                            if global.dry_run || global.shadow {
-                                let mode = if global.dry_run { "dry_run" } else { "shadow" };
-                                if let Err(err) =
-                                    write_outcomes_for_mode(&handle_for_plan, &plan, mode)
-                                {
-                                    app.set_status(format!("Failed to write outcomes: {}", err));
-                                    return Ok(());
-                                }
-                                app.set_status(format!(
-                                    "Plan saved ({} actions, {}): {}",
-                                    plan.actions.len(),
-                                    mode,
-                                    path.display()
-                                ));
+                    match build_plan_from_selection(
+                        &session_id_for_plan,
+                        &policy_for_plan,
+                        &selected,
+                        &plan_cache_execute.borrow(),
+                    ) {
+                        Ok(plan) => {
+                            if plan.actions.is_empty() {
+                                app.set_status("No actions to apply for selected processes");
                                 return Ok(());
                             }
-
-                            let _ = handle_for_plan.update_state(SessionState::Executing);
-                            match execute_plan_actions(&handle_for_plan, &policy_for_plan, &plan) {
-                                Ok(result) => {
-                                    if let Err(err) = write_outcomes_from_execution(
-                                        &handle_for_plan,
-                                        &plan,
-                                        &result,
-                                    ) {
+                            app.process_table.apply_plan_preview(&plan);
+                            app.request_redraw();
+                            match write_plan_to_session(&handle_for_plan, &plan) {
+                                Ok(path) => {
+                                    if global.dry_run || global.shadow {
+                                        let mode =
+                                            if global.dry_run { "dry_run" } else { "shadow" };
+                                        if let Err(err) =
+                                            write_outcomes_for_mode(&handle_for_plan, &plan, mode)
+                                        {
+                                            app.set_status(format!(
+                                                "Failed to write outcomes: {}",
+                                                err
+                                            ));
+                                            return Ok(());
+                                        }
                                         app.set_status(format!(
-                                            "Execution complete but failed to write outcomes: {}",
-                                            err
+                                            "Plan saved ({} actions, {}): {}",
+                                            plan.actions.len(),
+                                            mode,
+                                            path.display()
                                         ));
                                         return Ok(());
                                     }
-                                    let skipped = result
-                                        .outcomes
-                                        .iter()
-                                        .filter(|o| {
-                                            matches!(
-                                                o.status,
-                                                pt_core::action::ActionStatus::Skipped
-                                            )
-                                        })
-                                        .count();
-                                    let final_state = if result.summary.actions_failed > 0 {
-                                        SessionState::Failed
-                                    } else {
-                                        SessionState::Completed
-                                    };
-                                    let _ = handle_for_plan.update_state(final_state);
-                                    app.set_status(format!(
-                                        "Executed {} actions: {} ok, {} failed, {} skipped",
-                                        result.summary.actions_attempted,
-                                        result.summary.actions_succeeded,
-                                        result.summary.actions_failed,
-                                        skipped
-                                    ));
+
+                                    let _ =
+                                        handle_for_plan.update_state(SessionState::Executing);
+                                    match execute_plan_actions(
+                                        &handle_for_plan,
+                                        &policy_for_plan,
+                                        &plan,
+                                    ) {
+                                        Ok(result) => {
+                                            if let Err(err) = write_outcomes_from_execution(
+                                                &handle_for_plan,
+                                                &plan,
+                                                &result,
+                                            ) {
+                                                app.set_status(format!(
+                                                "Execution complete but failed to write outcomes: {}",
+                                                err
+                                            ));
+                                                return Ok(());
+                                            }
+                                            let skipped = result
+                                                .outcomes
+                                                .iter()
+                                                .filter(|o| {
+                                                    matches!(
+                                                        o.status,
+                                                        pt_core::action::ActionStatus::Skipped
+                                                    )
+                                                })
+                                                .count();
+                                            let final_state =
+                                                if result.summary.actions_failed > 0 {
+                                                    SessionState::Failed
+                                                } else {
+                                                    SessionState::Completed
+                                                };
+                                            let _ = handle_for_plan.update_state(final_state);
+                                            app.set_status(format!(
+                                                "Executed {} actions: {} ok, {} failed, {} skipped",
+                                                result.summary.actions_attempted,
+                                                result.summary.actions_succeeded,
+                                                result.summary.actions_failed,
+                                                skipped
+                                            ));
+                                        }
+                                        Err(err) => {
+                                            let _ =
+                                                handle_for_plan.update_state(SessionState::Failed);
+                                            app.set_status(format!(
+                                                "Execution failed: {}",
+                                                err
+                                            ));
+                                        }
+                                    }
                                 }
                                 Err(err) => {
-                                    let _ = handle_for_plan.update_state(SessionState::Failed);
-                                    app.set_status(format!("Execution failed: {}", err));
+                                    app.set_status(format!("Failed to save plan: {}", err));
                                 }
                             }
                         }
                         Err(err) => {
-                            app.set_status(format!("Failed to save plan: {}", err));
+                            app.set_status(format!("Plan build failed: {}", err));
                         }
                     }
+                    Ok(())
+                },
+            )
+            .map_err(|e| format!("tui error: {}", e))?;
+        }
+        #[cfg(not(feature = "ui-legacy"))]
+        return Err("PT_TUI_LEGACY=1 requires the ui-legacy feature".to_string());
+    } else {
+        // ftui runtime path: terminal setup/teardown handled by Program RAII.
+        // Closures capture cloned, Send + 'static data for Cmd::task.
+
+        let plan_candidates = Arc::new(Mutex::new(initial.plan_candidates));
+
+        // Build refresh closure
+        let plan_cache_r = Arc::clone(&plan_candidates);
+        let priors_r = priors.clone();
+        let policy_r = policy.clone();
+        let timeout_r = global.timeout;
+        let deep_r = args.deep;
+        let min_age_r = args.min_age;
+        let goal_r = args.goal.clone();
+        let policy_scan_r = policy.clone();
+
+        let refresh_fn: Arc<dyn Fn() -> Result<Vec<ProcessRow>, String> + Send + Sync> =
+            Arc::new(move || {
+                let scan_options = QuickScanOptions {
+                    pids: vec![],
+                    include_kernel_threads: false,
+                    timeout: timeout_r.map(std::time::Duration::from_secs),
+                    progress: None,
+                };
+                let scan_result =
+                    quick_scan(&scan_options).map_err(|e| format!("scan failed: {}", e))?;
+                let deep_signals = if deep_r {
+                    collect_deep_signals(&scan_result.processes)
+                } else {
+                    None
+                };
+                let protected_filter = ProtectedFilter::from_guardrails(&policy_scan_r.guardrails)
+                    .map_err(|e| format!("filter error: {}", e))?;
+                let filter_result = protected_filter.filter_scan_result(&scan_result);
+                let output = build_tui_rows(
+                    &filter_result.passed,
+                    min_age_r,
+                    deep_signals.as_ref(),
+                    &priors_r,
+                    &policy_r,
+                    goal_r.as_deref(),
+                );
+                let mut guard = plan_cache_r
+                    .lock()
+                    .map_err(|_| "plan cache lock poisoned".to_string())?;
+                *guard = output.plan_candidates;
+                Ok(output.rows)
+            });
+
+        // Build execute closure
+        let plan_cache_e = Arc::clone(&plan_candidates);
+        let session_id_e = session_id.clone();
+        let policy_e = policy.clone();
+        let handle_e = handle.clone();
+        let dry_run = global.dry_run;
+        let shadow = global.shadow;
+
+        let execute_fn: Arc<dyn Fn(Vec<u32>) -> Result<ExecutionOutcome, String> + Send + Sync> =
+            Arc::new(move |selected: Vec<u32>| {
+                let candidates = plan_cache_e
+                    .lock()
+                    .map_err(|_| "plan cache lock poisoned".to_string())?;
+                let plan =
+                    build_plan_from_selection(&session_id_e, &policy_e, &selected, &candidates)?;
+                drop(candidates); // release lock before I/O
+
+                if plan.actions.is_empty() {
+                    return Err("no actions to apply for selected processes".to_string());
                 }
-                Err(err) => {
-                    app.set_status(format!("Plan build failed: {}", err));
+
+                write_plan_to_session(&handle_e, &plan)?;
+
+                if dry_run || shadow {
+                    let mode = if dry_run { "dry_run" } else { "shadow" };
+                    write_outcomes_for_mode(&handle_e, &plan, mode)
+                        .map_err(|e| format!("write outcomes: {}", e))?;
+                    return Ok(ExecutionOutcome {
+                        mode: Some(mode.to_string()),
+                        attempted: plan.actions.len(),
+                        succeeded: 0,
+                        failed: 0,
+                    });
                 }
-            }
-            Ok(())
-        },
-    )
-    .map_err(|e| format!("tui error: {}", e))?;
+
+                let _ = handle_e.update_state(SessionState::Executing);
+                match execute_plan_actions(&handle_e, &policy_e, &plan) {
+                    Ok(result) => {
+                        write_outcomes_from_execution(&handle_e, &plan, &result)
+                            .map_err(|e| format!("write outcomes: {}", e))?;
+                        let final_state = if result.summary.actions_failed > 0 {
+                            SessionState::Failed
+                        } else {
+                            SessionState::Completed
+                        };
+                        let _ = handle_e.update_state(final_state);
+                        Ok(ExecutionOutcome {
+                            mode: None,
+                            attempted: result.summary.actions_attempted,
+                            succeeded: result.summary.actions_succeeded,
+                            failed: result.summary.actions_failed,
+                        })
+                    }
+                    Err(e) => {
+                        let _ = handle_e.update_state(SessionState::Failed);
+                        Err(e)
+                    }
+                }
+            });
+
+        app.set_refresh_op(refresh_fn);
+        app.set_execute_op(execute_fn);
+
+        run_ftui(app).map_err(|e| format!("tui error: {}", e))?;
+    }
 
     if let Ok(manifest) = handle.read_manifest() {
         if manifest.state != SessionState::Failed {

@@ -276,9 +276,7 @@ impl ResponsiveLayout {
         constraints.push(Constraint::Min(10)); // Process table
         constraints.push(Constraint::Fixed(1)); // Status bar
 
-        let v_chunks = Flex::vertical()
-            .constraints(constraints)
-            .split(self.area);
+        let v_chunks = Flex::vertical().constraints(constraints).split(self.area);
 
         let (header, search, content, status) = if header_height > 0 {
             (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
@@ -315,9 +313,7 @@ impl ResponsiveLayout {
         constraints.push(Constraint::Min(10)); // Process table
         constraints.push(Constraint::Fixed(1)); // Status bar
 
-        let v_chunks = Flex::vertical()
-            .constraints(constraints)
-            .split(self.area);
+        let v_chunks = Flex::vertical().constraints(constraints).split(self.area);
 
         let (header, search, content, status) = if header_height > 0 {
             (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
@@ -353,9 +349,7 @@ impl ResponsiveLayout {
         constraints.push(Constraint::Min(10)); // Process table
         constraints.push(Constraint::Fixed(1)); // Status bar
 
-        let v_chunks = Flex::vertical()
-            .constraints(constraints)
-            .split(self.area);
+        let v_chunks = Flex::vertical().constraints(constraints).split(self.area);
 
         let (header, search, content, status) = if header_height > 0 {
             (Some(v_chunks[0]), v_chunks[1], v_chunks[2], v_chunks[3])
@@ -390,9 +384,7 @@ impl ResponsiveLayout {
         constraints.push(Constraint::Min(5)); // Process list
         constraints.push(Constraint::Fixed(1)); // Status
 
-        let chunks = Flex::vertical()
-            .constraints(constraints)
-            .split(self.area);
+        let chunks = Flex::vertical().constraints(constraints).split(self.area);
 
         let (header, search, list, status) = if header_height > 0 {
             (Some(chunks[0]), chunks[1], chunks[2], chunks[3])

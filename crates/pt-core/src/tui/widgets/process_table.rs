@@ -7,12 +7,12 @@
 use std::collections::{HashMap, HashSet};
 
 use ftui::layout::Constraint as FtuiConstraint;
+use ftui::text::{Line as FtuiLine, Span as FtuiSpan, Text as FtuiText};
 use ftui::widgets::block::Block as FtuiBlock;
 use ftui::widgets::table::{Row as FtuiRow, Table as FtuiTable, TableState as FtuiTableState};
 use ftui::widgets::StatefulWidget as FtuiStatefulWidget;
 use ftui::PackedRgba;
 use ftui::Style as FtuiStyle;
-use ftui::text::{Line as FtuiLine, Span as FtuiSpan, Text as FtuiText};
 
 #[cfg(feature = "ui-legacy")]
 use ratatui::{
@@ -243,11 +243,7 @@ impl<'a> ProcessTable<'a> {
     }
 
     /// Build ftui table rows, header, constraints, and highlight style (no block).
-    fn build_ftui_table_parts(
-        &self,
-        state: &ProcessTableState,
-        area_width: u16,
-    ) -> FtuiTableParts {
+    fn build_ftui_table_parts(&self, state: &ProcessTableState, area_width: u16) -> FtuiTableParts {
         let (show_score, show_runtime, show_memory) = self.column_visibility(area_width);
 
         let header_style = self
@@ -426,9 +422,9 @@ impl<'a> FtuiStatefulWidget for ProcessTable<'a> {
                 .title(&title)
                 .border_style(border_style);
 
-            let para = ftui::widgets::paragraph::Paragraph::new(
-                FtuiText::from_line(FtuiLine::from_spans([FtuiSpan::styled(msg, muted_style)])),
-            )
+            let para = ftui::widgets::paragraph::Paragraph::new(FtuiText::from_line(
+                FtuiLine::from_spans([FtuiSpan::styled(msg, muted_style)]),
+            ))
             .block(block);
             ftui::widgets::Widget::render(&para, area, frame);
             return;
@@ -521,11 +517,7 @@ impl<'a> StatefulWidget for ProcessTable<'a> {
 
         // Determine column visibility
         let (show_score, show_runtime, show_memory) = self.column_visibility(inner.width);
-        let checkbox_width = if self.show_selection {
-            COL_CHECKBOX
-        } else {
-            0
-        };
+        let checkbox_width = if self.show_selection { COL_CHECKBOX } else { 0 };
         let col_widths: [u16; 6] = [
             COL_PID,
             COL_SCORE,
@@ -562,14 +554,7 @@ impl<'a> StatefulWidget for ProcessTable<'a> {
             "Class{}",
             Self::sort_indicator(state, SortColumn::Classification)
         );
-        write_text(
-            buf,
-            inner.right(),
-            x,
-            inner.y,
-            &class_header,
-            header_style,
-        );
+        write_text(buf, inner.right(), x, inner.y, &class_header, header_style);
         x += col_widths[2] + 1;
 
         if show_runtime {
@@ -663,14 +648,7 @@ impl<'a> StatefulWidget for ProcessTable<'a> {
             x += col_widths[0] + 1;
 
             if show_score {
-                write_text(
-                    buf,
-                    inner.right(),
-                    x,
-                    y,
-                    &row.score.to_string(),
-                    row_style,
-                );
+                write_text(buf, inner.right(), x, y, &row.score.to_string(), row_style);
                 x += col_widths[1] + 1;
             }
 

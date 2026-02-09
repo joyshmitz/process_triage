@@ -693,7 +693,11 @@ mod tests {
         state.stop_edit();
 
         assert!(state.fields[1].error.is_some());
-        assert!(state.fields[1].error.as_ref().unwrap().contains("true/false"));
+        assert!(state.fields[1]
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("true/false"));
     }
 
     #[test]
