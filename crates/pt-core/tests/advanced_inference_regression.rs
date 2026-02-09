@@ -72,10 +72,10 @@ mod bocpd_tests {
         }
 
         // Change point should be detected near position 50 (±10)
-        let true_change = 50;
-        let tolerance = 15;
+        let true_change: usize = 50;
+        let tolerance: usize = 15;
         assert!(
-            (max_change_step as i32 - true_change as i32).abs() < tolerance as i32,
+            max_change_step.abs_diff(true_change) < tolerance,
             "Change point detected at step {} (expected near {}), max_prob={:.4}",
             max_change_step,
             true_change,
@@ -499,7 +499,6 @@ mod sketch_tests {
     fn tdigest_quantile_accuracy() {
         let config = TDigestConfig {
             compression: 100.0,
-            ..Default::default()
         };
         let mut digest = TDigest::new(config).expect("config should be valid");
 
@@ -869,10 +868,10 @@ mod ppc_tests {
         let result = checker.check_beta(&observations, 1.0, 1.0);
 
         // Should handle insufficient data gracefully
-        match result {
-            Ok(r) => assert!(r.passed, "Insufficient data should pass by default"),
-            Err(_) => {} // Also acceptable
+        if let Ok(r) = result {
+            assert!(r.passed, "Insufficient data should pass by default");
         }
+        // Err is also acceptable here (implementation may treat "too few samples" as non-fatal).
     }
 }
 

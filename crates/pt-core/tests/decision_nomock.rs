@@ -17,7 +17,8 @@ use pt_core::decision::{
 };
 use pt_core::inference::ClassScores;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use tempfile::tempdir;
 
 // ============================================================================
@@ -25,13 +26,17 @@ use tempfile::tempdir;
 // ============================================================================
 
 fn fixtures_dir() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("test")
-        .join("fixtures")
-        .join("pt-core")
-        .leak()
+    static FIXTURES_DIR: OnceLock<PathBuf> = OnceLock::new();
+    FIXTURES_DIR
+        .get_or_init(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("test")
+                .join("fixtures")
+                .join("pt-core")
+        })
+        .as_path()
 }
 
 fn load_policy_fixture() -> Policy {
@@ -73,7 +78,7 @@ fn test_expected_loss_with_real_policy_fixture() {
     );
 
     // Test with various posteriors
-    let test_cases = vec![
+    let test_cases = [
         // Highly useful process (should prefer Keep)
         ClassScores {
             useful: 0.90,
@@ -104,7 +109,7 @@ fn test_expected_loss_with_real_policy_fixture() {
         },
     ];
 
-    for (_i, posterior) in test_cases.iter().enumerate() {
+    for posterior in test_cases.iter() {
         let result = decide_action(posterior, &policy, &ActionFeasibility::allow_all());
 
         match result {

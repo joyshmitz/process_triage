@@ -21,20 +21,25 @@ use pt_core::inference::{
 use serde_json::Value;
 use std::collections::HashSet;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 // ============================================================================
 // Test Fixture Helpers
 // ============================================================================
 
 fn fixtures_dir() -> &'static Path {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("test")
-        .join("fixtures")
-        .join("pt-core")
-        .leak()
+    static FIXTURES_DIR: OnceLock<PathBuf> = OnceLock::new();
+    FIXTURES_DIR
+        .get_or_init(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("..")
+                .join("test")
+                .join("fixtures")
+                .join("pt-core")
+        })
+        .as_path()
 }
 
 fn load_priors_fixture() -> Priors {
@@ -72,10 +77,12 @@ fn create_test_evidence_useful() -> Evidence {
 
 /// Build a GalaxyBrainData with posterior card for testing.
 fn build_galaxy_brain_data_for_posterior(result: &PosteriorResult) -> GalaxyBrainData {
-    let mut data = GalaxyBrainData::default();
-    data.process_id = Some(12345);
-    data.session_id = Some("test-session-001".to_string());
-    data.generated_at = Some("2026-01-16T12:00:00Z".to_string());
+    let mut data = GalaxyBrainData {
+        process_id: Some(12345),
+        session_id: Some("test-session-001".to_string()),
+        generated_at: Some("2026-01-16T12:00:00Z".to_string()),
+        ..Default::default()
+    };
 
     // Build the posterior core card
     let card = MathCard::new(CardId::PosteriorCore)
@@ -1271,7 +1278,7 @@ fn test_galaxy_brain_multiple_scenarios_consistency() {
 
     for (name, evidence) in scenarios {
         let result = compute_posterior(&priors, &evidence)
-            .expect(&format!("compute_posterior failed for scenario {}", name));
+            .unwrap_or_else(|_| panic!("compute_posterior failed for scenario {}", name));
         let data = build_galaxy_brain_data_for_posterior(&result);
         let ledger = EvidenceLedger::from_posterior_result(&result, None, None);
 

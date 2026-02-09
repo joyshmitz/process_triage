@@ -893,7 +893,7 @@ mod tests {
         let json = serde_json::to_string(&d).unwrap();
         let back: SignatureCalibrationData = serde_json::from_str(&json).unwrap();
         assert_eq!(back.signature_id, "test_runner_npm");
-        assert_eq!(back.actual_abandoned, true);
+        assert!(back.actual_abandoned);
         assert_eq!(back.human_decision, Some(true));
     }
 

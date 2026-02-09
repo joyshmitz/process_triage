@@ -862,16 +862,22 @@ mod tests {
 
     #[test]
     fn test_config_validation() {
-        let mut config = KlSurprisalConfig::default();
-
-        config.smoothing = -1.0;
+        let config = KlSurprisalConfig {
+            smoothing: -1.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.smoothing = 0.5;
-        config.n_eff_factor = 0.0;
+        let config = KlSurprisalConfig {
+            n_eff_factor: 0.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.n_eff_factor = -1.0;
+        let config = KlSurprisalConfig {
+            n_eff_factor: -1.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

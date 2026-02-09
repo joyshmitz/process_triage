@@ -715,16 +715,22 @@ mod tests {
 
     #[test]
     fn test_martingale_config_validation() {
-        let mut config = MartingaleConfig::default();
-
-        config.default_increment_bound = -1.0;
+        let config = MartingaleConfig {
+            default_increment_bound: -1.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.default_increment_bound = 1.0;
-        config.confidence_level = 0.0;
+        let config = MartingaleConfig {
+            confidence_level: 0.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
 
-        config.confidence_level = 1.0;
+        let config = MartingaleConfig {
+            confidence_level: 1.0,
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

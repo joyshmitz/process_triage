@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_diminishing_returns_with_overlap() {
-        let probes = vec![
+        let probes = [
             ProbeProfile::new(ProbeType::QuickScan, 1.0, vec!["cpu".into()]),
             ProbeProfile::new(ProbeType::DeepScan, 1.0, vec!["cpu".into()]),
             ProbeProfile::new(ProbeType::NetSnapshot, 1.0, vec!["net".into()]),
@@ -292,10 +292,10 @@ mod tests {
         for mask in 0..(1usize << n) {
             let mut subset = Vec::new();
             let mut cost = 0.0;
-            for i in 0..n {
-                if (mask & (1 << i)) != 0 {
-                    subset.push(probes[i].clone());
-                    cost += probes[i].cost;
+            for (i, probe) in probes.iter().enumerate() {
+                if (mask & (1usize << i)) != 0 {
+                    subset.push(probe.clone());
+                    cost += probe.cost;
                 }
             }
             if cost > budget {

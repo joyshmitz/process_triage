@@ -636,7 +636,7 @@ mod tests {
         // ~4 chars per token
         let text = "test text here"; // 14 chars
         let tokens = estimator.estimate_tokens(text);
-        assert!(tokens >= 3 && tokens <= 5);
+        assert!((3..=5).contains(&tokens));
     }
 
     #[test]

@@ -1351,8 +1351,10 @@ mod tests {
 
     #[test]
     fn test_state_switch_detection() {
-        let mut config = HsmmConfig::default();
-        config.emission_vars = [[0.01; 4]; 4]; // Tight for clear separation
+        let config = HsmmConfig {
+            emission_vars: [[0.01; 4]; 4], // Tight for clear separation
+            ..Default::default()
+        };
 
         let mut analyzer = HsmmAnalyzer::new(config).unwrap();
 
@@ -1714,8 +1716,10 @@ mod tests {
 
     #[test]
     fn hsmm_config_invalid_initial_probs() {
-        let mut config = HsmmConfig::default();
-        config.initial_probs = [0.5, 0.5, 0.5, 0.5]; // Sum = 2.0
+        let config = HsmmConfig {
+            initial_probs: [0.5, 0.5, 0.5, 0.5], // Sum = 2.0
+            ..Default::default()
+        };
         assert!(config.validate().is_err());
     }
 

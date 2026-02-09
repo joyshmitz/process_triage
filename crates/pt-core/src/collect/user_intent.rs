@@ -1090,13 +1090,13 @@ mod tests {
     fn test_privacy_mode_tracks_all_signals() {
         let privacy = PrivacyMode::default();
 
-        // Verify all signal categories are tracked
-        assert!(privacy.tty_enabled || !privacy.tty_enabled);
-        assert!(privacy.session_mux_enabled || !privacy.session_mux_enabled);
-        assert!(privacy.ssh_enabled || !privacy.ssh_enabled);
-        assert!(privacy.shell_activity_enabled || !privacy.shell_activity_enabled);
-        assert!(privacy.repo_activity_enabled || !privacy.repo_activity_enabled);
-        assert!(privacy.editor_focus_enabled || !privacy.editor_focus_enabled);
+        // Verify default privacy toggles match the intended defaults.
+        assert!(privacy.tty_enabled);
+        assert!(privacy.session_mux_enabled);
+        assert!(privacy.ssh_enabled);
+        assert!(privacy.shell_activity_enabled);
+        assert!(privacy.repo_activity_enabled);
+        assert!(!privacy.editor_focus_enabled); // Opt-in only
     }
 
     #[test]
@@ -1109,10 +1109,12 @@ mod tests {
 
     #[test]
     fn test_privacy_mode_skipped_signals_tracking() {
-        let mut privacy = PrivacyMode::default();
+        let mut privacy = PrivacyMode {
+            tty_enabled: false,
+            ..Default::default()
+        };
 
         // Simulate disabled signals
-        privacy.tty_enabled = false;
         privacy.skipped_signals.push("tty".to_string());
 
         assert!(privacy.skipped_signals.contains(&"tty".to_string()));
@@ -1182,7 +1184,7 @@ mod tests {
         for signal in signals {
             let weight = signal.default_weight();
             assert!(
-                weight >= 0.0 && weight <= 1.0,
+                (0.0..=1.0).contains(&weight),
                 "Signal {:?} weight {} is out of bounds",
                 signal,
                 weight
@@ -1225,7 +1227,7 @@ mod tests {
             };
             let score = compute_intent_score(&evidence, &config);
             assert!(
-                score >= 0.0 && score <= 1.0,
+                (0.0..=1.0).contains(&score),
                 "Scoring method {:?} produced invalid score {}",
                 method,
                 score
@@ -1263,8 +1265,10 @@ mod tests {
 
     #[test]
     fn test_privacy_mode_serialization_roundtrip() {
-        let mut privacy = PrivacyMode::default();
-        privacy.tty_collected = true;
+        let mut privacy = PrivacyMode {
+            tty_collected: true,
+            ..Default::default()
+        };
         privacy.skipped_signals.push("editor_focus".to_string());
 
         let json = serde_json::to_string(&privacy).unwrap();

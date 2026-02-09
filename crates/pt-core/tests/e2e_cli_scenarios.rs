@@ -42,7 +42,7 @@ mod e2e_scenarios {
             return Ok(());
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // Spawn a unique sleeper so we can identify it
         let sleeper = harness.spawn_sleep(100)?;
         let pid = sleeper.pid();
@@ -407,7 +407,7 @@ mod e2e_scenarios {
             return Ok(());
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let sleeper = harness.spawn_sleep(100)?;
         let pid = sleeper.pid();
 
@@ -428,7 +428,8 @@ mod e2e_scenarios {
         // Verify process is still running
         assert!(
             sleeper.is_running(),
-            "Process should still be running after dry-run"
+            "Process {} should still be running after dry-run",
+            pid
         );
 
         // Clean up
@@ -445,7 +446,7 @@ mod e2e_scenarios {
             return Ok(());
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let sleeper = harness.spawn_sleep(100)?;
 
         // Run with --shadow - should NOT kill the process

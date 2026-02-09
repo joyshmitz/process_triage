@@ -591,7 +591,7 @@ ActiveState=inactive
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness
             .spawn_shell("sleep 30")
             .expect("spawn sleep process");

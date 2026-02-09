@@ -452,13 +452,13 @@ mod tests {
         let candidates = vec![
             EsnCandidate::new(
                 "z",
-                post.clone(),
+                post,
                 feasibility.clone(),
                 vec![ProbeType::QuickScan],
             ),
             EsnCandidate::new(
                 "a",
-                post.clone(),
+                post,
                 feasibility.clone(),
                 vec![ProbeType::QuickScan],
             ),

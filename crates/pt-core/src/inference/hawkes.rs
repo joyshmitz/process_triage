@@ -905,7 +905,11 @@ mod tests {
 
         // Responsibilities should be in [0, 1]
         for &p in &responsibilities {
-            assert!(p >= 0.0 && p <= 1.0, "Responsibility out of range: {}", p);
+            assert!(
+                (0.0..=1.0).contains(&p),
+                "Responsibility out of range: {}",
+                p
+            );
         }
     }
 }

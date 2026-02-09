@@ -554,7 +554,7 @@ impl ValidationEngine {
                     .records
                     .iter()
                     .filter(|r| {
-                        r.proc_type.as_deref() == Some(&category)
+                        r.proc_type.as_deref() == Some(category.as_str())
                             || (r.proc_type.is_none() && category == "unknown")
                     })
                     .count();

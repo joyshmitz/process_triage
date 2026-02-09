@@ -186,7 +186,7 @@ fn test_throttle_spawned_process() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(60).expect("spawn sleep process");
     let pid = proc.pid();
 

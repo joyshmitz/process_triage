@@ -123,8 +123,7 @@ mod tests {
         let event = Event::Key(KeyEvent::new(KeyCode::Char('q')).with_modifiers(Modifiers::CTRL));
         let msg = Msg::from(event);
         let Msg::KeyPressed(key) = msg else {
-            assert!(false, "expected Msg::KeyPressed");
-            return;
+            unreachable!("expected Msg::KeyPressed");
         };
 
         assert!(matches!(key.code, KeyCode::Char('q')));
@@ -138,8 +137,7 @@ mod tests {
             height: 45,
         });
         let Msg::Resized { width, height } = msg else {
-            assert!(false, "expected Msg::Resized");
-            return;
+            unreachable!("expected Msg::Resized");
         };
 
         assert_eq!(width, 123);

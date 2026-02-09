@@ -838,8 +838,10 @@ mod tests {
 
     #[test]
     fn policy_validate_wrong_schema() {
-        let mut p = Policy::default();
-        p.schema_version = "2.0.0".to_string();
+        let p = Policy {
+            schema_version: "2.0.0".to_string(),
+            ..Default::default()
+        };
         assert!(p.validate().is_err());
     }
 

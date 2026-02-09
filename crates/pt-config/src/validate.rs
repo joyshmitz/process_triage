@@ -553,8 +553,10 @@ mod tests {
 
     #[test]
     fn priors_wrong_schema_version() {
-        let mut priors = crate::priors::Priors::default();
-        priors.schema_version = "0.0.0".into();
+        let priors = crate::priors::Priors {
+            schema_version: "0.0.0".into(),
+            ..Default::default()
+        };
         let err = validate_priors(&priors).unwrap_err();
         assert!(matches!(err, ValidationError::VersionMismatch { .. }));
     }
@@ -617,8 +619,10 @@ mod tests {
 
     #[test]
     fn policy_wrong_schema_version() {
-        let mut policy = crate::policy::Policy::default();
-        policy.schema_version = "0.0.0".into();
+        let policy = crate::policy::Policy {
+            schema_version: "0.0.0".into(),
+            ..Default::default()
+        };
         let err = validate_policy(&policy).unwrap_err();
         assert!(matches!(err, ValidationError::VersionMismatch { .. }));
     }

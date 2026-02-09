@@ -400,11 +400,11 @@ fn test_inference_log_fixture_schema() {
     let contents = fs::read_to_string(&log_path).expect("read inference log fixture");
 
     for (idx, line) in contents.lines().enumerate() {
-        let value: serde_json::Value =
-            serde_json::from_str(line).expect(&format!("invalid json at line {}", idx + 1));
+        let value: serde_json::Value = serde_json::from_str(line)
+            .unwrap_or_else(|_| panic!("invalid json at line {}", idx + 1));
         let obj = value
             .as_object()
-            .expect(&format!("log line {} not object", idx + 1));
+            .unwrap_or_else(|| panic!("log line {} not object", idx + 1));
 
         for key in [
             "event",

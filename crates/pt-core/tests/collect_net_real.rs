@@ -8,7 +8,7 @@ fn test_proc_net_tcp_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
 
     // Bind to high port
     let port = 19345;
@@ -56,7 +56,7 @@ fn test_proc_net_udp_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let port = 19346;
     // Python UDP
     let cmd = format!("exec python3 -c \"import socket, time; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(('127.0.0.1', {})); time.sleep(5)\"", port);

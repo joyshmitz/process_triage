@@ -1810,7 +1810,7 @@ mod tests {
         let branch = db.lookup(Action::Kill, FailureCategory::Timeout);
         assert!(branch.is_some());
         let branch = branch.unwrap();
-        assert!(branch.alternatives.len() >= 1);
+        assert!(!branch.alternatives.is_empty());
     }
 
     #[test]

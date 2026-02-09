@@ -88,6 +88,7 @@ impl LiveHarness {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&path)?;
         self.files.push(file);
         Ok(path)
@@ -97,7 +98,11 @@ impl LiveHarness {
     pub fn open_ro_file(&mut self) -> io::Result<PathBuf> {
         let path = self.temp_dir.join(format!("ro_{}.txt", self.files.len()));
         if !path.exists() {
-            let _ = OpenOptions::new().write(true).create(true).open(&path)?;
+            let _ = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(&path)?;
         }
         let file = OpenOptions::new().read(true).open(&path)?;
         self.files.push(file);

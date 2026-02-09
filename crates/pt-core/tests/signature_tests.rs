@@ -86,7 +86,7 @@ mod pattern_compilation_tests {
 
         // Add multiple signatures
         for i in 0..10 {
-            let sig = SupervisorSignature::new(&format!("sig-{}", i), SupervisorCategory::Other)
+            let sig = SupervisorSignature::new(format!("sig-{}", i), SupervisorCategory::Other)
                 .with_process_patterns(vec![&format!(r"^process-{}$", i)]);
             db.add(sig).expect("Should add signature");
         }
@@ -397,10 +397,8 @@ mod pattern_matching_tests {
 mod versioning_tests {
     use super::*;
 
-    #[test]
-    fn test_current_schema_version() {
-        assert!(SCHEMA_VERSION >= 2, "Schema version should be at least 2");
-    }
+    // Compile-time assertion: keep schema version in the expected range.
+    const _: () = assert!(SCHEMA_VERSION >= 2, "Schema version should be at least 2");
 
     #[test]
     fn test_schema_version_in_serialization() {
@@ -1542,7 +1540,7 @@ mod performance_tests {
         // Add 100 custom signatures (simulating a large custom library)
         for i in 0..100 {
             let sig =
-                SupervisorSignature::new(&format!("custom-sig-{}", i), SupervisorCategory::Other)
+                SupervisorSignature::new(format!("custom-sig-{}", i), SupervisorCategory::Other)
                     .with_process_patterns(vec![&format!(r"^custom-process-{}$", i)])
                     .with_arg_patterns(vec![&format!(r"--config-{}", i)])
                     .with_confidence(0.80 + (i as f64 * 0.001));
@@ -1616,7 +1614,7 @@ mod performance_tests {
             let mut lib = PatternLibrary::new(dir.path());
             for i in 0..500 {
                 let sig = SupervisorSignature::new(
-                    &format!("perf-test-{}", i),
+                    format!("perf-test-{}", i),
                     SupervisorCategory::Other,
                 )
                 .with_process_patterns(vec![&format!(r"^perf-{}$", i)])

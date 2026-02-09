@@ -6648,7 +6648,7 @@ fn daemon_notify_desktop(
         let _ = Command::new("notify-send")
             .args(["-u", urgency, "-a", "pt", &notif.title, &notif.body])
             .status();
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "macos")]
@@ -6658,7 +6658,7 @@ fn daemon_notify_desktop(
         let title = notif.title.replace('"', "\\\"");
         let script = format!("display notification \"{}\" with title \"{}\"", body, title);
         let _ = Command::new("osascript").args(["-e", &script]).status();
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -6739,7 +6739,9 @@ fn run_daemon_status(global: &GlobalOpts) -> ExitCode {
         "running": running,
         "pid": pid,
         "base_dir": daemon_base_dir().display().to_string(),
-        "state": state.as_ref().map(|s| serde_json::to_value(s).ok()).flatten(),
+        "state": state
+            .as_ref()
+            .and_then(|s| serde_json::to_value(s).ok()),
     });
 
     match global.format {
@@ -8117,7 +8119,7 @@ fn run_daemon_plan(
 #[cfg(feature = "daemon")]
 fn collect_daemon_metrics() -> pt_core::daemon::TickMetrics {
     let load = collect_load_averages();
-    let load_avg_1 = load.get(0).copied().unwrap_or(0.0);
+    let load_avg_1 = load.first().copied().unwrap_or(0.0);
     let load_avg_5 = load.get(1).copied().unwrap_or(load_avg_1);
 
     let memory = collect_memory_info();

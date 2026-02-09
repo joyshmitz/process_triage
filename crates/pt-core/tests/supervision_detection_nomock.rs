@@ -75,7 +75,13 @@ fn fixtures_dir() -> PathBuf {
 fn load_cases() -> FixtureFile {
     let path = fixtures_dir().join("cases.json");
     let contents = fs::read_to_string(&path).expect("read supervision cases fixture");
-    serde_json::from_str(&contents).expect("parse supervision cases fixture")
+    let cases: FixtureFile = serde_json::from_str(&contents).expect("parse supervision cases fixture");
+    assert_eq!(
+        cases.schema_version,
+        "1.0.0",
+        "unexpected supervision fixture schema version"
+    );
+    cases
 }
 
 fn parse_category(value: &str) -> SupervisorCategory {
@@ -291,11 +297,11 @@ fn test_supervision_log_fixture_schema() {
     let contents = fs::read_to_string(&log_path).expect("read supervision log fixture");
 
     for (idx, line) in contents.lines().enumerate() {
-        let value: serde_json::Value =
-            serde_json::from_str(line).expect(&format!("invalid json at line {}", idx + 1));
+        let value: serde_json::Value = serde_json::from_str(line)
+            .unwrap_or_else(|_| panic!("invalid json at line {}", idx + 1));
         let obj = value
             .as_object()
-            .expect(&format!("log line {} not object", idx + 1));
+            .unwrap_or_else(|| panic!("log line {} not object", idx + 1));
 
         for key in [
             "event",

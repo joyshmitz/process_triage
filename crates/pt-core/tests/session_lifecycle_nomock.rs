@@ -214,7 +214,7 @@ fn test_verify_plan_with_real_process_nomock() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(10).expect("spawn sleep process");
     let pid = proc.pid();
 
@@ -306,7 +306,7 @@ fn test_resume_plan_with_real_process_nomock() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(15).expect("spawn sleep process");
     let pid = proc.pid();
 
@@ -365,7 +365,7 @@ fn test_resume_plan_identity_mismatch_nomock() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(10).expect("spawn sleep process");
     let pid = proc.pid();
 
@@ -411,7 +411,7 @@ fn test_resume_plan_process_gone_nomock() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(5).expect("spawn sleep process");
     let pid = proc.pid();
 

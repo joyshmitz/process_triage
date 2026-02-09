@@ -9,17 +9,12 @@
 
 use pt_core::config::priors::{BetaParams, ClassParams, ClassPriors, GammaParams, Priors};
 use pt_core::inference::ledger::{Classification, Confidence, EvidenceLedger};
-use pt_core::inference::posterior::{ClassScores, CpuEvidence, Evidence, PosteriorResult};
+use pt_core::inference::posterior::{ClassScores, CpuEvidence, Evidence};
 use pt_core::inference::{compute_posterior, EvidenceTerm};
 
 // ============================================================================
 // Test Utilities
 // ============================================================================
-
-/// Approximate equality for floating point comparisons.
-fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
-    (a - b).abs() <= tol
-}
 
 /// Create base priors with uniform distributions (equal probability for all classes).
 fn uniform_priors() -> Priors {
@@ -127,6 +122,14 @@ fn get_confidence(prob: f64) -> Confidence {
     } else {
         Confidence::Low
     }
+}
+
+#[test]
+fn test_get_confidence_thresholds() {
+    assert!(matches!(get_confidence(0.0), Confidence::Low));
+    assert!(matches!(get_confidence(0.81), Confidence::Medium));
+    assert!(matches!(get_confidence(0.96), Confidence::High));
+    assert!(matches!(get_confidence(0.995), Confidence::VeryHigh));
 }
 
 // ============================================================================
@@ -332,7 +335,6 @@ mod counterfactual {
             ..Evidence::default()
         };
         let orphan_result = compute_posterior(&priors, &orphan_evidence).expect("orphan");
-        let orphan_class = get_classification(&orphan_result.posterior);
 
         // Counterfactual: what if it had a parent?
         let non_orphan_evidence = Evidence {
@@ -341,7 +343,6 @@ mod counterfactual {
         };
         let non_orphan_result =
             compute_posterior(&priors, &non_orphan_evidence).expect("non-orphan");
-        let non_orphan_class = get_classification(&non_orphan_result.posterior);
 
         // Classification might change
         // The key test is that we can compute both scenarios
@@ -523,7 +524,6 @@ mod threshold_analysis {
 
         // Check if abandoned probability is close to a threshold
         let abandoned_prob = result.posterior.abandoned;
-        let confidence = get_confidence(abandoned_prob);
 
         // For marginal cases, we should be able to identify what tips it over
         // This test verifies we can compute the posterior correctly for edge cases
@@ -562,7 +562,7 @@ mod threshold_analysis {
         ];
 
         for (evidence, name) in test_cases {
-            let result = compute_posterior(&priors, &evidence).expect(&name);
+            let result = compute_posterior(&priors, &evidence).expect(name);
             let max_prob = result
                 .posterior
                 .useful
@@ -570,7 +570,6 @@ mod threshold_analysis {
                 .max(result.posterior.abandoned)
                 .max(result.posterior.zombie);
 
-            let confidence = get_confidence(max_prob);
             // Just verify we can compute confidence for different scenarios
             assert!(
                 max_prob > 0.0 && max_prob <= 1.0,

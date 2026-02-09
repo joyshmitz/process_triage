@@ -8,7 +8,7 @@ fn rss_kb() -> Option<u64> {
     for line in status.lines() {
         // Example: "VmRSS:\t   12345 kB"
         if let Some(rest) = line.strip_prefix("VmRSS:") {
-            let kb_str = rest.trim().split_whitespace().next()?;
+            let kb_str = rest.split_whitespace().next()?;
             return kb_str.parse().ok();
         }
     }

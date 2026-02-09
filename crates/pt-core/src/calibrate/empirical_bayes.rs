@@ -502,7 +502,6 @@ mod tests {
             min_observations: 5,
             learning_rate: 0.5,
             max_change_fraction: 50.0,
-            ..Default::default()
         };
 
         let beta_obs = vec![BetaObservation {

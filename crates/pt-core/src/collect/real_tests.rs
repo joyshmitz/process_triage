@@ -16,7 +16,7 @@ fn test_quick_scan_real_pid() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let _timer = crate::test_utils::TestTimer::new("quick_scan_real_pid");
     // Use 30 second sleep to ensure process is still running after scan
     // (ps -p doesn't work reliably with -e, so we do a full scan)
@@ -41,7 +41,7 @@ fn test_deep_scan_real_pid() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let _timer = crate::test_utils::TestTimer::new("deep_scan_real_pid");
     // Use 30 second sleep to ensure process is still running after scan
     let proc = harness.spawn_shell("sleep 30").expect("spawn sleep");
@@ -71,7 +71,7 @@ fn test_cgroup_details_real_pid() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let _timer = crate::test_utils::TestTimer::new("cgroup_details_real_pid");
     // Use 30 second sleep to ensure process is still running after scan
     let proc = harness.spawn_shell("sleep 30").expect("spawn sleep");

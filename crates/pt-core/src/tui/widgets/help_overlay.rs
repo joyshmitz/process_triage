@@ -364,7 +364,7 @@ mod tests {
         let lines = HelpOverlay::build_full_lines(None);
         let total_bindings: usize = SECTIONS.iter().map(|s| s.bindings.len()).sum();
         // Lines = title + blank + (section_header + bindings + blank) per section
-        let expected = 1 + 1 + SECTIONS.len() * 1 + total_bindings + SECTIONS.len();
+        let expected = 1 + 1 + SECTIONS.len() + total_bindings + SECTIONS.len();
         assert_eq!(lines.len(), expected);
     }
 

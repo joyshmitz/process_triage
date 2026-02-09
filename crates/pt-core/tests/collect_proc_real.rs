@@ -9,7 +9,7 @@ fn test_proc_io_real() {
         println!("Skipping Linux-only test");
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     // Spawn a process that does IO (echo)
     let proc = harness
         .spawn_shell("echo hello > /dev/null")
@@ -39,7 +39,7 @@ fn test_proc_schedstat_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_busy().expect("spawn busy");
 
     std::thread::sleep(std::time::Duration::from_millis(100));
@@ -59,7 +59,7 @@ fn test_proc_fd_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     // Spawn sleep; stdio may be devices, pipes, or other fd types
     // depending on the test environment (direct TTY vs CI)
     let proc = harness.spawn_sleep(10).expect("spawn");
@@ -83,7 +83,7 @@ fn test_proc_statm_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(1).expect("spawn");
 
     #[cfg(target_os = "linux")]

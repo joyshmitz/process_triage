@@ -50,7 +50,7 @@ fn quick_scan_captures_spawned_process_info() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(60).expect("spawn sleep");
     let pid = proc.pid();
 
@@ -93,7 +93,7 @@ fn quick_scan_captures_busy_process_with_cpu_usage() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_busy().expect("spawn busy");
     let pid = proc.pid();
 
@@ -280,7 +280,7 @@ fn process_record_includes_start_id_for_toctou_protection() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(10).expect("spawn sleep");
     let pid = proc.pid();
 
@@ -317,7 +317,7 @@ fn process_snapshot_detects_pid_reuse() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(60).expect("spawn sleep");
     let pid = proc.pid();
 
@@ -407,7 +407,7 @@ fn quick_scan_handles_mixed_process_states() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
 
     // Spawn different types of processes
     let sleep_proc = harness.spawn_sleep(60).expect("spawn sleep");
@@ -464,7 +464,7 @@ fn quick_scan_captures_process_group_members() {
         return;
     }
 
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let parent = harness.spawn_process_group().expect("spawn process group");
     let parent_pid = parent.pid();
 

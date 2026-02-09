@@ -770,7 +770,7 @@ Gid:	1000	1000	1000	1000
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness
             .spawn_shell("sleep 30")
             .expect("spawn sleep process");
@@ -825,7 +825,7 @@ Gid:	1000	1000	1000	1000
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // Set a custom env var to verify we can read environ
         let proc = harness
             .spawn_shell("TEST_VAR=nomock_test_value sleep 30")
@@ -902,7 +902,7 @@ Gid:	1000	1000	1000	1000
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_shell("sleep 30").expect("spawn process");
 
         crate::test_log!(INFO, "identity quality test started", pid = proc.pid());

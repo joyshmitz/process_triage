@@ -612,7 +612,7 @@ mod tests {
             events: 3,
         };
         let h = bin.hazard_mean();
-        assert!(h >= 0.0 && h <= 1.0);
+        assert!((0.0..=1.0).contains(&h));
     }
 
     // ── BetaStacyModel ─────────────────────────────────────────────
@@ -727,7 +727,9 @@ mod tests {
 
     #[test]
     fn error_invalid_duration_display() {
-        let err = BetaStacyError::InvalidDuration { value: -3.14 };
+        let err = BetaStacyError::InvalidDuration {
+            value: -std::f64::consts::PI,
+        };
         assert!(err.to_string().contains("-3.14"));
     }
 

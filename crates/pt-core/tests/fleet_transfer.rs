@@ -2,16 +2,16 @@
 //! strategies, baseline normalization, diff, validation, signature conflicts,
 //! redaction, determinism, and dry-run semantics.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use pt_config::priors::{BetaParams, Priors};
 use pt_core::fleet::transfer::{
     compute_diff, export_bundle, merge_beta_params, merge_priors, merge_priors_weighted,
     normalize_baseline, resolve_signature_conflicts, validate_bundle, BaselineStats, MergeStrategy,
-    TransferBundle, TransferDiff, TRANSFER_SCHEMA_VERSION,
+    TransferBundle, TRANSFER_SCHEMA_VERSION,
 };
 use pt_core::supervision::pattern_persistence::{
-    ConflictResolution, PatternSource, PersistedPattern, PersistedSchema, SchemaMetadata,
+    ConflictResolution, PatternSource, PersistedPattern, PersistedSchema,
 };
 use pt_core::supervision::signature::{SignaturePatterns, SupervisorSignature};
 use pt_core::supervision::SupervisorCategory;

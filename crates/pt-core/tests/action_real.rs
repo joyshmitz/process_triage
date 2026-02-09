@@ -27,7 +27,7 @@ fn test_signal_kill_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     // Use a long sleep so we have time to kill it
     let proc = harness.spawn_sleep(60).expect("spawn");
     let pid = proc.pid();
@@ -85,7 +85,7 @@ fn test_signal_pause_resume_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
     let proc = harness.spawn_sleep(60).expect("spawn");
     let pid = proc.pid();
 
@@ -158,7 +158,7 @@ fn test_process_group_pause_resume_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
 
     // Spawn a process group (parent + child)
     let proc = harness.spawn_process_group().expect("spawn group");
@@ -268,7 +268,7 @@ fn test_zombie_verification_real() {
     if !ProcessHarness::is_available() {
         return;
     }
-    let harness = ProcessHarness::default();
+    let harness = ProcessHarness;
 
     // Spawn a process that exits immediately -> Zombie
     let proc = harness.spawn_shell("true").expect("spawn true");
@@ -285,6 +285,7 @@ fn test_zombie_verification_real() {
         }
         std::thread::sleep(Duration::from_millis(50));
     }
+    assert!(is_zombie, "process {} never became zombie", pid);
 
     let runner = SignalActionRunner::with_defaults();
     let action = PlanAction {

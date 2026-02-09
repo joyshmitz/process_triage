@@ -883,7 +883,7 @@ mod tests {
 
         // Should have at least a few processes
         assert!(
-            scan.processes.len() > 0,
+            !scan.processes.is_empty(),
             "quick_scan should return at least one process"
         );
 
@@ -912,7 +912,7 @@ mod tests {
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness
             .spawn_shell("sleep 30")
             .expect("spawn sleep process");
@@ -999,7 +999,7 @@ mod tests {
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness
             .spawn_shell("sleep 30")
             .expect("spawn sleep process");

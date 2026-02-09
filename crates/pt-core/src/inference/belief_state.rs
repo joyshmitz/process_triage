@@ -782,9 +782,11 @@ mod tests {
         let observation =
             ObservationLikelihood::from_likelihoods([0.001, 0.001, 0.997, 0.001]).unwrap();
 
-        let mut config = BeliefUpdateConfig::default();
-        config.smoothing = true;
-        config.smoothing_alpha = 0.1;
+        let config = BeliefUpdateConfig {
+            smoothing: true,
+            smoothing_alpha: 0.1,
+            ..Default::default()
+        };
 
         let result = update_belief(&prior, &transition, &observation, &config).unwrap();
         for &p in &result.belief.probs {
@@ -799,8 +801,10 @@ mod tests {
         let observation =
             ObservationLikelihood::from_likelihoods([0.001, 0.001, 0.997, 0.001]).unwrap();
 
-        let mut config = BeliefUpdateConfig::default();
-        config.min_prob = 1e-6;
+        let config = BeliefUpdateConfig {
+            min_prob: 1e-6,
+            ..Default::default()
+        };
 
         let result = update_belief(&prior, &transition, &observation, &config).unwrap();
         for &p in &result.belief.probs {

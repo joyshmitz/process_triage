@@ -58,6 +58,7 @@ fn make_test_record(
         start_time_unix: 1234567890,
         elapsed: Duration::from_secs(3600),
         source: "test".to_string(),
+        container_info: None,
     }
 }
 
@@ -176,7 +177,7 @@ mod data_loss_gates {
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let dir = tempdir().expect("tempdir");
         let db_path = dir.path().join("test.db");
 
@@ -218,7 +219,7 @@ mod data_loss_gates {
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let dir = tempdir().expect("tempdir");
 
         // Initialize git repo and hold a lock
@@ -308,7 +309,7 @@ mod zombie_handling {
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
 
         // Spawn a process that exits immediately -> becomes zombie
         let proc = harness.spawn_shell("exit 0").expect("spawn exit");
@@ -587,10 +588,10 @@ mod identity_coordination {
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
 
         // Spawn a process and capture its identity
-        let mut target = harness.spawn_toctou_target(60).expect("spawn target");
+        let target = harness.spawn_toctou_target(60).expect("spawn target");
         let _pid = target.pid();
 
         // Take snapshot (this is the "check" phase)

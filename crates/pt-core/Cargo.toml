@@ -33,6 +33,7 @@ sha2 = "0.10"
 hex = "0.4"
 rand = "0.9"
 toon = { workspace = true }
+tempfile = { version = "3", optional = true }
 
 # ECDSA signature verification for release binaries
 p256 = { version = "0.13", features = ["ecdsa"] }
@@ -66,7 +67,7 @@ daemon = []         # Dormant monitoring mode
 metrics = ["prometheus", "tiny_http"]  # Prometheus /metrics endpoint for daemon
 ui = ["ftui"]              # Premium TUI experience (ftui, Elm-style)
 test-utils = []     # Export test utilities for integration tests
-test-tempdir = []   # Enable tempdir helper in test utilities
+test-tempdir = ["dep:tempfile"]   # Enable tempdir helper in test utilities
 fleet-dns = []      # Enable DNS-based fleet discovery (scaffold)
 
 [dev-dependencies]

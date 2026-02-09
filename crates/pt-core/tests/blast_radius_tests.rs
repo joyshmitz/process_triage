@@ -139,8 +139,10 @@ impl ProcessSubtree {
             .chain(descendants.iter().copied())
             .collect();
 
-        let mut resources = SubtreeResources::default();
-        resources.total_descendants = descendants.len();
+        let mut resources = SubtreeResources {
+            total_descendants: descendants.len(),
+            ..Default::default()
+        };
 
         for proc in &self.processes {
             if all_pids.contains(&proc.pid) {
@@ -155,6 +157,7 @@ impl ProcessSubtree {
     }
 
     /// Get process by PID.
+    #[allow(dead_code)]
     fn get_process(&self, pid: u32) -> Option<&SimulatedProcess> {
         self.processes.iter().find(|p| p.pid == pid)
     }
@@ -526,7 +529,7 @@ fn test_risk_propagation_no_coupling() {
 #[test]
 fn test_impact_score_isolated_process() {
     // Low impact: no children, no network, no critical files
-    let components = ImpactComponents {
+    let _components = ImpactComponents {
         listen_ports_count: 0,
         established_conns_count: 0,
         open_fds_count: 5,

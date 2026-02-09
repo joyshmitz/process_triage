@@ -13,7 +13,7 @@
 use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
 use predicates::prelude::*;
-use pt_common::config::policy::{Guardrails, Policy, RobotMode};
+use pt_common::config::policy::Policy;
 use serde_json::Value;
 use std::time::Duration;
 use tempfile::tempdir;

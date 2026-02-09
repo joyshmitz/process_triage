@@ -291,7 +291,7 @@ mod tests {
                     i,
                     &format!("b1:{}:{}", i, i),
                     "useful",
-                    10 + (i % 30) as u32,
+                    10 + (i % 30),
                     "keep",
                     0.05,
                 )
@@ -311,7 +311,7 @@ mod tests {
                     i,
                     &format!("b1:{}:{}", i, i),
                     "useful",
-                    10 + (i % 30) as u32,
+                    10 + (i % 30),
                     "keep",
                     0.05,
                 )

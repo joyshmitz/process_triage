@@ -1080,7 +1080,7 @@ nice                                         :                    0
             return; // Skip on non-Linux
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // Spawn a process that does some I/O
         let proc = harness
             .spawn_shell("echo test > /dev/null && sleep 1")
@@ -1125,7 +1125,7 @@ nice                                         :                    0
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(5).expect("spawn sleep");
 
         // Parse real /proc/<pid>/statm
@@ -1166,7 +1166,7 @@ nice                                         :                    0
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // Use a busy process to ensure scheduler stats are populated
         let proc = harness.spawn_busy().expect("spawn busy");
 
@@ -1205,7 +1205,7 @@ nice                                         :                    0
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(5).expect("spawn sleep");
 
         // Parse real /proc/<pid>/sched
@@ -1241,7 +1241,7 @@ nice                                         :                    0
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // Spawn a shell that has standard FDs open
         let proc = harness.spawn_sleep(5).expect("spawn sleep");
 
@@ -1278,7 +1278,7 @@ nice                                         :                    0
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(5).expect("spawn sleep");
 
         // Parse real /proc/<pid>/cgroup
@@ -1316,7 +1316,7 @@ nice                                         :                    0
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // Sleeping process should have a wait channel
         let proc = harness.spawn_sleep(5).expect("spawn sleep");
 
@@ -1349,7 +1349,7 @@ nice                                         :                    0
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // Shell inherits our environment
         let proc = harness.spawn_sleep(5).expect("spawn sleep");
 
@@ -1389,7 +1389,7 @@ nice                                         :                    0
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(5).expect("spawn sleep");
 
         // Capture snapshot using the harness

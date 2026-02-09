@@ -201,8 +201,8 @@ mod metric_values {
         let metrics = DaemonMetrics::new().unwrap();
         let tick = TickMetrics {
             timestamp: "2026-01-15T12:00:00Z".to_string(),
-            load_avg_1: 3.14,
-            load_avg_5: 2.71,
+            load_avg_1: 3.125,
+            load_avg_5: 2.5,
             memory_used_mb: 6000,
             memory_total_mb: 16000,
             swap_used_mb: 200,
@@ -552,7 +552,7 @@ mod stability {
 
         // After shutdown, connections should be refused
         std::thread::sleep(Duration::from_millis(200));
-        let result = TcpStream::connect_timeout(&addr.into(), Duration::from_millis(500));
+        let result = TcpStream::connect_timeout(&addr, Duration::from_millis(500));
         assert!(
             result.is_err(),
             "Should not be able to connect after shutdown"

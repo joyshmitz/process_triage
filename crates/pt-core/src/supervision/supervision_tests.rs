@@ -454,7 +454,7 @@ mod environ_tests {
         assert!(result.is_supervised);
         assert_eq!(result.supervisor_name, Some("vscode".to_string()));
         // Should have multiple evidence items
-        assert!(result.evidence.len() >= 1);
+        assert!(!result.evidence.is_empty());
     }
 
     #[test]
@@ -654,7 +654,7 @@ mod terminal_multiplexer_integration_tests {
         if !ProcessHarness::is_available() {
             return;
         }
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let _timer = TestTimer::new("tmux_env_supervision");
 
         let proc = harness
@@ -669,14 +669,11 @@ mod terminal_multiplexer_integration_tests {
         // Retry reading environment a few times to allow for exec latency
         let mut env = std::collections::HashMap::new();
         for _ in 0..10 {
-            match read_environ(proc.pid()) {
-                Ok(e) => {
-                    env = e;
-                    if env.contains_key("TMUX") {
-                        break;
-                    }
+            if let Ok(e) = read_environ(proc.pid()) {
+                env = e;
+                if env.contains_key("TMUX") {
+                    break;
                 }
-                Err(_) => {}
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
@@ -706,7 +703,7 @@ mod terminal_multiplexer_integration_tests {
         if !ProcessHarness::is_available() {
             return;
         }
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let _timer = TestTimer::new("screen_env_supervision");
 
         let proc = harness
@@ -719,14 +716,11 @@ mod terminal_multiplexer_integration_tests {
         // Retry reading environment a few times to allow for exec latency
         let mut env = std::collections::HashMap::new();
         for _ in 0..10 {
-            match read_environ(proc.pid()) {
-                Ok(e) => {
-                    env = e;
-                    if env.contains_key("STY") {
-                        break;
-                    }
+            if let Ok(e) = read_environ(proc.pid()) {
+                env = e;
+                if env.contains_key("STY") {
+                    break;
                 }
-                Err(_) => {}
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
         }

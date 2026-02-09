@@ -379,10 +379,10 @@ fn gpu_nvidia_process_no_running() {
     // Should either be empty or parse error — not a crash
     let result = parse_nvidia_process_csv(csv, &devices);
     // Either Ok(empty) or a parse error is acceptable
-    match result {
-        Ok(usages) => assert!(usages.is_empty()),
-        Err(_) => {} // Also acceptable
+    if let Ok(usages) = result {
+        assert!(usages.is_empty());
     }
+    // Err is also acceptable here (parser may reject this sentinel output).
 }
 
 // ===========================================================================
@@ -466,10 +466,10 @@ GPU  Temp  AvgPwr  SCLK     MCLK     Fan  Perf    PwrCap  VRAM%  GPU%
 #[test]
 fn gpu_rocm_text_empty() {
     let result = parse_rocm_text("");
-    match result {
-        Ok(devices) => assert!(devices.is_empty()),
-        Err(_) => {} // Also acceptable
+    if let Ok(devices) = result {
+        assert!(devices.is_empty());
     }
+    // Err is also acceptable here.
 }
 
 // ===========================================================================
@@ -609,7 +609,7 @@ fn gpu_snapshot_json_roundtrip() {
     let snapshot = make_test_snapshot();
     let json = serde_json::to_string_pretty(&snapshot).unwrap();
     let restored: GpuSnapshot = serde_json::from_str(&json).unwrap();
-    assert_eq!(restored.has_gpu, true);
+    assert!(restored.has_gpu);
     assert_eq!(restored.gpu_type, GpuType::Nvidia);
     assert_eq!(restored.devices.len(), 2);
     assert_eq!(restored.gpu_process_count, 2);
@@ -665,10 +665,10 @@ fn container_detect_from_markers_does_not_panic() {
     let result = pt_core::collect::detect_container_from_markers();
     // In CI/dev environment, we're likely NOT in a container.
     // But either way it should not panic.
-    match result {
-        Some(info) => assert!(info.in_container),
-        None => {} // Not in a container — expected in dev
+    if let Some(info) = result {
+        assert!(info.in_container);
     }
+    // None (not in a container) is expected in many dev/CI environments.
 }
 
 // ===========================================================================

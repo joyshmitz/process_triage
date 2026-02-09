@@ -567,7 +567,7 @@ mod tests {
         if let Ok(mut stream) = resp {
             use std::io::{Read, Write};
             let _ = stream
-                .write_all(format!("GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n").as_bytes());
+                .write_all(b"GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n");
             let mut buf = String::new();
             let _ = stream.read_to_string(&mut buf);
 

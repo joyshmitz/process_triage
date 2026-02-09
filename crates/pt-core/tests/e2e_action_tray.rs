@@ -20,7 +20,7 @@
 
 use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use pt_core::action::executor::{
-    ActionExecutor, ActionResult, ActionStatus, ExecutionResult, NoopActionRunner,
+    ActionExecutor, ActionStatus, ExecutionResult, NoopActionRunner,
     StaticIdentityProvider,
 };
 use pt_core::action::prechecks::{
@@ -28,12 +28,10 @@ use pt_core::action::prechecks::{
     PreCheckResult,
 };
 use pt_core::action::{ReniceActionRunner, ReniceConfig, SignalActionRunner, SignalConfig};
-use pt_core::collect::ProcessState;
-use pt_core::config::Policy;
-use pt_core::decision::{Action, DecisionOutcome, DecisionRationale, ExpectedLoss};
+use pt_core::decision::Action;
 use pt_core::plan::{
-    ActionConfidence, ActionRationale, ActionRouting, ActionTimeouts, DecisionBundle,
-    DecisionCandidate, GatesSummary, Plan, PlanAction, PreCheck,
+    ActionConfidence, ActionRationale, ActionRouting, ActionTimeouts, GatesSummary, Plan, PlanAction,
+    PreCheck,
 };
 use pt_core::test_utils::ProcessHarness;
 use serde_json::json;
@@ -347,7 +345,7 @@ mod pause_observe_resume {
             json!({ "test": "pause_observe_resume_single_process" }),
         );
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(60).expect("spawn sleep");
         let pid = proc.pid();
 
@@ -432,7 +430,7 @@ mod pause_observe_resume {
             json!({ "test": "pause_observe_resume_process_group" }),
         );
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_process_group().expect("spawn process group");
         let pid = proc.pid();
 
@@ -537,7 +535,7 @@ mod staged_kill_escalation {
             json!({ "test": "graceful_kill_sigterm_only" }),
         );
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(60).expect("spawn sleep");
         let pid = proc.pid();
 
@@ -596,7 +594,7 @@ mod staged_kill_escalation {
         let mut ctx = TestContext::new();
         ctx.log("test_start", json!({ "test": "kill_escalates_to_sigkill" }));
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // spawn_busy creates a CPU-bound process that ignores SIGTERM
         let proc = harness.spawn_busy().expect("spawn busy");
         let pid = proc.pid();
@@ -655,7 +653,7 @@ mod staged_kill_escalation {
         let mut ctx = TestContext::new();
         ctx.log("test_start", json!({ "test": "kill_handles_zombie" }));
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         // spawn_shell with "true" exits immediately -> becomes zombie
         let proc = harness.spawn_shell("true").expect("spawn true");
         let pid = proc.pid();
@@ -784,6 +782,7 @@ mod safety_gates_robot_mode {
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&lock_path)
             .expect("create lock file");
 
@@ -973,7 +972,7 @@ mod renice_action {
             json!({ "test": "renice_priority_adjustment" }),
         );
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(60).expect("spawn sleep");
         let pid = proc.pid();
 
@@ -1046,7 +1045,7 @@ mod renice_action {
         let mut ctx = TestContext::new();
         ctx.log("test_start", json!({ "test": "renice_verification" }));
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(60).expect("spawn sleep");
         let pid = proc.pid();
 
@@ -1192,7 +1191,7 @@ mod cgroup_throttle_action {
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(60).expect("spawn sleep process");
         let pid = proc.pid();
 
@@ -1305,7 +1304,7 @@ mod cgroup_throttle_action {
             return;
         }
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(60).expect("spawn process");
         let pid = proc.pid();
 
@@ -1394,7 +1393,7 @@ mod cgroup_freeze_action {
     use super::*;
     use pt_core::action::executor::ActionRunner;
     #[cfg(target_os = "linux")]
-    use pt_core::action::{is_freeze_available, FreezeActionRunner, FreezeConfig};
+    use pt_core::action::{is_freeze_available, FreezeActionRunner};
     use pt_core::decision::Action as ActionType;
 
     fn make_freeze_action(pid: u32, action_id: &str) -> PlanAction {
@@ -1463,7 +1462,7 @@ mod cgroup_freeze_action {
         let mut ctx = TestContext::new();
         ctx.log("test_start", json!({ "test": "cgroup_freeze_thaw" }));
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(60).expect("spawn sleep process");
         let pid = proc.pid();
 
@@ -1616,7 +1615,7 @@ mod full_workflow {
             json!({ "test": "observe_mitigate_kill_workflow" }),
         );
 
-        let harness = ProcessHarness::default();
+        let harness = ProcessHarness;
         let proc = harness.spawn_sleep(120).expect("spawn");
         let pid = proc.pid();
 

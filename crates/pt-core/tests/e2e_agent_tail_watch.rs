@@ -114,7 +114,7 @@ fn tail_reads_existing_log() {
         let logs_dir = session_dir.join("logs");
         fs::create_dir_all(&logs_dir).expect("create logs dir");
 
-        let events = vec![
+        let events = [
             r#"{"event":"scan_started","timestamp":"2026-01-01T00:00:00Z","count":10}"#,
             r#"{"event":"inference_complete","timestamp":"2026-01-01T00:00:01Z","candidates":3}"#,
         ];
@@ -150,7 +150,7 @@ fn tail_stops_on_session_ended_event() {
         fs::create_dir_all(&logs_dir).expect("create logs dir");
 
         // Include a session_ended event — tail should stop after it
-        let events = vec![
+        let events = [
             r#"{"event":"scan_started","timestamp":"2026-01-01T00:00:00Z"}"#,
             r#"{"event":"session_ended","timestamp":"2026-01-01T00:00:01Z"}"#,
             r#"{"event":"should_not_appear","timestamp":"2026-01-01T00:00:02Z"}"#,

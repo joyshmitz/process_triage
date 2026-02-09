@@ -15,7 +15,7 @@ use tempfile::tempdir;
 
 fn temp_pattern_dir() -> PathBuf {
     let dir = tempdir().expect("tempdir");
-    dir.into_path()
+    dir.keep()
 }
 
 #[test]
