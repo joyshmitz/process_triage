@@ -234,4 +234,125 @@ mod tests {
         let action = handle_event(resize_event, &bindings);
         assert_eq!(action, AppAction::Redraw);
     }
+
+    #[test]
+    fn test_help_bindings() {
+        let bindings = KeyBindings::default();
+
+        let question = KeyEvent::new(KeyCode::Char('?'));
+        assert!(bindings.is_help(&question));
+
+        let f1 = KeyEvent::new(KeyCode::F(1));
+        assert!(bindings.is_help(&f1));
+
+        let f2 = KeyEvent::new(KeyCode::F(2));
+        assert!(!bindings.is_help(&f2));
+    }
+
+    #[test]
+    fn test_navigation_bindings() {
+        let bindings = KeyBindings::default();
+
+        assert!(bindings.is_next(&KeyEvent::new(KeyCode::Down)));
+        assert!(bindings.is_next(&KeyEvent::new(KeyCode::Char('j'))));
+        assert!(!bindings.is_next(&KeyEvent::new(KeyCode::Up)));
+
+        assert!(bindings.is_prev(&KeyEvent::new(KeyCode::Up)));
+        assert!(bindings.is_prev(&KeyEvent::new(KeyCode::Char('k'))));
+        assert!(!bindings.is_prev(&KeyEvent::new(KeyCode::Down)));
+    }
+
+    #[test]
+    fn test_selection_bindings() {
+        let bindings = KeyBindings::default();
+
+        assert!(bindings.is_toggle(&KeyEvent::new(KeyCode::Char(' '))));
+        assert!(!bindings.is_toggle(&KeyEvent::new(KeyCode::Char('x'))));
+    }
+
+    #[test]
+    fn test_execute_binding() {
+        let bindings = KeyBindings::default();
+
+        let e_key = KeyEvent::new(KeyCode::Char('e'));
+        assert!(bindings.is_execute(&e_key));
+
+        let action = handle_event(Event::Key(e_key), &bindings);
+        assert_eq!(action, AppAction::Execute);
+    }
+
+    #[test]
+    fn test_help_event_returns_show_help() {
+        let bindings = KeyBindings::default();
+        let help_event = Event::Key(KeyEvent::new(KeyCode::Char('?')));
+
+        let action = handle_event(help_event, &bindings);
+        assert_eq!(action, AppAction::ShowHelp);
+    }
+
+    #[test]
+    fn test_tab_bindings() {
+        let bindings = KeyBindings::default();
+
+        assert!(bindings.is_next_tab(&KeyEvent::new(KeyCode::Tab)));
+        assert!(!bindings.is_next_tab(&KeyEvent::new(KeyCode::BackTab)));
+
+        assert!(bindings.is_prev_tab(&KeyEvent::new(KeyCode::BackTab)));
+        assert!(!bindings.is_prev_tab(&KeyEvent::new(KeyCode::Tab)));
+    }
+
+    #[test]
+    fn test_confirm_cancel_bindings() {
+        let bindings = KeyBindings::default();
+
+        assert!(bindings.is_confirm(&KeyEvent::new(KeyCode::Enter)));
+        assert!(!bindings.is_confirm(&KeyEvent::new(KeyCode::Escape)));
+
+        assert!(bindings.is_cancel(&KeyEvent::new(KeyCode::Escape)));
+        assert!(!bindings.is_cancel(&KeyEvent::new(KeyCode::Enter)));
+    }
+
+    #[test]
+    fn test_search_binding() {
+        let bindings = KeyBindings::default();
+
+        assert!(bindings.is_search(&KeyEvent::new(KeyCode::Char('/'))));
+        assert!(!bindings.is_search(&KeyEvent::new(KeyCode::Char('s'))));
+    }
+
+    #[test]
+    fn test_shift_modifier_tolerance() {
+        let bindings = KeyBindings::default();
+
+        // '?' with SHIFT should still match (terminals often report SHIFT+/)
+        let shifted_q = KeyEvent::new(KeyCode::Char('?')).with_modifiers(Modifiers::SHIFT);
+        assert!(bindings.is_help(&shifted_q));
+    }
+
+    #[test]
+    fn test_unbound_key_returns_none() {
+        let bindings = KeyBindings::default();
+        let unbound = Event::Key(KeyEvent::new(KeyCode::Char('z')));
+
+        let action = handle_event(unbound, &bindings);
+        assert_eq!(action, AppAction::None);
+    }
+
+    #[test]
+    fn test_mods_match_exact() {
+        assert!(mods_match(Modifiers::CTRL, Modifiers::CTRL));
+        assert!(mods_match(Modifiers::empty(), Modifiers::empty()));
+    }
+
+    #[test]
+    fn test_mods_match_shift_tolerance() {
+        assert!(mods_match(Modifiers::empty(), Modifiers::SHIFT));
+        assert!(mods_match(Modifiers::CTRL, Modifiers::CTRL | Modifiers::SHIFT));
+    }
+
+    #[test]
+    fn test_mods_match_rejects_alt() {
+        assert!(!mods_match(Modifiers::empty(), Modifiers::ALT));
+        assert!(!mods_match(Modifiers::CTRL, Modifiers::ALT));
+    }
 }
