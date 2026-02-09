@@ -363,6 +363,13 @@ struct RunArgs {
     #[arg(long)]
     deep: bool,
 
+    /// Render the TUI inline (preserves scrollback) instead of using the alternate screen.
+    ///
+    /// In inline mode, the UI is anchored at the bottom of the terminal and logs/progress
+    /// can scroll above it.
+    #[arg(long)]
+    inline: bool,
+
     /// Load additional signature patterns
     #[arg(long)]
     signatures: Option<String>,
@@ -1715,6 +1722,7 @@ fn main() {
                 &cli.global,
                 &RunArgs {
                     deep: false,
+                    inline: false,
                     signatures: None,
                     community_signatures: false,
                     min_age: None,
@@ -2155,7 +2163,12 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
         app.set_refresh_op(refresh_fn);
         app.set_execute_op(execute_fn);
 
-        run_ftui(app).map_err(|e| format!("tui error: {}", e))?;
+        let program_config = if args.inline {
+            ftui::ProgramConfig::inline(compute_inline_ui_height())
+        } else {
+            ftui::ProgramConfig::fullscreen()
+        };
+        run_ftui(app, program_config).map_err(|e| format!("tui error: {}", e))?;
     }
 
     if let Ok(manifest) = handle.read_manifest() {
@@ -2166,6 +2179,19 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
         let _ = handle.update_state(SessionState::Completed);
     }
     Ok(())
+}
+
+#[cfg(feature = "ui")]
+fn compute_inline_ui_height() -> u16 {
+    // Prefer a fixed bottom-anchored UI region, leaving some scrollback space above.
+    // We avoid adding a direct terminal-size dependency here; `LINES` is widely set by shells.
+    let lines = std::env::var("LINES").ok().and_then(|s| s.parse::<u16>().ok());
+    match lines {
+        Some(h) if h >= 12 => (h.saturating_sub(5)).clamp(10, 40),
+        Some(h) if h >= 6 => (h.saturating_sub(2)).clamp(4, 20),
+        Some(_) => 4,
+        None => 20,
+    }
 }
 
 #[cfg(feature = "ui")]

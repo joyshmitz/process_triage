@@ -7,6 +7,7 @@ use std::io::{self, Stdout};
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(feature = "ui-legacy")]
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -18,6 +19,7 @@ use ftui::{
     KeyEvent as FtuiKeyEvent, KeyEventKind as FtuiKeyEventKind, Model as FtuiModel,
     Modifiers as FtuiModifiers, Program, ProgramConfig,
 };
+#[cfg(feature = "ui-legacy")]
 use ratatui::{
     backend::CrosstermBackend,
     layout::Rect,
@@ -26,7 +28,9 @@ use ratatui::{
 };
 
 use super::events::KeyBindings;
-use super::layout::{to_ratatui_rect, Breakpoint, LayoutState, ResponsiveLayout};
+#[cfg(feature = "ui-legacy")]
+use super::layout::to_ratatui_rect;
+use super::layout::{Breakpoint, LayoutState, ResponsiveLayout};
 use super::msg::{ExecutionOutcome, Msg};
 use super::theme::Theme;
 use super::widgets::{
@@ -153,6 +157,16 @@ impl App {
         self.layout_state.breakpoint()
     }
 
+    /// Returns true if the right-hand detail pane is currently visible.
+    pub fn is_detail_visible(&self) -> bool {
+        self.detail_visible
+    }
+
+    /// Returns the current detail pane mode.
+    pub fn current_detail_view(&self) -> DetailView {
+        self.detail_view
+    }
+
     /// Update layout state for new terminal size.
     /// Returns true if breakpoint changed.
     pub fn update_layout(&mut self, width: u16, height: u16) -> bool {
@@ -271,7 +285,8 @@ impl App {
         self.detail_visible = true;
     }
 
-    /// Handle a terminal event.
+    /// Handle a terminal event (legacy crossterm path).
+    #[cfg(feature = "ui-legacy")]
     pub fn handle_event(&mut self, event: Event) -> TuiResult<()> {
         // Handle resize events first (SIGWINCH)
         if let Event::Resize(width, height) = event {
@@ -337,7 +352,8 @@ impl App {
         Ok(())
     }
 
-    /// Handle events in normal mode.
+    /// Handle events in normal mode (legacy crossterm path).
+    #[cfg(feature = "ui-legacy")]
     fn handle_normal_event(&mut self, event: Event) -> TuiResult<()> {
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
@@ -462,7 +478,8 @@ impl App {
         Ok(())
     }
 
-    /// Handle search input events.
+    /// Handle search input events (legacy crossterm path).
+    #[cfg(feature = "ui-legacy")]
     fn handle_search_event(&mut self, event: Event) -> TuiResult<()> {
         if let Event::Key(key) = event {
             if key.kind == KeyEventKind::Press {
@@ -532,7 +549,8 @@ impl App {
         self.state = AppState::Normal;
     }
 
-    /// Render the application.
+    /// Render the application (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     pub fn render(&mut self, frame: &mut Frame) {
         let size = frame.area();
 
@@ -600,7 +618,8 @@ impl App {
         }
     }
 
-    /// Render the goal summary header.
+    /// Render the goal summary header (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_goal_summary(&self, frame: &mut Frame, area: Rect) {
         let Some(lines) = self.goal_summary.as_ref() else {
             return;
@@ -623,7 +642,8 @@ impl App {
         frame.render_widget(paragraph, area);
     }
 
-    /// Render message when terminal is too small.
+    /// Render message when terminal is too small (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_too_small_message(&self, frame: &mut Frame, area: Rect) {
         let message = Paragraph::new("Terminal too small.\nResize for full view.")
             .style(self.theme.style_muted())
@@ -632,7 +652,8 @@ impl App {
         frame.render_widget(message, area);
     }
 
-    /// Render detail pane with current selection.
+    /// Render detail pane with current selection (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_detail_pane(&self, frame: &mut Frame, area: Rect) {
         let row = self.process_table.current_row();
         let selected = row
@@ -674,7 +695,8 @@ impl App {
         frame.render_widget(detail, area);
     }
 
-    /// Render auxiliary pane (action preview/summary) when available.
+    /// Render auxiliary pane (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_aux_pane(&self, frame: &mut Frame, area: Rect) {
         let block = Block::default()
             .borders(Borders::ALL)
@@ -703,7 +725,8 @@ impl App {
         frame.render_widget(pane, area);
     }
 
-    /// Render the search input.
+    /// Render the search input (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_search(&mut self, frame: &mut Frame, area: Rect) {
         let search = SearchInput::new()
             .theme(&self.theme)
@@ -711,13 +734,15 @@ impl App {
         frame.render_stateful_widget(search, area, &mut self.search);
     }
 
-    /// Render the process table.
+    /// Render the process table (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_process_table(&mut self, frame: &mut Frame, area: Rect) {
         let table = ProcessTable::new().theme(&self.theme);
         frame.render_stateful_widget(table, area, &mut self.process_table);
     }
 
-    /// Render the status bar.
+    /// Render the status bar (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_status_bar(&self, frame: &mut Frame, area: Rect) {
         let status_text = self
             .status_message
@@ -728,7 +753,8 @@ impl App {
         frame.render_widget(status, area);
     }
 
-    /// Render the confirmation dialog.
+    /// Render the confirmation dialog (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_confirm_dialog(&mut self, frame: &mut Frame, area: Rect) {
         let selected = self.process_table.get_selected();
         let details = if selected.len() <= 5 {
@@ -753,7 +779,8 @@ impl App {
         frame.render_stateful_widget(dialog, area, &mut self.confirm_dialog);
     }
 
-    /// Render the help overlay.
+    /// Render the help overlay (legacy ratatui path).
+    #[cfg(feature = "ui-legacy")]
     fn render_help_overlay(&self, frame: &mut Frame, area: Rect) {
         // Adapt help text based on breakpoint
         let help_text = match self.layout_state.breakpoint() {
@@ -991,22 +1018,34 @@ Help: ?  Quit: q
                         "Executing actions on {} process(es)...",
                         selected_count
                     ));
-                    FtuiCmd::task_named("execute-selected", move || {
-                        Msg::ExecutionComplete(execute(selected_pids))
-                    })
+                    FtuiCmd::sequence(vec![
+                        FtuiCmd::log(format!(
+                            "execute: starting (selected_count={})",
+                            selected_count
+                        )),
+                        FtuiCmd::task_named("execute-selected", move || {
+                            Msg::ExecutionComplete(execute(selected_pids))
+                        }),
+                    ])
                 } else {
                     self.set_status(format!(
                         "Execution requested for {} process(es) (skeleton mode)",
                         selected_count
                     ));
-                    FtuiCmd::task_named("execute-selected", move || {
-                        Msg::ExecutionComplete(Ok(ExecutionOutcome {
-                            mode: Some("skeleton".to_string()),
-                            attempted: selected_count,
-                            succeeded: 0,
-                            failed: 0,
-                        }))
-                    })
+                    FtuiCmd::sequence(vec![
+                        FtuiCmd::log(format!(
+                            "execute: skeleton mode (selected_count={})",
+                            selected_count
+                        )),
+                        FtuiCmd::task_named("execute-selected", move || {
+                            Msg::ExecutionComplete(Ok(ExecutionOutcome {
+                                mode: Some("skeleton".to_string()),
+                                attempted: selected_count,
+                                succeeded: 0,
+                                failed: 0,
+                            }))
+                        }),
+                    ])
                 }
             }
             Msg::ConfirmExecute => {
@@ -1021,16 +1060,22 @@ Help: ?  Quit: q
                 tracing::info!(target: "tui.user_input", action = "refresh_requested", "Refresh requested");
                 if let Some(refresh) = self.refresh_op.clone() {
                     self.set_status("Refreshing process list...");
-                    FtuiCmd::task_named(
-                        "refresh-processes",
-                        move || Msg::RefreshComplete(refresh()),
-                    )
+                    FtuiCmd::sequence(vec![
+                        FtuiCmd::log("refresh: starting"),
+                        FtuiCmd::task_named(
+                            "refresh-processes",
+                            move || Msg::RefreshComplete(refresh()),
+                        ),
+                    ])
                 } else {
                     self.set_status("Refreshing process list (skeleton mode)...");
                     let prior_rows = self.process_table.rows.clone();
-                    FtuiCmd::task_named("refresh-processes", move || {
-                        Msg::RefreshComplete(Ok(prior_rows))
-                    })
+                    FtuiCmd::sequence(vec![
+                        FtuiCmd::log("refresh: skeleton mode"),
+                        FtuiCmd::task_named("refresh-processes", move || {
+                            Msg::RefreshComplete(Ok(prior_rows))
+                        }),
+                    ])
                 }
             }
             Msg::ExportEvidenceLedger => {
@@ -1044,18 +1089,19 @@ Help: ?  Quit: q
                 FtuiCmd::none()
             }
             Msg::RefreshComplete(Ok(rows)) => {
+                let count = rows.len();
                 self.process_table.set_rows(rows);
-                self.set_status("Process list refreshed");
-                FtuiCmd::none()
+                self.set_status(format!("Process list refreshed ({})", count));
+                FtuiCmd::log(format!("refresh: complete (rows={})", count))
             }
             Msg::RefreshComplete(Err(error)) => {
                 tracing::error!(target: "tui.async_complete", error = %error, "Refresh failed");
                 self.set_status(format!("Refresh failed: {}", error));
-                FtuiCmd::none()
+                FtuiCmd::log(format!("refresh: failed ({})", error))
             }
             Msg::ExecutionComplete(Ok(outcome)) => {
-                if let Some(mode) = outcome.mode.as_deref() {
-                    self.set_status(match mode {
+                let status = if let Some(mode) = outcome.mode.as_deref() {
+                    match mode {
                         "dry_run" => format!(
                             "Plan saved (dry_run): {} action(s) (no execution)",
                             outcome.attempted
@@ -1066,19 +1112,20 @@ Help: ?  Quit: q
                         ),
                         "skeleton" => "Execution not wired yet (skeleton mode)".to_string(),
                         other => format!("Execution finished ({})", other),
-                    });
+                    }
                 } else {
-                    self.set_status(format!(
+                    format!(
                         "Execution complete: {} succeeded, {} failed ({} attempted)",
                         outcome.succeeded, outcome.failed, outcome.attempted
-                    ));
-                }
-                FtuiCmd::none()
+                    )
+                };
+                self.set_status(status.clone());
+                FtuiCmd::log(format!("execute: {}", status))
             }
             Msg::ExecutionComplete(Err(error)) => {
                 tracing::error!(target: "tui.async_complete", error = %error, "Execution failed");
                 self.set_status(format!("Execution failed: {}", error));
-                FtuiCmd::none()
+                FtuiCmd::log(format!("execute: failed ({})", error))
             }
             Msg::LedgerExported(Ok(path)) => {
                 self.set_status(format!("Evidence ledger exported to {}", path.display()));
@@ -1346,8 +1393,7 @@ fn draw_ftui_text(frame: &mut FtuiFrame, x: u16, y: u16, text: &str) {
 /// The `App` model implements `ftui::Model`, so it drives the Elm-style
 /// init → update → view loop. Callbacks for refresh/execute are wired
 /// through `Cmd::task` closures (see bd-2b3l for data wiring).
-pub fn run_ftui(app: App) -> TuiResult<()> {
-    let config = ProgramConfig::fullscreen();
+pub fn run_ftui(app: App, config: ProgramConfig) -> TuiResult<()> {
     let mut program =
         Program::with_config(app, config).map_err(|e| TuiError::TerminalInit(e.to_string()))?;
     program
@@ -1461,6 +1507,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "ui-legacy")]
     use crossterm::event::{KeyEvent, KeyModifiers};
 
     #[test]
@@ -1520,6 +1567,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ui-legacy")]
     fn test_toggle_galaxy_brain_view() {
         let mut app = App::new();
         assert_eq!(app.detail_view, DetailView::Summary);
@@ -1541,6 +1589,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ui-legacy")]
     fn test_toggle_detail_visibility_with_enter() {
         let mut app = App::new();
         let initial = app.detail_visible;
@@ -1553,6 +1602,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "ui-legacy")]
     fn test_help_overlay_toggle() {
         let mut app = App::new();
         app.handle_event(Event::Key(KeyEvent::new(

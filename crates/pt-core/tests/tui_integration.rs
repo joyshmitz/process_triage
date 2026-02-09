@@ -1,4 +1,8 @@
-#![cfg(feature = "ui")]
+// Legacy rendering integration tests (ratatui/crossterm).
+//
+// The ftui runtime is the default `ui` path; these tests are kept temporarily
+// to validate the legacy stack while migration is ongoing.
+#![cfg(feature = "ui-legacy")]
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use pt_core::tui::widgets::ProcessRow;

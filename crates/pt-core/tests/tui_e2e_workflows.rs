@@ -3,7 +3,7 @@
 //!
 //! All interactions use ftui `Msg` types sent through `Model::update()`,
 //! replacing the legacy crossterm event-based approach. Rendering tests
-//! still use ratatui TestBackend (the active render path).
+//! are gated behind `ui-legacy` as they require ratatui TestBackend.
 
 use ftui::{
     KeyCode as FtuiKeyCode, KeyEvent as FtuiKeyEvent, Model as FtuiModel,
@@ -11,9 +11,13 @@ use ftui::{
 };
 use pt_core::tui::widgets::{DetailView, ProcessRow};
 use pt_core::tui::{App, AppState, Msg, Theme};
+#[cfg(feature = "ui-legacy")]
 use ratatui::backend::TestBackend;
+#[cfg(feature = "ui-legacy")]
 use ratatui::buffer::Buffer;
+#[cfg(feature = "ui-legacy")]
 use ratatui::layout::Rect;
+#[cfg(feature = "ui-legacy")]
 use ratatui::Terminal;
 
 // ===========================================================================
@@ -47,6 +51,7 @@ fn ftui_key_ctrl(c: char) -> Msg {
     Msg::KeyPressed(FtuiKeyEvent::new(FtuiKeyCode::Char(c)).with_modifiers(FtuiModifiers::CTRL))
 }
 
+#[cfg(feature = "ui-legacy")]
 fn line_string(buf: &Buffer, area: Rect, y: u16) -> String {
     let mut line = String::new();
     for x in area.x..area.x.saturating_add(area.width) {
@@ -55,6 +60,7 @@ fn line_string(buf: &Buffer, area: Rect, y: u16) -> String {
     line
 }
 
+#[cfg(feature = "ui-legacy")]
 fn buffer_contains(buf: &Buffer, area: Rect, needle: &str) -> bool {
     for y in area.y..area.y.saturating_add(area.height) {
         if line_string(buf, area, y).contains(needle) {
@@ -64,6 +70,7 @@ fn buffer_contains(buf: &Buffer, area: Rect, needle: &str) -> bool {
     false
 }
 
+#[cfg(feature = "ui-legacy")]
 fn buffer_text(buf: &Buffer, area: Rect) -> String {
     (area.y..area.y.saturating_add(area.height))
         .map(|y| line_string(buf, area, y))
@@ -144,6 +151,7 @@ fn app_with_rows() -> App {
     app
 }
 
+#[cfg(feature = "ui-legacy")]
 fn render(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
@@ -486,14 +494,14 @@ fn selection_via_semantic_msgs() {
 fn detail_view_toggle_visibility() {
     let mut app = app_with_rows();
 
+    let initial = app.is_detail_visible();
     // Enter toggles detail visibility
     send_msg(&mut app, ftui_key(FtuiKeyCode::Enter));
-
-    // Render to verify no crash
-    let _terminal = render(&mut app, 120, 40);
+    assert_ne!(app.is_detail_visible(), initial);
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn detail_view_switch_to_galaxy_brain() {
     let mut app = app_with_rows();
 
@@ -512,6 +520,7 @@ fn detail_view_switch_to_galaxy_brain() {
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn detail_view_switch_to_summary() {
     let mut app = app_with_rows();
 
@@ -534,12 +543,11 @@ fn detail_view_switch_to_genealogy() {
 
     // 't' switches to genealogy view
     send_msg(&mut app, ftui_char('t'));
-
-    let _terminal = render(&mut app, 120, 40);
-    // Just verify no crash
+    assert_eq!(app.current_detail_view(), DetailView::Genealogy);
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn detail_view_follows_cursor() {
     let mut app = app_with_rows();
 
@@ -560,6 +568,7 @@ fn detail_view_follows_cursor() {
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn detail_view_via_semantic_msgs() {
     let mut app = app_with_rows();
 
@@ -648,7 +657,6 @@ fn confirmation_dialog_tab_toggles() {
     // Tab should toggle between options
     send_msg(&mut app, ftui_key(FtuiKeyCode::Tab));
     // No crash
-    let _terminal = render(&mut app, 120, 40);
 }
 
 #[test]
@@ -666,7 +674,6 @@ fn confirmation_dialog_left_right() {
             ftui_char('h'), // left
         ],
     );
-    let _terminal = render(&mut app, 120, 40);
 }
 
 // ===========================================================================
@@ -685,6 +692,7 @@ fn help_opens_and_closes() {
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn help_renders_keybindings() {
     let mut app = app_with_rows();
 
@@ -775,11 +783,8 @@ fn tab_cycles_focus() {
 
     // Tab should cycle through focus targets
     send_msg(&mut app, ftui_key(FtuiKeyCode::Tab));
-    // After one tab, focus should have moved (no crash)
-    let _terminal = render(&mut app, 120, 40);
-
     send_msg(&mut app, ftui_key(FtuiKeyCode::Tab));
-    let _terminal = render(&mut app, 120, 40);
+    // No crash
 }
 
 #[test]
@@ -787,10 +792,8 @@ fn focus_cycle_via_msg() {
     let mut app = app_with_rows();
 
     send_msg(&mut app, Msg::FocusNext);
-    let _terminal = render(&mut app, 120, 40);
-
     send_msg(&mut app, Msg::FocusPrev);
-    let _terminal = render(&mut app, 120, 40);
+    // No crash
 }
 
 // ===========================================================================
@@ -801,9 +804,6 @@ fn focus_cycle_via_msg() {
 fn resize_updates_layout() {
     let mut app = app_with_rows();
 
-    // Initial render at 120x40
-    let _terminal = render(&mut app, 120, 40);
-
     // Simulate resize via ftui Msg
     send_msg(
         &mut app,
@@ -812,7 +812,6 @@ fn resize_updates_layout() {
             height: 60,
         },
     );
-    let _terminal = render(&mut app, 200, 60);
 
     // Simulate resize to compact
     send_msg(
@@ -822,7 +821,6 @@ fn resize_updates_layout() {
             height: 24,
         },
     );
-    let _terminal = render(&mut app, 80, 24);
 }
 
 #[test]
@@ -837,7 +835,7 @@ fn minimal_terminal_renders_without_crash() {
             height: 10,
         },
     );
-    let _terminal = render(&mut app, 40, 10);
+    // No crash
 }
 
 // ===========================================================================
@@ -845,24 +843,28 @@ fn minimal_terminal_renders_without_crash() {
 // ===========================================================================
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn dark_theme_renders() {
     let mut app = app_with_rows().with_theme(Theme::dark());
     let _terminal = render(&mut app, 120, 40);
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn light_theme_renders() {
     let mut app = app_with_rows().with_theme(Theme::light());
     let _terminal = render(&mut app, 120, 40);
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn high_contrast_theme_renders() {
     let mut app = app_with_rows().with_theme(Theme::high_contrast());
     let _terminal = render(&mut app, 120, 40);
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn theme_switch_via_msg() {
     let mut app = app_with_rows();
     send_msg(&mut app, Msg::SwitchTheme("light".to_string()));
@@ -880,6 +882,7 @@ fn theme_switch_via_msg() {
 // ===========================================================================
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn workflow_triage_and_execute() {
     let mut app = app_with_rows();
 
@@ -958,6 +961,7 @@ fn workflow_search_filter_select_abort() {
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn workflow_view_mode_switching() {
     let mut app = app_with_rows();
 
@@ -1060,6 +1064,7 @@ fn execution_complete_err() {
 // ===========================================================================
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn empty_process_list_renders() {
     let mut app = App::new();
     // No rows set
@@ -1083,7 +1088,6 @@ fn empty_process_list_navigation_safe() {
             ftui_char('u'),
         ],
     );
-    let _terminal = render(&mut app, 120, 40);
 }
 
 #[test]
@@ -1157,6 +1161,7 @@ fn rapid_search_enter_exit_stress() {
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn interleaved_resize_and_keys() {
     let mut app = app_with_rows();
 
@@ -1187,10 +1192,11 @@ fn rapid_semantic_msg_stress() {
 }
 
 // ===========================================================================
-// 16. Rendering at Different Terminal Sizes
+// 16. Rendering at Different Terminal Sizes (requires ratatui)
 // ===========================================================================
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn render_at_compact_80x24() {
     let mut app = app_with_rows();
     send_msg(
@@ -1204,6 +1210,7 @@ fn render_at_compact_80x24() {
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn render_at_standard_120x40() {
     let mut app = app_with_rows();
     send_msg(
@@ -1217,6 +1224,7 @@ fn render_at_standard_120x40() {
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn render_at_wide_200x60() {
     let mut app = app_with_rows();
     send_msg(
@@ -1230,6 +1238,7 @@ fn render_at_wide_200x60() {
 }
 
 #[test]
+#[cfg(feature = "ui-legacy")]
 fn render_at_minimal_40x10() {
     let mut app = app_with_rows();
     send_msg(

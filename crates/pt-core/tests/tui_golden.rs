@@ -1,4 +1,8 @@
-#![cfg(feature = "ui")]
+// Legacy golden rendering tests (ratatui buffer assertions).
+//
+// The ftui runtime is the default `ui` path; these tests are kept temporarily
+// to validate the legacy stack while migration is ongoing.
+#![cfg(feature = "ui-legacy")]
 
 use pt_core::inference::galaxy_brain::{self, GalaxyBrainConfig, MathMode, Verbosity};
 use pt_core::inference::ledger::EvidenceLedger;

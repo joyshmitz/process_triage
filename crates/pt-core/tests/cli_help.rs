@@ -98,6 +98,7 @@ mod run_command {
             .assert()
             .success()
             .stdout(predicate::str::contains("--deep"))
+            .stdout(predicate::str::contains("--inline"))
             .stdout(predicate::str::contains("--signatures"));
     }
 }

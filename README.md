@@ -100,6 +100,12 @@ These processes consume RAM, CPU, and file descriptors. Manually hunting them th
 pt
 ```
 
+If you prefer to preserve terminal scrollback (logs and progress above the UI), use inline mode:
+
+```bash
+pt run --inline
+```
+
 This runs the full triage workflow:
 1. **Scan** — Enumerate processes, compute initial scores
 2. **Review** — Present candidates sorted by abandonment probability

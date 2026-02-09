@@ -114,6 +114,7 @@ pt-core run [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--deep` | Force deep scan with all available probes |
+| `--inline` | Render TUI inline (preserve scrollback) instead of alternate screen |
 | `--signatures <path>` | Load additional signature patterns |
 | `--community-signatures` | Include signed community signatures |
 | `--min-age <seconds>` | Only consider processes older than threshold |
