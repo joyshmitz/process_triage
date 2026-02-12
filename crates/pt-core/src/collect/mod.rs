@@ -39,7 +39,6 @@ pub mod network;
 pub mod proc_parsers;
 pub mod protected;
 mod quick_scan;
-#[cfg(target_os = "linux")]
 pub mod systemd;
 #[cfg(target_os = "linux")]
 pub mod tick_delta;
@@ -94,8 +93,8 @@ pub use cgroup::{
     CgroupProvenance, CgroupVersion, CpuLimitSource, CpuLimits, MemoryLimitSource, MemoryLimits,
 };
 
-// Re-export systemd types
-#[cfg(target_os = "linux")]
+// Re-export systemd types (available on all platforms; collection functions
+// gracefully return None / false when systemctl is absent)
 pub use systemd::{
     collect_systemd_unit, is_systemd_available, is_systemd_managed, parse_systemctl_output,
     SystemdActiveState, SystemdDataSource, SystemdProvenance, SystemdUnit, SystemdUnitType,

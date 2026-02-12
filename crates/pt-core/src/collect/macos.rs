@@ -717,7 +717,7 @@ pub fn macos_scan(options: &MacOsScanOptions) -> Result<MacOsScanResult, MacOsSc
             start_time_unix: base.start_time_unix,
             elapsed: base.elapsed,
             source: "macos_scan".to_string(),
-            identity_quality: IdentityQuality::Moderate, // macOS lacks some TOCTOU protection
+            identity_quality: IdentityQuality::NoBootId, // macOS lacks /proc/boot_id TOCTOU protection
         };
 
         processes.push(record);
