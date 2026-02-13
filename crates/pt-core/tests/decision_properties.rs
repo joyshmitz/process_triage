@@ -22,7 +22,15 @@ use pt_core::decision::dro::{
     apply_dro_gate, compute_adaptive_epsilon, compute_wasserstein_dro, decide_with_dro,
     is_de_escalation, DroTrigger,
 };
-use pt_core::decision::expected_loss::ActionFeasibility;
+use pt_core::decision::expected_loss::{
+    apply_dro_control, apply_risk_sensitive_control, decide_action_with_recovery,
+    ActionFeasibility,
+};
+use pt_core::decision::goal_contribution::{
+    estimate_cpu_contribution, estimate_fd_contribution, estimate_memory_contribution,
+    estimate_port_contribution, ContributionCandidate,
+};
+use pt_core::decision::goal_parser::parse_goal;
 use pt_core::decision::load_aware::{
     apply_load_to_loss_matrix, compute_load_adjustment, LoadAdjustment, LoadSignals,
 };
@@ -43,7 +51,7 @@ use pt_core::decision::{
 use pt_core::inference::belief_state::BeliefState;
 use pt_core::inference::martingale::{MartingaleAnalyzer, MartingaleConfig};
 use pt_core::decision::alpha_investing::AlphaInvestingPolicy;
-use pt_core::decision::cvar::{compute_cvar, decide_with_cvar};
+use pt_core::decision::cvar::{compute_cvar, decide_with_cvar, CvarTrigger};
 use pt_core::decision::fdr_selection::{
     by_correction_factor, select_fdr, FdrCandidate, FdrMethod,
 };
@@ -2468,5 +2476,266 @@ proptest! {
         if r.gate_passed {
             prop_assert!(r.eligible, "gate_passed but not eligible");
         }
+    }
+}
+
+// ── Expected loss properties ──────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    /// The optimal action must have the minimum expected loss among feasible actions.
+    #[test]
+    fn expected_loss_optimal_minimizes(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let outcome = decide_action(&posterior, &policy, &feasibility).unwrap();
+        let min_loss = outcome.expected_loss.iter()
+            .map(|e| e.loss)
+            .fold(f64::INFINITY, f64::min);
+        let optimal_loss = outcome.expected_loss.iter()
+            .find(|e| e.action == outcome.optimal_action)
+            .unwrap().loss;
+        prop_assert!((optimal_loss - min_loss).abs() < 1e-9,
+            "optimal loss {} != min loss {}", optimal_loss, min_loss);
+    }
+
+    /// All expected losses must be finite (no NaN/Inf).
+    #[test]
+    fn expected_loss_all_finite(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let outcome = decide_action(&posterior, &policy, &feasibility).unwrap();
+        for el in &outcome.expected_loss {
+            prop_assert!(el.loss.is_finite(), "loss for {:?} is not finite: {}", el.action, el.loss);
+        }
+    }
+
+    /// Disabled actions must not appear in the expected loss results.
+    #[test]
+    fn expected_loss_feasibility_respected(posterior in posterior_strategy()) {
+        let feasibility = ActionFeasibility::from_process_state(true, false, None);
+        let policy = Policy::default();
+        let outcome = decide_action(&posterior, &policy, &feasibility).unwrap();
+        for el in &outcome.expected_loss {
+            prop_assert!(feasibility.is_allowed(el.action),
+                "disabled action {:?} found in results", el.action);
+        }
+    }
+
+    /// decide_action_with_recovery never panics and produces valid output.
+    #[test]
+    fn expected_loss_with_recovery_valid(posterior in posterior_strategy(),
+                                         tolerance in 0.0f64..1.0) {
+        let policy = Policy::default();
+        let priors = test_causal_priors();
+        let feasibility = ActionFeasibility::allow_all();
+        let outcome = decide_action_with_recovery(
+            &posterior, &policy, &feasibility, &priors, tolerance,
+        ).unwrap();
+        prop_assert!(outcome.expected_loss.iter().any(|e| e.action == outcome.optimal_action),
+            "optimal action {:?} not in expected_loss list", outcome.optimal_action);
+    }
+
+    /// Risk-sensitive control with no trigger preserves the original action.
+    #[test]
+    fn expected_loss_risk_sensitive_no_trigger_preserves(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let outcome = decide_action(&posterior, &policy, &feasibility).unwrap();
+        let original = outcome.optimal_action;
+        let trigger = CvarTrigger {
+            robot_mode: false,
+            low_confidence: false,
+            high_blast_radius: false,
+            explicit_conservative: false,
+            blast_radius_mb: None,
+        };
+        let result = apply_risk_sensitive_control(outcome, &posterior, &policy, &trigger, 0.95);
+        prop_assert_eq!(result.optimal_action, original,
+            "no-trigger CVaR changed action from {:?} to {:?}", original, result.optimal_action);
+    }
+
+    /// DRO control with no trigger preserves the original action.
+    #[test]
+    fn expected_loss_dro_no_trigger_preserves(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let outcome = decide_action(&posterior, &policy, &feasibility).unwrap();
+        let original = outcome.optimal_action;
+        let trigger = DroTrigger::none();
+        let result = apply_dro_control(outcome, &posterior, &policy, &trigger, 0.1);
+        prop_assert_eq!(result.optimal_action, original,
+            "no-trigger DRO changed action from {:?} to {:?}", original, result.optimal_action);
+    }
+
+    /// Zombie feasibility always disables Kill action.
+    #[test]
+    fn expected_loss_zombie_disables_kill(posterior in posterior_strategy()) {
+        let feasibility = ActionFeasibility::from_process_state(true, false, None);
+        prop_assert!(!feasibility.is_allowed(Action::Kill));
+        let policy = Policy::default();
+        let outcome = decide_action(&posterior, &policy, &feasibility).unwrap();
+        prop_assert_ne!(outcome.optimal_action, Action::Kill,
+            "zombie process should never choose Kill");
+    }
+}
+
+// ── Goal contribution properties ──────────────────────────────────────
+
+fn contribution_candidate_strategy() -> impl Strategy<Value = ContributionCandidate> {
+    (
+        1u32..65535,                  // pid
+        1u64..10_000_000_000,         // rss_bytes
+        proptest::option::of(1u64..10_000_000_000), // uss_bytes
+        0.0f64..2.0,                  // cpu_frac
+        0u32..10000,                  // fd_count
+        proptest::collection::vec(1u16..=65535u16, 0..5), // bound_ports
+        0.0f64..1.0,                  // respawn_probability
+        proptest::bool::ANY,          // has_shared_memory
+        0usize..50,                   // child_count
+    )
+        .prop_map(
+            |(pid, rss_bytes, uss_bytes, cpu_frac, fd_count, bound_ports,
+              respawn_probability, has_shared_memory, child_count)| {
+                ContributionCandidate {
+                    pid,
+                    rss_bytes,
+                    uss_bytes,
+                    cpu_frac,
+                    fd_count,
+                    bound_ports,
+                    respawn_probability,
+                    has_shared_memory,
+                    child_count,
+                }
+            },
+        )
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    /// Memory contribution expected value is always non-negative.
+    #[test]
+    fn goal_contrib_memory_non_negative(cand in contribution_candidate_strategy()) {
+        let contrib = estimate_memory_contribution(&cand);
+        prop_assert!(contrib.expected >= 0.0, "expected {} < 0", contrib.expected);
+        prop_assert!(contrib.low >= 0.0, "low {} < 0", contrib.low);
+    }
+
+    /// Memory contribution confidence is in [0, 1].
+    #[test]
+    fn goal_contrib_memory_confidence_bounded(cand in contribution_candidate_strategy()) {
+        let contrib = estimate_memory_contribution(&cand);
+        prop_assert!(contrib.confidence >= 0.0 && contrib.confidence <= 1.0,
+            "confidence {} outside [0,1]", contrib.confidence);
+    }
+
+    /// CPU contribution expected value is non-negative and confidence in [0,1].
+    #[test]
+    fn goal_contrib_cpu_non_negative(cand in contribution_candidate_strategy()) {
+        let contrib = estimate_cpu_contribution(&cand);
+        prop_assert!(contrib.expected >= 0.0, "cpu expected {} < 0", contrib.expected);
+        prop_assert!(contrib.confidence >= 0.0 && contrib.confidence <= 1.0,
+            "cpu confidence {} outside [0,1]", contrib.confidence);
+    }
+
+    /// Port contribution is 0.0 when candidate doesn't hold the port, or in (0,1] when it does.
+    #[test]
+    fn goal_contrib_port_semantics(cand in contribution_candidate_strategy(),
+                                   port in 1u16..=65535u16) {
+        let contrib = estimate_port_contribution(&cand, port);
+        if cand.bound_ports.contains(&port) {
+            prop_assert!(contrib.expected > 0.0,
+                "holds port {} but expected == 0", port);
+            prop_assert!(contrib.expected <= 1.0,
+                "port probability {} > 1.0", contrib.expected);
+        } else {
+            prop_assert_eq!(contrib.expected, 0.0,
+                "doesn't hold port {} but expected != 0", port);
+        }
+    }
+
+    /// FD contribution expected value is non-negative.
+    #[test]
+    fn goal_contrib_fd_non_negative(cand in contribution_candidate_strategy()) {
+        let contrib = estimate_fd_contribution(&cand);
+        prop_assert!(contrib.expected >= 0.0, "fd expected {} < 0", contrib.expected);
+    }
+
+    /// All contribution functions produce finite values.
+    #[test]
+    fn goal_contrib_all_finite(cand in contribution_candidate_strategy()) {
+        let mem = estimate_memory_contribution(&cand);
+        let cpu = estimate_cpu_contribution(&cand);
+        let fd = estimate_fd_contribution(&cand);
+        for (name, c) in [("memory", &mem), ("cpu", &cpu), ("fd", &fd)] {
+            prop_assert!(c.expected.is_finite(), "{} expected not finite", name);
+            prop_assert!(c.low.is_finite(), "{} low not finite", name);
+            prop_assert!(c.high.is_finite(), "{} high not finite", name);
+            prop_assert!(c.confidence.is_finite(), "{} confidence not finite", name);
+        }
+    }
+}
+
+// ── Goal parser properties ────────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    /// parse_goal("free <n>GB RAM") succeeds for any positive integer GB.
+    #[test]
+    fn goal_parser_memory_valid(n in 1u32..1000) {
+        let input = format!("free {}GB RAM", n);
+        let goal = parse_goal(&input).unwrap();
+        let canonical = goal.canonical();
+        prop_assert!(canonical.contains("memory"), "canonical '{}' missing 'memory'", canonical);
+    }
+
+    /// CPU percentage parse always produces value in (0, 1].
+    #[test]
+    fn goal_parser_cpu_value_fraction(pct in 1u32..100) {
+        let input = format!("free {}% CPU", pct);
+        let goal = parse_goal(&input).unwrap();
+        match goal {
+            pt_core::decision::goal_parser::Goal::Target(t) => {
+                let expected = pct as f64 / 100.0;
+                prop_assert!((t.value - expected).abs() < 1e-6,
+                    "parsed value {} != expected {}", t.value, expected);
+            }
+            _ => prop_assert!(false, "expected Target, got composite"),
+        }
+    }
+
+    /// Port parse preserves the port number.
+    #[test]
+    fn goal_parser_port_roundtrip(port in 1u16..=65535u16) {
+        let input = format!("release port {}", port);
+        let goal = parse_goal(&input).unwrap();
+        match goal {
+            pt_core::decision::goal_parser::Goal::Target(t) => {
+                prop_assert_eq!(t.port, Some(port));
+            }
+            _ => prop_assert!(false, "expected Target, got composite"),
+        }
+    }
+
+    /// FD parse is deterministic (same input → same canonical).
+    #[test]
+    fn goal_parser_deterministic(n in 1u32..10000) {
+        let input = format!("free {} FDs", n);
+        let g1 = parse_goal(&input).unwrap();
+        let g2 = parse_goal(&input).unwrap();
+        prop_assert_eq!(g1.canonical(), g2.canonical());
+    }
+
+    /// Canonical string is deterministic for AND compositions.
+    #[test]
+    fn goal_parser_and_canonical_deterministic(a in 1u32..100, b in 1u16..=65535u16) {
+        let input = format!("free {}GB RAM AND release port {}", a, b);
+        let g1 = parse_goal(&input).unwrap();
+        let g2 = parse_goal(&input).unwrap();
+        prop_assert_eq!(g1.canonical(), g2.canonical());
     }
 }
