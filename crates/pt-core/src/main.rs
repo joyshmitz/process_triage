@@ -394,6 +394,11 @@ struct RunArgs {
     /// Also activatable via REDUCE_MOTION or PT_REDUCE_MOTION env vars.
     #[arg(long)]
     reduce_motion: bool,
+
+    /// Enable screen-reader-friendly mode (text labels, verbose status, no animations).
+    /// Also activatable via PT_ACCESSIBLE env var.
+    #[arg(long)]
+    accessible: bool,
 }
 
 #[derive(Args, Debug)]
@@ -1739,6 +1744,7 @@ fn main() {
                     theme: None,
                     high_contrast: false,
                     reduce_motion: false,
+                    accessible: false,
                 },
             )
         }
@@ -1937,6 +1943,12 @@ fn run_interactive_tui(global: &GlobalOpts, args: &RunArgs) -> Result<(), String
         } else if global.no_color {
             app.theme = TuiTheme::no_color();
         }
+    }
+
+    // --accessible CLI flag overrides env var detection from App::new().
+    if args.accessible {
+        app.accessible = true;
+        app.reduce_motion = true; // accessible implies reduce_motion
     }
 
     // --reduce-motion CLI flag overrides env var detection from App::new().

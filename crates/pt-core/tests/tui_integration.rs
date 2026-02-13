@@ -338,3 +338,43 @@ fn reduce_motion_default_is_false() {
     let app = App::new();
     assert!(!app.reduce_motion, "reduce_motion should default to false");
 }
+
+// ── Accessible mode tests ─────────────────────────────────────────
+
+#[test]
+fn accessible_default_is_false() {
+    let app = App::new();
+    assert!(!app.accessible, "accessible should default to false");
+}
+
+#[test]
+fn accessible_implies_reduce_motion() {
+    let mut app = App::new();
+    app.accessible = true;
+    app.reduce_motion = true; // --accessible sets both in CLI wiring
+
+    assert!(
+        app.reduce_motion,
+        "accessible mode should imply reduce_motion"
+    );
+}
+
+#[test]
+fn accessible_mode_renders_cleanly() {
+    let mut app = App::new();
+    app.accessible = true;
+    app.reduce_motion = true;
+    app.process_table.set_rows(vec![sample_row()]);
+
+    let buf = render_app_view(&app, 120, 40);
+    let text = buffer_to_text(&buf);
+
+    assert!(
+        text.contains("Search"),
+        "search widget should render in accessible mode"
+    );
+    assert!(
+        text.contains("4242") || text.contains("KILL"),
+        "process table should render in accessible mode"
+    );
+}

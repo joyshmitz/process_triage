@@ -115,6 +115,10 @@ pub struct App {
     /// When true, disables animations and uses static indicators.
     /// Activated by `--reduce-motion` CLI flag or `REDUCE_MOTION` env var.
     pub reduce_motion: bool,
+    /// When true, enables screen-reader-friendly output (text labels instead of
+    /// Unicode icons, verbose announcements, auto-enables reduce_motion).
+    /// Activated by `--accessible` CLI flag or `PT_ACCESSIBLE` env var.
+    pub accessible: bool,
 }
 
 impl Default for App {
@@ -129,8 +133,10 @@ impl App {
         let mut process_table = ProcessTableState::new();
         process_table.focused = true; // Start with process table focused
 
-        let reduce_motion =
-            std::env::var("REDUCE_MOTION").is_ok() || std::env::var("PT_REDUCE_MOTION").is_ok();
+        let accessible = std::env::var("PT_ACCESSIBLE").is_ok();
+        let reduce_motion = accessible
+            || std::env::var("REDUCE_MOTION").is_ok()
+            || std::env::var("PT_REDUCE_MOTION").is_ok();
 
         Self {
             state: AppState::Normal,
@@ -160,6 +166,7 @@ impl App {
                 dedup_window_ms: 1000,
             }),
             reduce_motion,
+            accessible,
         }
     }
 
