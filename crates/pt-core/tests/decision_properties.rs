@@ -4,7 +4,9 @@ use proptest::prelude::*;
 use pt_core::config::policy::Policy;
 use pt_core::decision::expected_loss::ActionFeasibility;
 use pt_core::decision::myopic_policy::{compute_loss_table, decide_from_belief};
-use pt_core::decision::{compute_voi, decide_action, Action, ProbeCostModel};
+use pt_core::decision::{
+    compute_voi, decide_action, select_probe_by_information_gain, Action, ProbeCostModel, ProbeType,
+};
 use pt_core::inference::belief_state::BeliefState;
 use pt_core::inference::ClassScores;
 
@@ -263,5 +265,168 @@ proptest! {
             Action::Kill,
             "Kill should be blocked for zombie processes"
         );
+    }
+}
+
+// ── VOI property tests ─────────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(5_000))]
+
+    /// compute_voi should succeed for any valid posterior.
+    #[test]
+    fn voi_never_errors_on_valid_posterior(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let cost_model = ProbeCostModel::default();
+
+        let result = compute_voi(&posterior, &policy, &feasibility, &cost_model, None);
+        prop_assert!(result.is_ok(), "compute_voi failed: {:?}", result.err());
+    }
+
+    /// All VOI probe costs must be non-negative.
+    #[test]
+    fn voi_probe_costs_non_negative(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let cost_model = ProbeCostModel::default();
+
+        if let Ok(analysis) = compute_voi(&posterior, &policy, &feasibility, &cost_model, None) {
+            for probe in &analysis.probes {
+                prop_assert!(
+                    probe.cost >= -1e-12,
+                    "Probe {} has negative cost: {}",
+                    probe.probe.name(),
+                    probe.cost
+                );
+            }
+        }
+    }
+
+    /// All VOI values must be finite (no NaN or infinity).
+    #[test]
+    fn voi_all_values_finite(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let cost_model = ProbeCostModel::default();
+
+        if let Ok(analysis) = compute_voi(&posterior, &policy, &feasibility, &cost_model, None) {
+            prop_assert!(analysis.current_min_loss.is_finite(),
+                "current_min_loss is not finite");
+
+            for probe in &analysis.probes {
+                prop_assert!(probe.voi.is_finite(),
+                    "VOI for {} is not finite", probe.probe.name());
+                prop_assert!(probe.cost.is_finite(),
+                    "Cost for {} is not finite", probe.probe.name());
+                prop_assert!(probe.expected_loss_after.is_finite(),
+                    "Expected loss after {} is not finite", probe.probe.name());
+            }
+        }
+    }
+
+    /// The act_now flag should be consistent with best_probe:
+    /// act_now == true iff best_probe is None.
+    #[test]
+    fn voi_act_now_consistent_with_best_probe(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let cost_model = ProbeCostModel::default();
+
+        if let Ok(analysis) = compute_voi(&posterior, &policy, &feasibility, &cost_model, None) {
+            prop_assert_eq!(
+                analysis.act_now,
+                analysis.best_probe.is_none(),
+                "act_now={} but best_probe={:?}",
+                analysis.act_now,
+                analysis.best_probe
+            );
+        }
+    }
+
+    /// If best_probe is Some(p), then p should have negative VOI (worthwhile).
+    #[test]
+    fn voi_best_probe_has_negative_voi(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let cost_model = ProbeCostModel::default();
+
+        if let Ok(analysis) = compute_voi(&posterior, &policy, &feasibility, &cost_model, None) {
+            if let Some(best) = analysis.best_probe {
+                let best_entry = analysis.probes.iter()
+                    .find(|p| p.probe == best)
+                    .expect("best_probe should appear in probes list");
+                prop_assert!(
+                    best_entry.voi < 0.0,
+                    "Best probe {:?} has non-negative VOI: {}",
+                    best,
+                    best_entry.voi
+                );
+            }
+        }
+    }
+
+    /// The best probe should have the minimum VOI among all probes.
+    #[test]
+    fn voi_best_probe_is_minimal(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let cost_model = ProbeCostModel::default();
+
+        if let Ok(analysis) = compute_voi(&posterior, &policy, &feasibility, &cost_model, None) {
+            if let Some(best) = analysis.best_probe {
+                let best_voi = analysis.probes.iter()
+                    .find(|p| p.probe == best)
+                    .map(|p| p.voi)
+                    .expect("best_probe should appear in probes list");
+
+                for probe in &analysis.probes {
+                    prop_assert!(
+                        best_voi <= probe.voi + 1e-9,
+                        "Best probe {:?} VOI {} exceeds probe {:?} VOI {}",
+                        best, best_voi, probe.probe, probe.voi
+                    );
+                }
+            }
+        }
+    }
+
+    /// select_probe_by_information_gain should always return Some for valid posteriors.
+    #[test]
+    fn info_gain_always_selects_a_probe(posterior in posterior_strategy()) {
+        let cost_model = ProbeCostModel::default();
+        let result = select_probe_by_information_gain(&posterior, &cost_model, None);
+        prop_assert!(
+            result.is_some(),
+            "select_probe_by_information_gain returned None for valid posterior"
+        );
+    }
+
+    /// Restricting available probes should not produce probes outside the set.
+    #[test]
+    fn voi_respects_available_probes(posterior in posterior_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let cost_model = ProbeCostModel::default();
+        let subset = [ProbeType::QuickScan, ProbeType::CgroupInspect, ProbeType::NetSnapshot];
+
+        if let Ok(analysis) = compute_voi(
+            &posterior, &policy, &feasibility, &cost_model, Some(&subset),
+        ) {
+            for probe in &analysis.probes {
+                prop_assert!(
+                    subset.contains(&probe.probe),
+                    "Probe {:?} not in available set",
+                    probe.probe
+                );
+            }
+            if let Some(best) = analysis.best_probe {
+                prop_assert!(
+                    subset.contains(&best),
+                    "Best probe {:?} not in available set",
+                    best
+                );
+            }
+        }
     }
 }
