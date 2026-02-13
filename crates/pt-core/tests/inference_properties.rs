@@ -2,6 +2,13 @@
 
 use proptest::prelude::*;
 use pt_core::config::priors::Priors;
+use pt_core::inference::compound_poisson::{
+    BurstEvent, CompoundPoissonAnalyzer, CompoundPoissonConfig,
+};
+use pt_core::inference::hsmm::{HsmmAnalyzer, HsmmConfig, HsmmState};
+use pt_core::inference::robust::{
+    CredalSet, MinimaxConfig, MinimaxGate, RobustConfig, RobustGate,
+};
 use pt_core::inference::{compute_posterior, CpuEvidence, Evidence};
 
 fn cpu_evidence_strategy() -> impl Strategy<Value = CpuEvidence> {
@@ -290,6 +297,292 @@ proptest! {
             occupancy * 100.0,
             result.posterior.useful
         );
+    }
+
+    // ── HSMM properties ─────────────────────────────────────────────
+
+    /// HSMM state posteriors sum to 1 (±epsilon) after each update.
+    #[test]
+    fn hsmm_posteriors_sum_to_one(
+        n_obs in 1usize..30,
+        seed in 0.0f64..100.0,
+    ) {
+        let config = HsmmConfig::short_lived();
+        let features = config.num_features;
+        let mut analyzer = HsmmAnalyzer::new(config).unwrap();
+        for i in 0..n_obs {
+            let obs: Vec<f64> = (0..features)
+                .map(|f| 0.1 + ((seed + i as f64) * 0.3 + f as f64 * 0.7) % 2.0)
+                .collect();
+            let probs = analyzer.update(&obs).unwrap();
+            let sum: f64 = probs.iter().sum();
+            prop_assert!((sum - 1.0).abs() < 1e-6,
+                "posteriors sum to {} instead of 1.0 at step {}", sum, i);
+        }
+    }
+
+    /// HSMM state_probs are all non-negative.
+    #[test]
+    fn hsmm_probs_non_negative(
+        n_obs in 5usize..20,
+    ) {
+        let config = HsmmConfig::long_running();
+        let features = config.num_features;
+        let mut analyzer = HsmmAnalyzer::new(config).unwrap();
+        for i in 0..n_obs {
+            let obs: Vec<f64> = (0..features)
+                .map(|f| 0.5 + (i as f64 * 0.2 + f as f64 * 0.4) % 1.5)
+                .collect();
+            let _ = analyzer.update(&obs);
+        }
+        let probs = analyzer.state_probs();
+        for (idx, &p) in probs.iter().enumerate() {
+            prop_assert!(p >= 0.0, "state {} has negative probability {}", idx, p);
+            prop_assert!(p.is_finite(), "state {} has non-finite probability", idx);
+        }
+    }
+
+    /// HSMM summarize produces finite stability_score and log_likelihood.
+    #[test]
+    fn hsmm_summarize_finite(
+        n_obs in 5usize..25,
+    ) {
+        let config = HsmmConfig::short_lived();
+        let features = config.num_features;
+        let mut analyzer = HsmmAnalyzer::new(config).unwrap();
+        for i in 0..n_obs {
+            let obs: Vec<f64> = (0..features)
+                .map(|f| 0.3 + (i as f64 * 0.5 + f as f64) % 2.0)
+                .collect();
+            let _ = analyzer.update(&obs);
+        }
+        let result = analyzer.summarize().unwrap();
+        prop_assert!(result.stability_score.is_finite(),
+            "stability_score not finite: {}", result.stability_score);
+        prop_assert!(result.log_likelihood.is_finite(),
+            "log_likelihood not finite: {}", result.log_likelihood);
+        prop_assert!(result.state_entropy >= 0.0,
+            "entropy negative: {}", result.state_entropy);
+        prop_assert_eq!(result.num_observations, n_obs);
+    }
+
+    /// HSMM batch update produces same number of posteriors as observations.
+    #[test]
+    fn hsmm_batch_length_matches(
+        n_obs in 1usize..30,
+    ) {
+        let config = HsmmConfig::short_lived();
+        let features = config.num_features;
+        let observations: Vec<Vec<f64>> = (0..n_obs)
+            .map(|i| {
+                (0..features)
+                    .map(|f| 0.2 + (i as f64 * 0.4 + f as f64 * 0.6) % 1.8)
+                    .collect()
+            })
+            .collect();
+        let mut analyzer = HsmmAnalyzer::new(config).unwrap();
+        let posteriors = analyzer.update_batch(&observations).unwrap();
+        prop_assert_eq!(posteriors.len(), n_obs,
+            "batch returned {} posteriors for {} observations", posteriors.len(), n_obs);
+    }
+
+    /// HsmmState round-trips through index.
+    #[test]
+    fn hsmm_state_index_roundtrip(
+        idx in 0usize..4,
+    ) {
+        let state = HsmmState::from_index(idx).unwrap();
+        prop_assert_eq!(state.index(), idx);
+    }
+
+    // ── Robust inference properties ─────────────────────────────────
+
+    /// CredalSet width is non-negative and symmetric sets have expected width.
+    #[test]
+    fn credal_width_non_negative(
+        center in 0.05f64..0.95,
+        half in 0.01f64..0.4,
+    ) {
+        let half = half.min(center).min(1.0 - center); // keep within [0,1]
+        let cs = CredalSet::symmetric(center, half);
+        prop_assert!(cs.width() >= 0.0, "width {} is negative", cs.width());
+        prop_assert!((cs.width() - 2.0 * half).abs() < 1e-10,
+            "width {} != 2*half_width {}", cs.width(), 2.0 * half);
+        prop_assert!(cs.contains(center), "center not in credal set");
+    }
+
+    /// CredalSet intersection is a subset of both operands.
+    #[test]
+    fn credal_intersection_subset(
+        a_center in 0.2f64..0.8,
+        a_half in 0.05f64..0.15,
+        b_center in 0.2f64..0.8,
+        b_half in 0.05f64..0.15,
+    ) {
+        let a = CredalSet::symmetric(a_center, a_half);
+        let b = CredalSet::symmetric(b_center, b_half);
+        if let Some(inter) = a.intersect(&b) {
+            prop_assert!(inter.lower >= a.lower - 1e-10 && inter.lower >= b.lower - 1e-10);
+            prop_assert!(inter.upper <= a.upper + 1e-10 && inter.upper <= b.upper + 1e-10);
+            prop_assert!(inter.width() <= a.width() + 1e-10);
+            prop_assert!(inter.width() <= b.width() + 1e-10);
+        }
+    }
+
+    /// CredalSet hull contains both operands.
+    #[test]
+    fn credal_hull_contains_both(
+        a_center in 0.1f64..0.9,
+        a_half in 0.02f64..0.1,
+        b_center in 0.1f64..0.9,
+        b_half in 0.02f64..0.1,
+    ) {
+        let a = CredalSet::symmetric(a_center, a_half);
+        let b = CredalSet::symmetric(b_center, b_half);
+        let hull = a.hull(&b);
+        prop_assert!(hull.lower <= a.lower + 1e-10);
+        prop_assert!(hull.lower <= b.lower + 1e-10);
+        prop_assert!(hull.upper >= a.upper - 1e-10);
+        prop_assert!(hull.upper >= b.upper - 1e-10);
+    }
+
+    /// Tempered posterior mean is in [0,1] and variance is non-negative.
+    #[test]
+    fn tempered_posterior_bounds(
+        n in 5usize..500,
+        k_frac in 0.0f64..1.0,
+    ) {
+        let k = (k_frac * n as f64).floor() as usize;
+        let gate = RobustGate::new(RobustConfig::default());
+        let tp = gate.tempered_posterior(1.0, 1.0, n, k);
+        prop_assert!(tp.mean() >= 0.0 && tp.mean() <= 1.0,
+            "mean {} out of [0,1]", tp.mean());
+        prop_assert!(tp.variance() >= 0.0,
+            "variance {} is negative", tp.variance());
+        prop_assert!(tp.variance().is_finite(),
+            "variance not finite");
+    }
+
+    /// PPC failures decrease eta monotonically.
+    #[test]
+    fn robust_ppc_decreases_eta(
+        n_signals in 1usize..10,
+    ) {
+        let mut gate = RobustGate::new(RobustConfig::default());
+        let mut prev_eta = gate.eta();
+        for _ in 0..n_signals {
+            gate.signal_ppc_failure();
+            let new_eta = gate.eta();
+            prop_assert!(new_eta <= prev_eta,
+                "eta increased from {} to {} after PPC failure", prev_eta, new_eta);
+            prev_eta = new_eta;
+        }
+    }
+
+    /// Minimax worst-case loss is >= best-case loss.
+    #[test]
+    fn minimax_worst_geq_best(
+        n_classes in 2usize..6,
+    ) {
+        let config = MinimaxConfig { enabled: true, max_worst_case_loss: 100.0 };
+        let gate = MinimaxGate::new(config);
+        let loss_row: Vec<f64> = (0..n_classes)
+            .map(|i| 1.0 + i as f64 * 2.5)
+            .collect();
+        let credal_sets: Vec<CredalSet> = (0..n_classes)
+            .map(|i| {
+                let c = 0.1 + (i as f64 * 0.15) % 0.7;
+                CredalSet::symmetric(c, 0.05)
+            })
+            .collect();
+        let result = gate.is_safe(&loss_row, &credal_sets);
+        prop_assert!(result.worst_case_loss >= result.best_case_loss - 1e-10,
+            "worst {} < best {}", result.worst_case_loss, result.best_case_loss);
+    }
+
+    // ── Compound Poisson properties ─────────────────────────────────
+
+    /// Event count matches number of observations.
+    #[test]
+    fn cp_event_count_matches(
+        n in 1usize..100,
+    ) {
+        let config = CompoundPoissonConfig::default();
+        let mut analyzer = CompoundPoissonAnalyzer::new(config);
+        for i in 0..n {
+            analyzer.observe(BurstEvent::new(i as f64 * 5.0, 10.0 + i as f64, None));
+        }
+        prop_assert_eq!(analyzer.event_count(), n);
+    }
+
+    /// Analyze produces finite burstiness score and non-negative metrics.
+    #[test]
+    fn cp_analyze_finite(
+        n in 5usize..50,
+        mag_base in 1.0f64..100.0,
+    ) {
+        let config = CompoundPoissonConfig::default();
+        let mut analyzer = CompoundPoissonAnalyzer::new(config);
+        for i in 0..n {
+            analyzer.observe(BurstEvent::new(
+                i as f64 * 3.0,
+                mag_base + (i as f64 * 2.7) % 50.0,
+                None,
+            ));
+        }
+        let result = analyzer.analyze();
+        prop_assert!(result.burstiness_score.is_finite(),
+            "burstiness_score not finite: {}", result.burstiness_score);
+        prop_assert!(result.total_mass >= 0.0,
+            "total_mass negative: {}", result.total_mass);
+        prop_assert!(result.total_events == n);
+        prop_assert!(result.kappa_posterior_mean.is_finite());
+        prop_assert!(result.beta_posterior_mean.is_finite());
+    }
+
+    /// Evidence generation produces finite log Bayes factor.
+    #[test]
+    fn cp_evidence_finite(
+        n in 10usize..40,
+        baseline in 0.01f64..5.0,
+    ) {
+        let config = CompoundPoissonConfig::default();
+        let mut analyzer = CompoundPoissonAnalyzer::new(config);
+        for i in 0..n {
+            analyzer.observe(BurstEvent::new(i as f64 * 4.0, 20.0 + i as f64, None));
+        }
+        let evidence = analyzer.generate_evidence(baseline);
+        prop_assert!(evidence.log_bf_bursty.is_finite(),
+            "log_bf_bursty not finite: {}", evidence.log_bf_bursty);
+        prop_assert!(evidence.event_rate >= 0.0);
+        prop_assert!(evidence.mean_burst_size >= 0.0);
+    }
+
+    /// Regime analysis with tagged events produces valid regime stats.
+    #[test]
+    fn cp_regime_stats_valid(
+        n in 10usize..30,
+        n_regimes in 2usize..4,
+    ) {
+        let config = CompoundPoissonConfig {
+            enable_regimes: true,
+            num_regimes: n_regimes,
+            min_events: 3,
+            ..CompoundPoissonConfig::default()
+        };
+        let mut analyzer = CompoundPoissonAnalyzer::new(config);
+        for i in 0..n {
+            analyzer.observe(BurstEvent::with_regime(
+                i as f64 * 2.0,
+                15.0 + (i as f64 * 1.5) % 30.0,
+                i % n_regimes,
+            ));
+        }
+        let result = analyzer.analyze();
+        // Total events across regimes should add up
+        let regime_total: usize = result.regime_stats.values().map(|r| r.event_count).sum();
+        prop_assert_eq!(regime_total, n,
+            "regime event total {} != total events {}", regime_total, n);
     }
 
 }
