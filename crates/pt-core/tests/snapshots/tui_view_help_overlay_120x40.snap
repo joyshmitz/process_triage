@@ -1,0 +1,40 @@
+┌ Search ──────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│Search processes...                                                                                                   │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Processes [1] [view: score] [Space: toggle, a: rec, A: all, u: clear,┐┌ Detail ──────────────────────────────────────┐
+│[ ]│PID     │Score ▼│Class   │Runtime  │Memory  │Command              ││PID: 4242  Class: KILL                        │
+│☐  │4242    │91     │KILL    │3h 12m   │1.2 GB  │node dev server      ││Command: node dev server                      │
+│                                                                      ││Selected: no                                  │
+│                                                                      ││                                              │
+│                             ┌ Help ────────────────────────────────────────────────────┐e: 3h 12m                    │
+│                             │  Process Triage TUI Help               ││Memory: 1.2 GB  │                             │
+│                             │                                        ││                │                             │
+│                             │  Navigation:                           ││                │                             │
+│                             │    j / Down    Move down               ││Evidence        │                             │
+│                             │    k / Up      Move up                 ││Old + idle + orp│aned                         │
+│                             │    Home        Go to top               ││• PPID=1        │                             │
+│                             │    End         Go to bottom            ││• Idle>2h       │                             │
+│                             │    Ctrl+d      Page down               ││                │                             │
+│                             │    Ctrl+u      Page up                 ││                │                             │
+│                             │    Tab         Cycle focus             ││                │                             │
+│                             │    n / N       Next/prev match         ││                │                             │
+│                             │                                        ││                │                             │
+│                             │  Actions:                              ││                │                             │
+│                             │    /           Start search            ││                │                             │
+│                             │    Space       Toggle selection        ││                │                             │
+│                             │    a           Select recommended      ││                │                             │
+│                             │    A           Select all              ││                │                             │
+│                             │    u           Unselect all            ││                │                             │
+│                             │    x           Invert selection        ││                │                             │
+│                             │    e           Execute action          ││                │                             │
+│                             │    r           Refresh list            ││                │                             │
+│                             │    Enter       Toggle detail pane      ││                │                             │
+│                             └──────────────────────────────────────────────────────────┘                             │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+│                                                                      ││                                              │
+│                                                                      ││Action                                        │
+│                                                                      ││Plan: SIGTERM -> SIGKILL                      │
+│                                                                      ││                                              │
+└──────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────┘
+Ready │ [Help] │ ?: close  Esc: close                                                                                   

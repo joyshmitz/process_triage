@@ -73,6 +73,15 @@ fn render_like_app_to_buffer(app: &mut App, width: u16, height: u16) -> ftui::Bu
     buffer
 }
 
+/// Render via the real Model::view() code path (not manual widget-by-widget).
+fn render_app_view(app: &App, width: u16, height: u16) -> ftui::Buffer {
+    let mut pool = GraphemePool::new();
+    let mut frame = Frame::new(width, height, &mut pool);
+    <App as FtuiModel>::view(app, &mut frame);
+    let Frame { buffer, .. } = frame;
+    buffer
+}
+
 fn sample_row() -> ProcessRow {
     ProcessRow {
         pid: 4242,
@@ -120,4 +129,156 @@ fn app_help_overlay_renders() {
     let buf = render_like_app_to_buffer(&mut app, 100, 30);
     assert_snapshot!("tui_app_help_overlay_100x30", &buf);
     assert!(buffer_to_text(&buf).contains("Process Triage TUI Help"));
+}
+
+// ── Tests using the real Model::view() code path ────────────────────
+
+#[test]
+fn view_renders_at_standard_breakpoint() {
+    let mut app = App::new();
+    app.process_table.set_rows(vec![sample_row()]);
+
+    let buf = render_app_view(&app, 140, 40);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_standard_140x40", &buf);
+    // Should contain search box, process table, detail pane, status bar
+    assert!(text.contains("Search"), "search widget missing");
+    assert!(text.contains("4242") || text.contains("KILL"), "process table missing");
+}
+
+#[test]
+fn view_renders_at_wide_breakpoint() {
+    let mut app = App::new();
+    app.process_table.set_rows(vec![sample_row()]);
+
+    let buf = render_app_view(&app, 220, 60);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_wide_220x60", &buf);
+    assert!(text.contains("Search"), "search widget missing");
+    assert!(text.contains("4242") || text.contains("KILL"), "process table missing");
+}
+
+#[test]
+fn view_renders_at_compact_breakpoint() {
+    let mut app = App::new();
+    app.process_table.set_rows(vec![sample_row()]);
+
+    let buf = render_app_view(&app, 100, 30);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_compact_100x30", &buf);
+    assert!(text.contains("Search"), "search widget missing");
+}
+
+#[test]
+fn view_renders_at_minimal_breakpoint() {
+    let app = App::new();
+
+    let buf = render_app_view(&app, 60, 20);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_minimal_60x20", &buf);
+    // Minimal layout: no detail pane, compact search
+    assert!(!text.is_empty(), "minimal view should render something");
+}
+
+#[test]
+fn view_degrades_for_tiny_terminal() {
+    let app = App::new();
+
+    let buf = render_app_view(&app, 30, 8);
+    let text = buffer_to_text(&buf);
+
+    // Should show "too small" message instead of crashing
+    assert!(
+        text.contains("too small"),
+        "tiny terminal should show size warning"
+    );
+}
+
+#[test]
+fn view_shows_help_overlay_via_model() {
+    let mut app = App::new();
+    app.process_table.set_rows(vec![sample_row()]);
+    <App as FtuiModel>::update(&mut app, Msg::ToggleHelp);
+    assert_eq!(app.state, AppState::Help);
+
+    let buf = render_app_view(&app, 120, 40);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_help_overlay_120x40", &buf);
+    assert!(
+        text.contains("Process Triage TUI Help"),
+        "help overlay should render"
+    );
+}
+
+#[test]
+fn view_shows_search_mode() {
+    let mut app = App::new();
+    app.process_table.set_rows(vec![sample_row()]);
+    <App as FtuiModel>::update(&mut app, Msg::EnterSearchMode);
+    <App as FtuiModel>::update(&mut app, Msg::SearchInput('f'));
+    <App as FtuiModel>::update(&mut app, Msg::SearchInput('o'));
+    assert_eq!(app.state, AppState::Searching);
+
+    let buf = render_app_view(&app, 120, 40);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_searching_120x40", &buf);
+    // Search widget should show the typed text
+    assert!(text.contains("fo"), "search input should show typed text");
+}
+
+#[test]
+fn view_renders_with_goal_summary() {
+    let mut app = App::new();
+    app.process_table.set_rows(vec![sample_row()]);
+    app.set_goal_summary(vec![
+        "Goal: Kill abandoned dev servers".to_string(),
+        "Focus: PIDs with score > 80".to_string(),
+    ]);
+
+    let buf = render_app_view(&app, 140, 40);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_goal_summary_140x40", &buf);
+    assert!(
+        text.contains("Kill abandoned dev servers"),
+        "goal summary should render"
+    );
+}
+
+#[test]
+fn view_renders_galaxy_brain_via_model() {
+    let mut app = App::new();
+    app.process_table.set_rows(vec![sample_row()]);
+    <App as FtuiModel>::update(
+        &mut app,
+        Msg::KeyPressed(KeyEvent::new(KeyCode::Char('g'))),
+    );
+    assert_eq!(app.current_detail_view(), DetailView::GalaxyBrain);
+
+    let buf = render_app_view(&app, 140, 40);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_galaxy_brain_140x40", &buf);
+    assert!(
+        text.contains("Galaxy Brain") || text.contains("Galaxy-Brain Mode"),
+        "galaxy brain detail should render"
+    );
+}
+
+#[test]
+fn view_empty_table_renders_cleanly() {
+    let app = App::new();
+
+    let buf = render_app_view(&app, 120, 40);
+    let text = buffer_to_text(&buf);
+
+    assert_snapshot!("tui_view_empty_table_120x40", &buf);
+    // Should render structure even with no processes
+    assert!(text.contains("Search"), "search widget should still render");
 }
