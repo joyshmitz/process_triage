@@ -108,6 +108,10 @@ harness = false
 name = "myopic_policy"
 harness = false
 
+[[bench]]
+name = "voi_active_sensing"
+harness = false
+
 [[test]]
 name = "fleet_integration"
 path = "tests/fleet_integration.rs"
