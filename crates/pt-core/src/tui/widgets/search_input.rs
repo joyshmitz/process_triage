@@ -112,6 +112,75 @@ impl<'a> SearchInput<'a> {
 
         FtuiWidget::render(&text_input, inner, frame);
     }
+
+    /// Render from an immutable state reference (for Elm view()).
+    ///
+    /// Identical to `render_ftui` but takes `&SearchInputState` instead of
+    /// `&mut SearchInputState`, since the render path only reads state.
+    pub fn render_view(
+        &self,
+        area: ftui::layout::Rect,
+        frame: &mut ftui::render::frame::Frame,
+        state: &SearchInputState,
+    ) {
+        let focused = state.focused;
+
+        let title = if focused {
+            " Search [Enter to filter] "
+        } else {
+            " Search "
+        };
+
+        let border_style = self
+            .theme
+            .map(|t| {
+                let class = if focused {
+                    "border.focused"
+                } else {
+                    "border.normal"
+                };
+                t.stylesheet().get_or_default(class)
+            })
+            .unwrap_or_default();
+
+        let block = FtuiBlock::bordered()
+            .title(title)
+            .border_style(border_style);
+
+        let inner = block.inner(area);
+        FtuiWidget::render(&block, area, frame);
+
+        let input_style = self
+            .theme
+            .map(|t| {
+                if focused {
+                    t.stylesheet().get_or_default("table.header")
+                } else {
+                    FtuiStyle::default()
+                }
+            })
+            .unwrap_or_default();
+
+        let placeholder_style = self
+            .theme
+            .map(|t| t.class("status.warning"))
+            .unwrap_or_default();
+
+        let cursor_style = self
+            .theme
+            .map(|t| t.stylesheet().get_or_default("table.selected"))
+            .unwrap_or_else(|| FtuiStyle::new().reverse());
+
+        let text_input = FtuiTextInput::new()
+            .with_value(state.value.clone())
+            .with_placeholder(self.placeholder)
+            .with_style(input_style)
+            .with_placeholder_style(placeholder_style)
+            .with_cursor_style(cursor_style)
+            .with_focused(focused);
+
+        FtuiWidget::render(&text_input, inner, frame);
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -22,24 +22,25 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use ftui::layout::Rect;
 use ftui::runtime::{Every, Subscription};
-use ftui::widgets::notification_queue::{NotificationQueue, QueueConfig};
+use ftui::widgets::notification_queue::{NotificationQueue, NotificationStack, QueueConfig};
 use ftui::widgets::toast::{Toast, ToastIcon, ToastPosition, ToastStyle};
-use ftui::widgets::notification_queue::NotificationStack;
 use ftui::widgets::Widget;
 use ftui::{
     Cell as FtuiCell, Cmd as FtuiCmd, Frame as FtuiFrame, KeyCode as FtuiKeyCode,
     KeyEvent as FtuiKeyEvent, KeyEventKind as FtuiKeyEventKind, Model as FtuiModel,
     Modifiers as FtuiModifiers, Program, ProgramConfig,
 };
-use ftui::core::geometry::Rect;
 
 use super::events::KeyBindings;
-use super::layout::{Breakpoint, LayoutState};
+use super::layout::{Breakpoint, LayoutState, ResponsiveLayout};
 use super::msg::{ExecutionOutcome, Msg};
 use super::theme::Theme;
 use super::widgets::{
-    ConfirmChoice, ConfirmDialogState, DetailView, ProcessRow, ProcessTableState, SearchInputState,
+    ConfirmChoice, ConfirmDialog, ConfirmDialogState, DetailView, HelpOverlay, ProcessDetail,
+    ProcessRow, ProcessTable, ProcessTableState, SearchInput, SearchInputState, StatusBar,
+    StatusMode,
 };
 use super::{TuiError, TuiResult};
 
@@ -870,20 +871,103 @@ impl FtuiModel for App {
     }
 
     fn view(&self, frame: &mut FtuiFrame) {
-        frame.clear();
-        draw_ftui_text(frame, 0, 0, "Process Triage - ftui model");
-        draw_ftui_text(frame, 0, 1, &format!("State: {:?}", self.state));
+        let full_area = Rect::new(0, 0, frame.width(), frame.height());
+        let layout = ResponsiveLayout::new(full_area);
 
-        let status = self
-            .status_message
-            .as_deref()
-            .unwrap_or("Ready | Press ? for help");
-        draw_ftui_text(frame, 0, 2, status);
+        // Degrade gracefully for tiny terminals
+        if layout.is_too_small() {
+            draw_ftui_text(frame, 0, 0, "Terminal too small (min 40x10)");
+            return;
+        }
 
-        // Render toast notifications as overlay
+        // Compute areas with optional goal-summary header
+        let header_height = self
+            .goal_summary
+            .as_ref()
+            .map(|lines| lines.len().min(4) as u16)
+            .unwrap_or(0);
+        let areas = layout.main_areas_with_header(header_height);
+
+        // ── Header (goal summary) ──────────────────────────────────────
+        if let (Some(header_area), Some(lines)) = (areas.header, &self.goal_summary) {
+            for (i, line) in lines.iter().enumerate() {
+                if i as u16 >= header_area.height {
+                    break;
+                }
+                draw_ftui_text(frame, header_area.x, header_area.y + i as u16, line);
+            }
+        }
+
+        // ── Search input ───────────────────────────────────────────────
+        SearchInput::new()
+            .theme(&self.theme)
+            .render_view(areas.search, frame, &self.search);
+
+        // ── Process table ──────────────────────────────────────────────
+        ProcessTable::new()
+            .theme(&self.theme)
+            .show_selection(true)
+            .render_view(areas.list, frame, &self.process_table);
+
+        // ── Detail pane (when visible and layout provides the area) ────
+        if self.detail_visible {
+            if let Some(detail_area) = areas.detail {
+                let current_row = self.process_table.current_row();
+                let selected = current_row.map(|r| r.selected).unwrap_or(false);
+                ProcessDetail::new()
+                    .theme(&self.theme)
+                    .row(current_row, selected)
+                    .view(self.detail_view)
+                    .render_ftui(detail_area, frame);
+            }
+        }
+
+        // ── Status bar ─────────────────────────────────────────────────
+        let status_mode = match self.state {
+            AppState::Normal | AppState::Quitting => StatusMode::Normal,
+            AppState::Searching => StatusMode::Searching,
+            AppState::Confirming => StatusMode::Confirming,
+            AppState::Help => StatusMode::Help,
+        };
+        let mut status_bar = StatusBar::new()
+            .theme(&self.theme)
+            .mode(status_mode)
+            .selected_count(self.process_table.selected_count());
+        if let Some(ref filter) = self.process_table.filter {
+            status_bar = status_bar.filter(filter);
+        }
+        if let Some(ref msg) = self.status_message {
+            status_bar = status_bar.message(msg);
+        }
+        status_bar.render_ftui(areas.status, frame);
+
+        // ── Overlays (rendered on top of everything) ───────────────────
+
+        // Help overlay (full-screen)
+        if self.state == AppState::Help {
+            HelpOverlay::new()
+                .theme(&self.theme)
+                .breakpoint(layout.breakpoint())
+                .render_ftui(full_area, frame);
+        }
+
+        // Confirmation dialog (centered popup)
+        if self.state == AppState::Confirming {
+            let popup_area = layout.popup_area(50, 30);
+            let msg = format!(
+                "Execute actions on {} selected process(es)?",
+                self.process_table.selected_count()
+            );
+            ConfirmDialog::new()
+                .theme(&self.theme)
+                .title("Confirm Execution")
+                .message(&msg)
+                .render_view(popup_area, frame, &self.confirm_dialog);
+        }
+
+        // Toast notifications (top-right overlay)
         if !self.notifications.is_empty() {
-            let area = Rect::new(0, 0, frame.width(), frame.height());
-            NotificationStack::new(&self.notifications).render(area, frame);
+            NotificationStack::new(&self.notifications).render(full_area, frame);
         }
     }
 

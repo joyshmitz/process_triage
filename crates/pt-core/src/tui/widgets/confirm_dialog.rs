@@ -144,6 +144,59 @@ impl<'a> ConfirmDialog<'a> {
 
         FtuiStatefulWidget::render(&dialog, area, frame, &mut ftui_state);
     }
+
+    /// Render from an immutable state reference (for Elm view()).
+    ///
+    /// Identical to `render_ftui` but takes `&ConfirmDialogState` instead of
+    /// `&mut ConfirmDialogState`, since the render path only reads state.
+    pub fn render_view(
+        &self,
+        area: ftui::layout::Rect,
+        frame: &mut ftui::render::frame::Frame,
+        state: &ConfirmDialogState,
+    ) {
+        if !state.visible {
+            return;
+        }
+
+        let full_message = if let Some(details) = self.details {
+            format!("{}\n\n{}", self.message, details)
+        } else {
+            self.message.to_string()
+        };
+
+        let (button_style, focused_style) = if let Some(theme) = self.theme {
+            let sheet = theme.stylesheet();
+            (
+                sheet.get_or_default("border.normal"),
+                sheet.get_or_default("table.selected"),
+            )
+        } else {
+            (
+                FtuiStyle::default(),
+                FtuiStyle::new()
+                    .fg(PackedRgba::rgb(0, 0, 0))
+                    .bg(PackedRgba::rgb(0, 255, 255))
+                    .bold(),
+            )
+        };
+
+        let dialog = FtuiDialog::custom(format!(" {} ", self.title), full_message)
+            .button(FtuiDialogButton::new(self.yes_label, "yes"))
+            .button(FtuiDialogButton::new(self.no_label, "no"))
+            .build()
+            .button_style(button_style)
+            .focused_button_style(focused_style);
+
+        let mut ftui_state = FtuiDialogState::new();
+        ftui_state.open = true;
+        ftui_state.focused_button = match state.selected {
+            ConfirmChoice::Yes => Some(0),
+            ConfirmChoice::No => Some(1),
+        };
+
+        FtuiStatefulWidget::render(&dialog, area, frame, &mut ftui_state);
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -444,6 +444,65 @@ impl<'a> FtuiStatefulWidget for ProcessTable<'a> {
     }
 }
 
+impl<'a> ProcessTable<'a> {
+    /// Render the table from an immutable state reference (for Elm view()).
+    ///
+    /// Same as the StatefulWidget render but skips scroll_offset sync-back,
+    /// which is acceptable since the next update() tick will recalculate.
+    pub fn render_view(
+        &self,
+        area: ftui::layout::Rect,
+        frame: &mut ftui::render::frame::Frame,
+        state: &ProcessTableState,
+    ) {
+        let title = self.title_string(state);
+        let border_style = self.border_ftui_style(state.focused);
+        let visible = state.visible_rows();
+
+        if visible.is_empty() {
+            let msg = if state.filter.is_some() {
+                "No matching processes"
+            } else {
+                "No process candidates found"
+            };
+            let muted_style = self
+                .theme
+                .map(|t| t.class("status.warning"))
+                .unwrap_or_default();
+
+            let block = FtuiBlock::bordered()
+                .title(&title)
+                .border_style(border_style);
+
+            let para = ftui::widgets::paragraph::Paragraph::new(FtuiText::from_line(
+                FtuiLine::from_spans([FtuiSpan::styled(msg, muted_style)]),
+            ))
+            .block(block);
+            ftui::widgets::Widget::render(&para, area, frame);
+            return;
+        }
+
+        let parts = self.build_ftui_table_parts(state, area.width);
+
+        let block = FtuiBlock::bordered()
+            .title(&title)
+            .border_style(border_style);
+
+        let table = FtuiTable::new(parts.rows, parts.constraints)
+            .header(parts.header)
+            .block(block)
+            .highlight_style(parts.highlight_style)
+            .column_spacing(1);
+
+        let mut ftui_state = FtuiTableState::default();
+        ftui_state.selected = Some(state.cursor);
+        ftui_state.offset = state.scroll_offset;
+
+        FtuiStatefulWidget::render(&table, area, frame, &mut ftui_state);
+        // Note: scroll_offset sync-back intentionally skipped for immutable view()
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ProcessTableState
 // ---------------------------------------------------------------------------
