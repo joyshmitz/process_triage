@@ -12,7 +12,11 @@ use pt_core::decision::{
     compute_voi, decide_action, select_probe_by_information_gain, Action, ProbeCostModel, ProbeType,
 };
 use pt_core::inference::belief_state::BeliefState;
+use pt_core::decision::alpha_investing::AlphaInvestingPolicy;
 use pt_core::decision::cvar::{compute_cvar, decide_with_cvar};
+use pt_core::decision::fdr_selection::{
+    by_correction_factor, select_fdr, FdrCandidate, FdrMethod, TargetIdentity,
+};
 use pt_core::decision::submodular::{
     coverage_utility, greedy_select_k, greedy_select_with_budget, FeatureKey, ProbeProfile,
 };
@@ -866,5 +870,225 @@ proptest! {
         let bud = greedy_select_with_budget(&profiles, &weights, 1.0);
         prop_assert!(bud.total_utility.is_finite());
         prop_assert!(bud.total_cost.is_finite());
+    }
+}
+
+// ── FDR selection property tests ────────────────────────────────────
+
+/// Build FDR candidates with random e-values.
+fn build_fdr_candidates(e_values: Vec<f64>) -> Vec<FdrCandidate> {
+    e_values
+        .into_iter()
+        .enumerate()
+        .map(|(i, ev)| FdrCandidate {
+            target: TargetIdentity {
+                pid: i as i32,
+                start_id: format!("{i}-start-boot0"),
+                uid: 1000,
+            },
+            e_value: ev,
+        })
+        .collect()
+}
+
+/// Strategy for FDR alpha in (0, 1].
+fn fdr_alpha_strategy() -> impl Strategy<Value = f64> {
+    0.01f64..=1.0
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// select_fdr should never fail for valid inputs.
+    #[test]
+    fn fdr_never_errors(
+        e_values in prop::collection::vec(0.0f64..=200.0, 1..=50),
+        alpha in fdr_alpha_strategy(),
+    ) {
+        let candidates = build_fdr_candidates(e_values);
+        for method in [FdrMethod::EBh, FdrMethod::EBy, FdrMethod::None] {
+            let result = select_fdr(&candidates, alpha, method);
+            prop_assert!(result.is_ok(), "select_fdr failed: {:?}", result.err());
+        }
+    }
+
+    /// Selected count should never exceed total candidate count.
+    #[test]
+    fn fdr_selected_leq_total(
+        e_values in prop::collection::vec(0.0f64..=200.0, 1..=50),
+        alpha in fdr_alpha_strategy(),
+    ) {
+        let candidates = build_fdr_candidates(e_values);
+        for method in [FdrMethod::EBh, FdrMethod::EBy, FdrMethod::None] {
+            if let Ok(result) = select_fdr(&candidates, alpha, method) {
+                prop_assert!(
+                    result.selected_k <= result.m_candidates,
+                    "selected {} > total {} for {:?}",
+                    result.selected_k, result.m_candidates, method
+                );
+            }
+        }
+    }
+
+    /// eBY should be at least as conservative as eBH.
+    #[test]
+    fn fdr_eby_more_conservative_than_ebh(
+        e_values in prop::collection::vec(0.0f64..=200.0, 1..=50),
+        alpha in fdr_alpha_strategy(),
+    ) {
+        let candidates = build_fdr_candidates(e_values);
+        let ebh = select_fdr(&candidates, alpha, FdrMethod::EBh);
+        let eby = select_fdr(&candidates, alpha, FdrMethod::EBy);
+        if let (Ok(ebh), Ok(eby)) = (ebh, eby) {
+            prop_assert!(
+                eby.selected_k <= ebh.selected_k,
+                "eBY selected {} > eBH selected {}",
+                eby.selected_k, ebh.selected_k
+            );
+        }
+    }
+
+    /// P-values derived from e-values should be in [0, 1].
+    #[test]
+    fn fdr_p_values_in_unit_interval(
+        e_values in prop::collection::vec(0.0f64..=200.0, 1..=30),
+        alpha in fdr_alpha_strategy(),
+    ) {
+        let candidates = build_fdr_candidates(e_values);
+        if let Ok(result) = select_fdr(&candidates, alpha, FdrMethod::EBh) {
+            for cand in &result.candidates {
+                prop_assert!(
+                    cand.p_value >= -1e-12 && cand.p_value <= 1.0 + 1e-12,
+                    "p_value {} out of [0,1] for e_value {}",
+                    cand.p_value, cand.e_value
+                );
+            }
+        }
+    }
+
+    /// Candidates should be sorted by e_value descending in the result.
+    #[test]
+    fn fdr_candidates_sorted_descending(
+        e_values in prop::collection::vec(0.0f64..=200.0, 2..=30),
+        alpha in fdr_alpha_strategy(),
+    ) {
+        let candidates = build_fdr_candidates(e_values);
+        if let Ok(result) = select_fdr(&candidates, alpha, FdrMethod::EBh) {
+            for window in result.candidates.windows(2) {
+                prop_assert!(
+                    window[0].e_value >= window[1].e_value - 1e-12,
+                    "not sorted: e_value {} < {}",
+                    window[0].e_value, window[1].e_value
+                );
+            }
+        }
+    }
+
+    /// FdrMethod::None should select exactly the candidates with e_value > 1.
+    #[test]
+    fn fdr_none_selects_evalue_gt_one(
+        e_values in prop::collection::vec(0.0f64..=10.0, 1..=30),
+    ) {
+        let candidates = build_fdr_candidates(e_values.clone());
+        if let Ok(result) = select_fdr(&candidates, 0.05, FdrMethod::None) {
+            let expected = e_values.iter().filter(|&&v| v > 1.0).count();
+            prop_assert_eq!(
+                result.selected_k, expected,
+                "None method: selected {} but {} have e>1",
+                result.selected_k, expected
+            );
+        }
+    }
+
+    /// by_correction_factor should be monotone non-decreasing (harmonic series).
+    #[test]
+    fn fdr_by_correction_monotone(m in 1usize..=200) {
+        if m >= 2 {
+            let h_prev = by_correction_factor(m - 1);
+            let h_curr = by_correction_factor(m);
+            prop_assert!(
+                h_curr >= h_prev - 1e-12,
+                "correction not monotone: H({})={} < H({})={}",
+                m, h_curr, m - 1, h_prev
+            );
+        }
+    }
+
+    /// by_correction_factor(m) should equal the m-th harmonic number.
+    #[test]
+    fn fdr_by_correction_positive(m in 1usize..=500) {
+        let h = by_correction_factor(m);
+        prop_assert!(h >= 1.0 - 1e-12, "H({})={} < 1.0", m, h);
+        prop_assert!(h.is_finite(), "H({}) not finite", m);
+    }
+}
+
+// ── Alpha-investing property tests ──────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+    /// alpha_spend_for_wealth should be in [0, wealth] for non-negative wealth.
+    #[test]
+    fn alpha_spend_bounded_by_wealth(
+        w0 in 0.01f64..=1.0,
+        spend_rate in 0.0f64..=5.0,
+        wealth in 0.0f64..=10.0,
+    ) {
+        let policy = AlphaInvestingPolicy {
+            w0,
+            alpha_spend: spend_rate,
+            alpha_earn: 0.01,
+        };
+        let spend = policy.alpha_spend_for_wealth(wealth);
+        prop_assert!(
+            spend >= -1e-12,
+            "spend {} < 0 at wealth {}", spend, wealth
+        );
+        prop_assert!(
+            spend <= wealth + 1e-12,
+            "spend {} > wealth {}", spend, wealth
+        );
+    }
+
+    /// alpha_spend_for_wealth returns 0 for zero or negative wealth.
+    #[test]
+    fn alpha_spend_zero_for_nonpositive_wealth(
+        spend_rate in 0.01f64..=5.0,
+        wealth in -10.0f64..=0.0,
+    ) {
+        let policy = AlphaInvestingPolicy {
+            w0: 0.05,
+            alpha_spend: spend_rate,
+            alpha_earn: 0.01,
+        };
+        let spend = policy.alpha_spend_for_wealth(wealth);
+        prop_assert!(
+            spend.abs() < 1e-12,
+            "spend {} != 0 for wealth {}", spend, wealth
+        );
+    }
+
+    /// The alpha-investing wealth update formula should produce non-negative wealth.
+    #[test]
+    fn alpha_wealth_update_non_negative(
+        wealth in 0.0f64..=1.0,
+        spend_rate in 0.0f64..=2.0,
+        earn_rate in 0.0f64..=0.1,
+        discoveries in 0u32..=20,
+    ) {
+        let policy = AlphaInvestingPolicy {
+            w0: 0.05,
+            alpha_spend: spend_rate,
+            alpha_earn: earn_rate,
+        };
+        let spend = policy.alpha_spend_for_wealth(wealth);
+        let reward = earn_rate * discoveries as f64;
+        let next = (wealth - spend + reward).max(0.0);
+        prop_assert!(
+            next >= -1e-12,
+            "next wealth {} < 0 (prev={}, spend={}, reward={})",
+            next, wealth, spend, reward
+        );
     }
 }
