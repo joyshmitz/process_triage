@@ -403,6 +403,75 @@ fn daemon_sigterm_stops_and_cleans_pid_file() {
 }
 
 #[test]
+fn daemon_sighup_reloads_config_without_exiting() {
+    let data_dir = TempDir::new().expect("temp data dir");
+    let config_dir = TempDir::new().expect("temp config dir");
+
+    write_daemon_json_config(
+        config_dir.path(),
+        r#"{
+  "tick_interval_secs": 1,
+  "max_cpu_percent": 1000.0,
+  "max_rss_mb": 4096,
+  "triggers": {
+    "ewma_alpha": 0.3,
+    "load_threshold": 9999.0,
+    "memory_threshold": 9999.0,
+    "orphan_threshold": 9999999,
+    "sustained_ticks": 1,
+    "cooldown_ticks": 10
+  },
+  "escalation": {
+    "min_interval_secs": 0,
+    "allow_auto_mitigation": false,
+    "max_deep_scan_targets": 1
+  },
+  "notifications": {
+    "enabled": false,
+    "desktop": false,
+    "notify_cmd": null,
+    "notify_arg": []
+  }
+}"#,
+    );
+
+    let mut child = start_daemon_foreground(config_dir.path(), data_dir.path());
+    let pid_path = daemon_pid_path(data_dir.path());
+    let state_path = daemon_state_path(data_dir.path());
+    wait_for(Duration::from_secs(10), || pid_path.exists() && state_path.exists());
+
+    send_signal(&child, libc::SIGHUP);
+    wait_for(Duration::from_secs(10), || {
+        let content = fs::read_to_string(&state_path).expect("read state.json");
+        let json: Value = serde_json::from_str(&content).expect("valid state json");
+        let events = json
+            .get("daemon")
+            .and_then(|d| d.get("recent_events"))
+            .and_then(|e| e.as_array())
+            .cloned()
+            .unwrap_or_default();
+        events.iter().any(|ev| {
+            ev.get("event_type")
+                .and_then(|t| t.as_str())
+                .map(|t| t == "config_reloaded")
+                .unwrap_or(false)
+        })
+    });
+
+    assert!(
+        child.try_wait().expect("query child status").is_none(),
+        "daemon should stay running after SIGHUP config reload"
+    );
+
+    send_sigterm(&child);
+    wait_for(Duration::from_secs(10), || {
+        child.try_wait().expect("query child status").is_some()
+    });
+    let status = child.wait().expect("wait for daemon exit status");
+    assert!(status.success(), "daemon should exit cleanly after SIGTERM");
+}
+
+#[test]
 fn daemon_overhead_budget_exceeded_is_persisted_and_skips_inbox_writes() {
     let data_dir = TempDir::new().expect("temp data dir");
     let config_dir = TempDir::new().expect("temp config dir");
