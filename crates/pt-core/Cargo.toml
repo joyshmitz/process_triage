@@ -132,6 +132,10 @@ harness = false
 name = "timebound_dro_deploss"
 harness = false
 
+[[bench]]
+name = "causal_load_martingale"
+harness = false
+
 [[test]]
 name = "fleet_integration"
 path = "tests/fleet_integration.rs"
