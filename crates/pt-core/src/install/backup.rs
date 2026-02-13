@@ -151,12 +151,25 @@ impl BackupManager {
         let checksum = Self::compute_checksum(source_path)?;
         let size_bytes = fs::metadata(source_path)?.len();
 
-        // Generate backup filename: pt-core-<version>-<timestamp>
-        let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S");
-        let backup_name = format!("{}-{}-{}", self.binary_name, version, timestamp);
-
-        let binary_path = self.backup_dir.join(&backup_name);
-        let metadata_path = self.backup_dir.join(format!("{}.json", backup_name));
+        // Generate backup filename: pt-core-<version>-<timestamp>.
+        // Include fractional seconds and retry suffixes to avoid collisions
+        // during rapid retries under the same version.
+        let timestamp = chrono::Utc::now().format("%Y%m%d%H%M%S%f").to_string();
+        let mut attempt = 0u32;
+        let (binary_path, metadata_path) = loop {
+            let suffix = if attempt == 0 {
+                timestamp.clone()
+            } else {
+                format!("{}-{}", timestamp, attempt)
+            };
+            let backup_name = format!("{}-{}-{}", self.binary_name, version, suffix);
+            let candidate_binary = self.backup_dir.join(&backup_name);
+            let candidate_meta = self.backup_dir.join(format!("{}.json", backup_name));
+            if !candidate_binary.exists() && !candidate_meta.exists() {
+                break (candidate_binary, candidate_meta);
+            }
+            attempt = attempt.saturating_add(1);
+        };
 
         // Copy binary
         fs::copy(source_path, &binary_path)?;
@@ -310,6 +323,25 @@ mod tests {
         let backups = manager.list_backups().unwrap();
         assert_eq!(backups.len(), 1);
         assert_eq!(backups[0].version(), "1.0.0");
+    }
+
+    #[test]
+    fn test_same_version_backups_get_unique_paths() {
+        let temp = TempDir::new().unwrap();
+        let binary_path = create_test_binary(temp.path(), b"binary content");
+
+        let manager = BackupManager::with_config(temp.path().join("rollback"), "pt-core", 5);
+
+        let first = manager.create_backup(&binary_path, "1.0.0").unwrap();
+        let second = manager.create_backup(&binary_path, "1.0.0").unwrap();
+
+        assert_ne!(first.binary_path, second.binary_path);
+        assert_ne!(first.metadata_path, second.metadata_path);
+        assert!(first.binary_path.exists());
+        assert!(second.binary_path.exists());
+
+        let backups = manager.list_backups().unwrap();
+        assert_eq!(backups.len(), 2);
     }
 
     #[test]

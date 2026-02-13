@@ -465,13 +465,25 @@ fn configure_windsurf(
 
 /// Create a backup of a file.
 fn create_backup(path: &Path) -> Result<BackupInfo, ConfigError> {
-    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S").to_string();
-    let backup_name = format!(
-        "{}.{}.bak",
-        path.file_name().unwrap_or_default().to_string_lossy(),
-        timestamp
-    );
-    let backup_path = path.parent().unwrap_or(path).join(backup_name);
+    // Include fractional seconds to prevent backup filename collisions when
+    // multiple writes happen within the same second.
+    let timestamp = chrono::Utc::now().format("%Y%m%d_%H%M%S_%f").to_string();
+    let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+    let backup_parent = path.parent().unwrap_or(path);
+    let mut attempt = 0u32;
+    let backup_path = loop {
+        let suffix = if attempt == 0 {
+            timestamp.clone()
+        } else {
+            format!("{}_{}", timestamp, attempt)
+        };
+        let backup_name = format!("{}.{}.bak", file_name, suffix);
+        let candidate = backup_parent.join(backup_name);
+        if !candidate.exists() {
+            break candidate;
+        }
+        attempt = attempt.saturating_add(1);
+    };
 
     fs::copy(path, &backup_path).map_err(|e| ConfigError::BackupFailed(e.to_string()))?;
 
@@ -724,6 +736,20 @@ mod tests {
         let name = info.backup_path.file_name().unwrap().to_string_lossy();
         assert!(name.starts_with("config.json."));
         assert!(name.ends_with(".bak"));
+    }
+
+    #[test]
+    fn create_backup_twice_uses_unique_paths() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let orig = dir.path().join("config.json");
+        fs::write(&orig, "{}").unwrap();
+
+        let first = create_backup(&orig).unwrap();
+        let second = create_backup(&orig).unwrap();
+
+        assert_ne!(first.backup_path, second.backup_path);
+        assert!(first.backup_path.exists());
+        assert!(second.backup_path.exists());
     }
 
     // ── configure_claude_code ───────────────────────────────────────

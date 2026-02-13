@@ -372,15 +372,28 @@ impl AuditLog {
         // Close current writer
         self.writer = None;
 
-        // Generate rotation timestamp
-        let timestamp = Utc::now().format("%Y%m%d-%H%M%S").to_string();
-        let rotated_name = format!("audit.{}.jsonl", timestamp);
+        // Generate rotation timestamp with sub-second precision to avoid
+        // filename collisions on rapid consecutive rotations.
+        let timestamp = Utc::now().format("%Y%m%d-%H%M%S-%f").to_string();
         let audit_dir = self
             .config
             .audit_dir
             .as_ref()
             .ok_or(AuditError::DataDirUnavailable)?;
-        let rotated_path = audit_dir.join(&rotated_name);
+        let mut attempt = 0u32;
+        let rotated_path = loop {
+            let suffix = if attempt == 0 {
+                timestamp.clone()
+            } else {
+                format!("{}-{}", timestamp, attempt)
+            };
+            let rotated_name = format!("audit.{}.jsonl", suffix);
+            let candidate = audit_dir.join(rotated_name);
+            if !candidate.exists() {
+                break candidate;
+            }
+            attempt = attempt.saturating_add(1);
+        };
 
         // Rename current file
         std::fs::rename(&self.path, &rotated_path).map_err(|e| AuditError::Io {
@@ -719,6 +732,29 @@ mod tests {
         assert!(rotated_path.exists());
         assert!(rotated_path.to_string_lossy().contains("audit."));
         assert_eq!(log.entry_count(), 0);
+    }
+
+    #[test]
+    fn test_audit_log_rotation_uses_unique_filenames() {
+        let tmp = TempDir::new().unwrap();
+        let mut config = test_config(tmp.path());
+        config.max_size_bytes = 100;
+
+        let mut log = AuditLog::open_or_create_with_config(config).unwrap();
+        let ctx = AuditContext::new("run-test", "host-test");
+
+        log.log_scan(&ctx, "started", None, None, None, None)
+            .unwrap();
+        let first = log.rotate().unwrap();
+
+        // Write again to recreate active audit.jsonl, then rotate immediately.
+        log.log_scan(&ctx, "started", None, None, None, None)
+            .unwrap();
+        let second = log.rotate().unwrap();
+
+        assert_ne!(first, second);
+        assert!(first.exists());
+        assert!(second.exists());
     }
 
     // ── AuditLogConfig serde + defaults ─────────────────────────────
