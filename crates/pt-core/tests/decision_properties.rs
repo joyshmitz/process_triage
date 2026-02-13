@@ -31,6 +31,11 @@ use pt_core::decision::goal_contribution::{
     estimate_port_contribution, ContributionCandidate,
 };
 use pt_core::decision::goal_parser::parse_goal;
+use pt_core::decision::mem_pressure::{MemPressureConfig, MemPressureMonitor, MemorySignals};
+use pt_core::decision::rate_limit::{RateLimitConfig, SlidingWindowRateLimiter};
+use pt_core::decision::respawn_loop::{
+    discount_kill_utility, RespawnLoopConfig, RespawnLoopDetection, RespawnTracker,
+};
 use pt_core::decision::load_aware::{
     apply_load_to_loss_matrix, compute_load_adjustment, LoadAdjustment, LoadSignals,
 };
@@ -2737,5 +2742,275 @@ proptest! {
         let g1 = parse_goal(&input).unwrap();
         let g2 = parse_goal(&input).unwrap();
         prop_assert_eq!(g1.canonical(), g2.canonical());
+    }
+}
+
+// ── Memory pressure properties ────────────────────────────────────────
+
+fn memory_signals_strategy() -> impl Strategy<Value = MemorySignals> {
+    (
+        1u64..100_000_000_000,       // total_bytes (1B to 100GB)
+        0.0f64..1.0,                 // used_fraction
+        0u64..50_000_000_000,        // swap_total
+        0.0f64..1.0,                 // swap_fraction
+        proptest::option::of(0.0f64..100.0), // psi_some10
+        0.0f64..10000.0,             // timestamp
+    )
+        .prop_map(|(total, used_frac, swap_total, swap_frac, psi, ts)| {
+            let used = (total as f64 * used_frac) as u64;
+            let available = total.saturating_sub(used);
+            let swap_used = (swap_total as f64 * swap_frac) as u64;
+            MemorySignals {
+                total_bytes: total,
+                used_bytes: used,
+                available_bytes: available,
+                swap_used_bytes: swap_used,
+                swap_total_bytes: swap_total,
+                psi_some10: psi,
+                timestamp: ts,
+            }
+        })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    /// Utilization is in [0, 1] for valid signals.
+    #[test]
+    fn mem_pressure_utilization_bounded(signals in memory_signals_strategy()) {
+        let util = signals.utilization();
+        prop_assert!(util >= 0.0 && util <= 1.0,
+            "utilization {} outside [0,1]", util);
+    }
+
+    /// Swap utilization is in [0, 1] or 0 if no swap.
+    #[test]
+    fn mem_pressure_swap_utilization_bounded(signals in memory_signals_strategy()) {
+        let swap = signals.swap_utilization();
+        prop_assert!(swap >= 0.0 && swap <= 1.0,
+            "swap utilization {} outside [0,1]", swap);
+        if signals.swap_total_bytes == 0 {
+            prop_assert_eq!(swap, 0.0);
+        }
+    }
+
+    /// Evaluate never panics on arbitrary signals.
+    #[test]
+    fn mem_pressure_evaluate_never_panics(signals in memory_signals_strategy()) {
+        let config = MemPressureConfig::default();
+        let mut monitor = MemPressureMonitor::new(config);
+        let eval = monitor.evaluate(&signals);
+        prop_assert!(eval.scan_interval_secs > 0.0,
+            "scan interval should be positive");
+        prop_assert!(eval.utilization >= 0.0,
+            "utilization should be non-negative");
+    }
+
+    /// Transition count monotonically increases.
+    #[test]
+    fn mem_pressure_transitions_monotone(
+        sig1 in memory_signals_strategy(),
+        sig2 in memory_signals_strategy(),
+        sig3 in memory_signals_strategy(),
+    ) {
+        let config = MemPressureConfig::default();
+        let mut monitor = MemPressureMonitor::new(config);
+        let _ = monitor.evaluate(&sig1);
+        let t1 = monitor.transitions();
+        let _ = monitor.evaluate(&sig2);
+        let t2 = monitor.transitions();
+        let _ = monitor.evaluate(&sig3);
+        let t3 = monitor.transitions();
+        prop_assert!(t2 >= t1, "transitions decreased from {} to {}", t1, t2);
+        prop_assert!(t3 >= t2, "transitions decreased from {} to {}", t2, t3);
+    }
+}
+
+// ── Rate limit properties ─────────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    /// Fresh rate limiter always allows check.
+    #[test]
+    fn rate_limit_fresh_always_allowed(
+        max_run in 1u32..100,
+        max_minute in proptest::option::of(1u32..100),
+    ) {
+        let config = RateLimitConfig {
+            max_per_run: max_run,
+            max_per_minute: max_minute,
+            max_per_hour: None,
+            max_per_day: None,
+        };
+        let limiter = SlidingWindowRateLimiter::new(config, None::<&str>).unwrap();
+        let result = limiter.check(false).unwrap();
+        prop_assert!(result.allowed, "fresh limiter should allow");
+    }
+
+    /// Force mode always returns allowed=true.
+    #[test]
+    fn rate_limit_force_always_allowed(max_run in 1u32..50) {
+        let config = RateLimitConfig {
+            max_per_run: max_run,
+            max_per_minute: Some(1),
+            max_per_hour: Some(1),
+            max_per_day: Some(1),
+        };
+        let limiter = SlidingWindowRateLimiter::new(config, None::<&str>).unwrap();
+        // Record kills up to limit
+        for _ in 0..max_run {
+            let _ = limiter.record_kill();
+        }
+        let result = limiter.check(true).unwrap();
+        prop_assert!(result.forced || result.allowed,
+            "force mode should mark result as forced or allowed");
+    }
+
+    /// Run count matches number of recorded kills.
+    #[test]
+    fn rate_limit_count_matches_kills(n_kills in 0u32..20) {
+        let config = RateLimitConfig {
+            max_per_run: 100,
+            max_per_minute: None,
+            max_per_hour: None,
+            max_per_day: None,
+        };
+        let limiter = SlidingWindowRateLimiter::new(config, None::<&str>).unwrap();
+        for _ in 0..n_kills {
+            let _ = limiter.record_kill();
+        }
+        let count = limiter.current_run_count().unwrap();
+        prop_assert_eq!(count, n_kills);
+    }
+
+    /// Override lowers effective per-run limit (min of override and config).
+    #[test]
+    fn rate_limit_override_lowers_limit(
+        max_run in 5u32..50,
+        override_val in 1u32..4,
+    ) {
+        let config = RateLimitConfig {
+            max_per_run: max_run,
+            max_per_minute: None,
+            max_per_hour: None,
+            max_per_day: None,
+        };
+        let limiter = SlidingWindowRateLimiter::new(config, None::<&str>).unwrap();
+        // Record kills past the override limit but under the config limit
+        for _ in 0..override_val {
+            let _ = limiter.record_kill();
+        }
+        // Without override: allowed (kills <= max_run)
+        let no_override = limiter.check_with_override(false, None).unwrap();
+        prop_assert!(no_override.allowed,
+            "{} kills should be allowed with max_run {}", override_val, max_run);
+        // With override: blocked (kills >= override_val, and effective = min(override, max_run) = override)
+        let with_override = limiter.check_with_override(false, Some(override_val)).unwrap();
+        prop_assert!(!with_override.allowed,
+            "override {} should block when {} kills recorded", override_val, override_val);
+    }
+}
+
+// ── Respawn loop properties ───────────────────────────────────────────
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    /// detect_loop on empty tracker returns no loop.
+    #[test]
+    fn respawn_empty_tracker_no_loop(
+        key in "[a-z]{3,10}",
+        now in 0.0f64..10000.0,
+    ) {
+        let tracker = RespawnTracker::new();
+        let config = RespawnLoopConfig::default();
+        let detection = tracker.detect_loop(&key, &config, now);
+        prop_assert!(!detection.is_loop, "empty tracker should have no loops");
+        prop_assert_eq!(detection.loop_count, 0);
+    }
+
+    /// identity_count matches distinct keys inserted.
+    #[test]
+    fn respawn_identity_count_matches(n in 1usize..20) {
+        let mut tracker = RespawnTracker::new();
+        for i in 0..n {
+            tracker.record_respawn(
+                format!("proc-{}", i),
+                None, None,
+                (i * 10) as f64,
+                (i * 10 + 1) as f64,
+                None,
+            );
+        }
+        prop_assert_eq!(tracker.identity_count(), n);
+    }
+
+    /// event_count matches total events inserted.
+    #[test]
+    fn respawn_event_count_matches(n in 1usize..30) {
+        let mut tracker = RespawnTracker::new();
+        for i in 0..n {
+            tracker.record_respawn(
+                "proc-single".to_string(),
+                None, None,
+                (i * 5) as f64,
+                (i * 5 + 1) as f64,
+                None,
+            );
+        }
+        prop_assert_eq!(tracker.event_count(), n);
+    }
+
+    /// discount_kill_utility is always non-negative when base is non-negative.
+    #[test]
+    fn respawn_discount_non_negative(base in 0.0f64..1000.0) {
+        let detection = RespawnLoopDetection {
+            identity_key: "test".to_string(),
+            loop_count: 5,
+            is_loop: true,
+            avg_respawn_delay_secs: 2.0,
+            recommendation: pt_core::decision::respawn_loop::RespawnRecommendation::WarnRespawn,
+            kill_utility_multiplier: 0.3,
+        };
+        let discounted = discount_kill_utility(base, &detection);
+        prop_assert!(discounted >= 0.0, "discounted {} < 0 for base {}", discounted, base);
+    }
+
+    /// discount_kill_utility for non-loop is at least base utility.
+    #[test]
+    fn respawn_no_loop_preserves_utility(base in 0.0f64..1000.0) {
+        let detection = RespawnLoopDetection {
+            identity_key: "test".to_string(),
+            loop_count: 0,
+            is_loop: false,
+            avg_respawn_delay_secs: 0.0,
+            recommendation: pt_core::decision::respawn_loop::RespawnRecommendation::KillOk,
+            kill_utility_multiplier: 1.0,
+        };
+        let discounted = discount_kill_utility(base, &detection);
+        prop_assert!((discounted - base).abs() < 1e-9,
+            "non-loop should preserve utility: {} vs {}", discounted, base);
+    }
+
+    /// all_loops result count <= identity_count.
+    #[test]
+    fn respawn_all_loops_bounded(n in 1usize..15) {
+        let mut tracker = RespawnTracker::new();
+        for i in 0..n {
+            for e in 0..5 {
+                tracker.record_respawn(
+                    format!("proc-{}", i),
+                    None, None,
+                    (e * 10) as f64,
+                    (e * 10 + 1) as f64,
+                    None,
+                );
+            }
+        }
+        let config = RespawnLoopConfig::default();
+        let loops = tracker.all_loops(&config, 100.0);
+        prop_assert!(loops.len() <= tracker.identity_count(),
+            "all_loops {} > identity_count {}", loops.len(), tracker.identity_count());
     }
 }
