@@ -30,6 +30,7 @@ pub mod sequential;
 pub mod submodular;
 pub mod time_bound;
 pub mod voi;
+pub mod wonham_gittins;
 
 pub use active_sensing::{
     allocate_probes, ActiveSensingError, ActiveSensingPlan, ActiveSensingPolicy, ProbeBudget,
@@ -107,4 +108,8 @@ pub use time_bound::{
 pub use voi::{
     compute_voi, select_probe_by_information_gain, ProbeCost, ProbeCostModel, ProbeInformationGain,
     ProbeType, ProbeVoi, VoiAnalysis, VoiError,
+};
+pub use wonham_gittins::{
+    compute_gittins_index, compute_gittins_schedule, GeneratorMatrix, GittinsCandidate,
+    GittinsIndex, GittinsSchedule, WonhamConfig, WonhamError, WonhamFilter,
 };
