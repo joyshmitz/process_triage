@@ -33,7 +33,6 @@ pub mod gpu;
 pub mod incremental;
 #[cfg(target_os = "linux")]
 pub mod network;
-#[cfg(target_os = "linux")]
 pub mod proc_parsers;
 pub mod protected;
 mod quick_scan;
@@ -68,6 +67,8 @@ pub use proc_parsers::{
     parse_wchan, CgroupInfo, CriticalFile, CriticalFileCategory, DetectionStrength, FdInfo, FdType,
     IoStats, MemStats, OpenFile, OpenMode, ProcessStat, SchedInfo, SchedStats,
 };
+#[cfg(not(target_os = "linux"))]
+pub use proc_parsers::{parse_environ_content, CriticalFile, CriticalFileCategory, DetectionStrength};
 pub use quick_scan::{
     parse_ps_output_synthetic_linux, quick_scan, QuickScanError, QuickScanOptions,
 };

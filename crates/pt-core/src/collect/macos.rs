@@ -735,10 +735,12 @@ pub fn macos_scan(options: &MacOsScanOptions) -> Result<MacOsScanResult, MacOsSc
 
     let duration = start.elapsed();
 
+    let process_count = processes.len();
+
     if let Some(emitter) = options.progress.as_ref() {
         emitter.emit(
             ProgressEvent::new(event_names::DEEP_SCAN_COMPLETE, Phase::DeepScan)
-                .with_progress(processes.len() as u64, Some(total_pids))
+                .with_progress(process_count as u64, Some(total_pids))
                 .with_elapsed_ms(duration.as_millis() as u64),
         );
     }
@@ -748,7 +750,7 @@ pub fn macos_scan(options: &MacOsScanOptions) -> Result<MacOsScanResult, MacOsSc
         metadata: MacOsScanMetadata {
             started_at,
             duration_ms: duration.as_millis() as u64,
-            process_count: processes.len(),
+            process_count,
             skipped_count,
             capabilities,
             warnings,

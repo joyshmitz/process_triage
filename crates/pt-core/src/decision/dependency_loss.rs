@@ -223,6 +223,7 @@ impl DependencyFactors {
     /// Create factors from impact components (inference layer).
     ///
     /// This enables reuse of data already collected by the impact scorer.
+    #[cfg(target_os = "linux")]
     #[allow(dead_code)]
     pub fn from_impact_components(components: &crate::inference::impact::ImpactComponents) -> Self {
         Self {
