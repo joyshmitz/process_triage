@@ -1,6 +1,6 @@
 [package]
 name = "pt-core"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2021"
 description = "Process Triage core inference and decision engine"
 license = "MIT"
@@ -48,7 +48,7 @@ prometheus = { version = "0.13", optional = true }
 tiny_http = { version = "0.12", optional = true }
 
 # TUI dependencies (optional, behind "ui" feature)
-ftui = { path = "/dp/frankentui/crates/ftui", optional = true, features = ["crossterm"] }
+ftui = { version = "0.1.1", optional = true }
 
 # Internal crates
 pt-common = { path = "../pt-common" }
@@ -78,7 +78,7 @@ tempfile = "3"
 regex = "1"
 proptest = "1"
 filetime = "0.2"
-ftui-harness = { path = "/dp/frankentui/crates/ftui-harness" }
+ftui-harness = "0.1.1"
 
 [[bench]]
 name = "collect_parsers"
