@@ -85,6 +85,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     needs: validate-version
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/.cargo-target
     strategy:
       fail-fast: false
       matrix:
@@ -139,7 +141,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: "crates -> target"
+          workspaces: "crates -> .cargo-target"
           key: ${{ matrix.target }}
 
       - name: Build release binary (native)
@@ -156,19 +158,19 @@ jobs:
         if: matrix.is_musl && matrix.target == 'x86_64-unknown-linux-musl'
         run: |
           echo "Checking if binary is statically linked..."
-          file target/${{ matrix.target }}/release/pt-core
-          if ldd target/${{ matrix.target }}/release/pt-core 2>&1 | grep -q "not a dynamic executable"; then
+          file "$CARGO_TARGET_DIR/${{ matrix.target }}/release/pt-core"
+          if ldd "$CARGO_TARGET_DIR/${{ matrix.target }}/release/pt-core" 2>&1 | grep -q "not a dynamic executable"; then
             echo "✓ Binary is statically linked"
           else
             echo "::error::Binary is not statically linked!"
-            ldd target/${{ matrix.target }}/release/pt-core
+            ldd "$CARGO_TARGET_DIR/${{ matrix.target }}/release/pt-core"
             exit 1
           fi
 
       - name: Verify binary version
         if: matrix.target != 'aarch64-apple-darwin' && matrix.target != 'aarch64-unknown-linux-gnu' && matrix.target != 'aarch64-unknown-linux-musl'
         run: |
-          binary_version=$(./target/${{ matrix.target }}/release/pt-core --version | awk '{print $2}')
+          binary_version=$("$CARGO_TARGET_DIR/${{ matrix.target }}/release/pt-core" --version | awk '{print $2}')
           expected_version="${{ needs.validate-version.outputs.version }}"
 
           echo "Binary version:   $binary_version"
@@ -187,7 +189,7 @@ jobs:
           mkdir -p dist
 
           # Copy binary
-          cp target/${{ matrix.target }}/release/pt-core dist/
+          cp "$CARGO_TARGET_DIR/${{ matrix.target }}/release/pt-core" dist/
 
           # Create tarball
           cd dist
