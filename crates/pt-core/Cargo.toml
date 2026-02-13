@@ -112,6 +112,10 @@ harness = false
 name = "voi_active_sensing"
 harness = false
 
+[[bench]]
+name = "composite_test"
+harness = false
+
 [[test]]
 name = "fleet_integration"
 path = "tests/fleet_integration.rs"
