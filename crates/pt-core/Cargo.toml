@@ -136,6 +136,10 @@ harness = false
 name = "causal_load_martingale"
 harness = false
 
+[[bench]]
+name = "expected_goal"
+harness = false
+
 [[test]]
 name = "fleet_integration"
 path = "tests/fleet_integration.rs"
