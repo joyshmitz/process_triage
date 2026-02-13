@@ -22,9 +22,7 @@
 //! - `deep_scan`: Linux-only, uses /proc
 //! - `macos`: macOS-only, uses BSD tools and SIP detection
 
-#[cfg(target_os = "linux")]
 pub mod cgroup;
-#[cfg(target_os = "linux")]
 pub mod container;
 #[cfg(target_os = "linux")]
 pub mod cpu_capacity;
@@ -87,7 +85,6 @@ pub use protected::{
 };
 
 // Re-export cgroup types
-#[cfg(target_os = "linux")]
 pub use cgroup::{
     collect_cgroup_details, collect_cgroup_from_content, effective_cores_from_quota, CgroupDetails,
     CgroupProvenance, CgroupVersion, CpuLimitSource, CpuLimits, MemoryLimitSource, MemoryLimits,
@@ -101,7 +98,6 @@ pub use systemd::{
 };
 
 // Re-export container types
-#[cfg(target_os = "linux")]
 pub use container::{
     detect_container_from_cgroup, detect_container_from_markers, detect_kubernetes_from_env,
     ContainerDetectionSource, ContainerInfo, ContainerProvenance, ContainerRuntime, KubernetesInfo,
