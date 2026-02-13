@@ -7,7 +7,19 @@
 //! - Tempdir management
 
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+
+// ============================================================================
+// Shared test environment lock
+// ============================================================================
+
+/// Global lock for tests that mutate `PROCESS_TRIAGE_DATA` (or similar env vars).
+///
+/// Environment variables are process-global, so parallel tests that set/read them
+/// race with each other. Any test that calls `std::env::set_var("PROCESS_TRIAGE_DATA", ..)`
+/// **must** hold this lock for the duration of the set → use → restore cycle.
+pub static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 // ============================================================================
 // Macros (must be defined first for use in this module)

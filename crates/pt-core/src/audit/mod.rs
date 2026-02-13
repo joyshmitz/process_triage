@@ -121,9 +121,11 @@ pub fn resolve_audit_dir() -> Result<PathBuf, AuditError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::ENV_LOCK;
 
     #[test]
     fn test_resolve_audit_dir_with_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
         // Save original value
         let orig = std::env::var("PROCESS_TRIAGE_DATA").ok();
 

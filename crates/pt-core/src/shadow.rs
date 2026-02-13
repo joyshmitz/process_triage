@@ -350,12 +350,8 @@ fn resolve_data_dir_override() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    use crate::test_utils::ENV_LOCK;
     use tempfile::TempDir;
-
-    /// Mutex to serialize tests that manipulate PROCESS_TRIAGE_DATA env var.
-    /// Without this, parallel tests race on set_var/remove_var causing flaky failures.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn identity_hash_is_stable_and_short() {

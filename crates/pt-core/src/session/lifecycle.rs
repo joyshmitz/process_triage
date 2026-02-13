@@ -413,12 +413,11 @@ fn read_lifecycle(handle: &SessionHandle) -> Result<LifecycleInfo, SessionError>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_utils::ENV_LOCK;
     use tempfile::TempDir;
 
     use std::ffi::OsString;
-    use std::sync::{Mutex, MutexGuard, OnceLock};
-
-    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    use std::sync::MutexGuard;
 
     struct TestStore {
         _guard: MutexGuard<'static, ()>,
@@ -437,7 +436,7 @@ mod tests {
     }
 
     fn test_store() -> TestStore {
-        let guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        let guard = ENV_LOCK.lock().unwrap();
         let prev_data = std::env::var_os("PROCESS_TRIAGE_DATA");
 
         let tmp = TempDir::new().unwrap();
