@@ -116,6 +116,10 @@ harness = false
 name = "composite_test"
 harness = false
 
+[[bench]]
+name = "submodular_cvar"
+harness = false
+
 [[test]]
 name = "fleet_integration"
 path = "tests/fleet_integration.rs"
