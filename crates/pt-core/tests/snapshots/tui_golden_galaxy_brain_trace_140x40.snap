@@ -1,0 +1,40 @@
+┌ Search ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│Search processes...                                                                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Processes [1] [view: score] [Space: toggle, a: rec, A: all, u: clear, x: invert, ┐┌ Detail ──────────────────────────────────────────────┐
+│[ ]│PID     │Score ▼│Class   │Runtime  │Memory  │Command                          ││PID: 4242  Class: KILL                                │
+│☐  │4242    │91     │KILL    │3h 12m   │1.2 GB  │node dev server                  ││Command: node dev server                              │
+│                                                                                  ││Selected: no                                          │
+│                                                                                  ││                                                      │
+│                                                                                  ││Score: 91  Runtime: 3h 12m                            │
+│                                                                                  ││Memory: 1.2 GB                                        │
+│                                                                                  ││                                                      │
+│                                                                                  ││                                                      │
+│                                                                                  ││Galaxy Brain                                          │
+│                                                                                  ││[*] Galaxy-Brain Mode ================================│
+│                                                                                  ││                                                      │
+│                                                                                  ││> Prior Distribution                                  │
+│                                                                                  ││  P(C)  ~ [0.2500, 0.2500, 0.2500, 0.2500]  (U, UB, A,│
+│                                                                                  ││                                                      │
+│                                                                                  ││> Posterior Distribution                              │
+│                                                                                  ││  P(C|x)  ~ [0.1200, 0.0800, 0.7200, 0.0800]  (U, UB, │
+│                                                                                  ││                                                      │
+│                                                                                  ││  Classification: Abandoned  |  Confidence: low       │
+│                                                                                  ││                                                      │
+│                                                                                  ││> Evidence (Bayes Factors)                            │
+│                                                                                  ││  age_days             BF=    9.03  ^A3.2 bits  [stron│
+│                                                                                  ││  cpu_idle             BF=    3.32  ^A1.7 bits  [subst│
+│                                                                                  ││                                                      │
+│                                                                                  ││  log-odds(A/U) = 1.700                               │
+│                                                                                  ││==================================================    │
+│                                                                                  ││                                                      │
+│                                                                                  ││                                                      │
+│                                                                                  ││                                                      │
+│                                                                                  ││                                                      │
+│                                                                                  ││                                                      │
+│                                                                                  ││                                                      │
+│                                                                                  ││Notes                                                 │
+│                                                                                  ││• press g to toggle                                   │
+│                                                                                  ││                                                      │
+└──────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────┘
+Ready │ [Normal] │ ?: help  e: execute  r: refresh  q: quit                                                                                 

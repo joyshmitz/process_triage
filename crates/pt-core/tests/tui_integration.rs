@@ -76,7 +76,10 @@ fn view_renders_at_standard_breakpoint() {
     assert_snapshot!("tui_view_standard_140x40", &buf);
     // Should contain search box, process table, detail pane, status bar
     assert!(text.contains("Search"), "search widget missing");
-    assert!(text.contains("4242") || text.contains("KILL"), "process table missing");
+    assert!(
+        text.contains("4242") || text.contains("KILL"),
+        "process table missing"
+    );
 }
 
 #[test]
@@ -89,7 +92,10 @@ fn view_renders_at_wide_breakpoint() {
 
     assert_snapshot!("tui_view_wide_220x60", &buf);
     assert!(text.contains("Search"), "search widget missing");
-    assert!(text.contains("4242") || text.contains("KILL"), "process table missing");
+    assert!(
+        text.contains("4242") || text.contains("KILL"),
+        "process table missing"
+    );
 }
 
 #[test]
@@ -187,10 +193,7 @@ fn view_renders_with_goal_summary() {
 fn view_renders_galaxy_brain_via_model() {
     let mut app = App::new();
     app.process_table.set_rows(vec![sample_row()]);
-    <App as FtuiModel>::update(
-        &mut app,
-        Msg::KeyPressed(KeyEvent::new(KeyCode::Char('g'))),
-    );
+    <App as FtuiModel>::update(&mut app, Msg::KeyPressed(KeyEvent::new(KeyCode::Char('g'))));
     assert_eq!(app.current_detail_view(), DetailView::GalaxyBrain);
 
     let buf = render_app_view(&app, 140, 40);
@@ -221,10 +224,7 @@ fn view_shows_confirm_dialog() {
     app.process_table.set_rows(vec![sample_row()]);
     // Select the process and trigger confirmation
     app.process_table.toggle_selection();
-    <App as FtuiModel>::update(
-        &mut app,
-        Msg::KeyPressed(KeyEvent::new(KeyCode::Char('e'))),
-    );
+    <App as FtuiModel>::update(&mut app, Msg::KeyPressed(KeyEvent::new(KeyCode::Char('e'))));
     assert_eq!(app.state, AppState::Confirming);
 
     let buf = render_app_view(&app, 120, 40);

@@ -68,7 +68,9 @@ pub use proc_parsers::{
     IoStats, MemStats, OpenFile, OpenMode, ProcessStat, SchedInfo, SchedStats,
 };
 #[cfg(not(target_os = "linux"))]
-pub use proc_parsers::{parse_environ_content, CriticalFile, CriticalFileCategory, DetectionStrength};
+pub use proc_parsers::{
+    parse_environ_content, CriticalFile, CriticalFileCategory, DetectionStrength,
+};
 pub use quick_scan::{
     parse_ps_output_synthetic_linux, quick_scan, QuickScanError, QuickScanOptions,
 };

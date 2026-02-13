@@ -80,11 +80,15 @@ fn start_daemon_foreground(config_dir: &Path, data_dir: &Path) -> Child {
     cmd.spawn().expect("spawn daemon")
 }
 
-fn send_sigterm(child: &Child) {
+fn send_signal(child: &Child, signal: i32) {
     let pid = child.id() as i32;
     unsafe {
-        libc::kill(pid, libc::SIGTERM);
+        libc::kill(pid, signal);
     }
+}
+
+fn send_sigterm(child: &Child) {
+    send_signal(child, libc::SIGTERM);
 }
 
 fn wait_for<F: FnMut() -> bool>(timeout: Duration, mut f: F) {
@@ -220,6 +224,80 @@ fn daemon_trigger_cooldown_prevents_repeated_lock_contention_spam() {
         lock_items, 1,
         "cooldown should prevent repeated lock contention entries across ticks"
     );
+}
+
+#[test]
+fn daemon_signal_storm_remains_responsive_and_shuts_down_cleanly() {
+    let data_dir = TempDir::new().expect("temp data dir");
+    let config_dir = TempDir::new().expect("temp config dir");
+
+    write_daemon_json_config(
+        config_dir.path(),
+        r#"{
+  "tick_interval_secs": 5,
+  "max_cpu_percent": 1000.0,
+  "max_rss_mb": 4096,
+  "triggers": {
+    "ewma_alpha": 0.3,
+    "load_threshold": -1.0,
+    "memory_threshold": 2.0,
+    "orphan_threshold": 999999,
+    "sustained_ticks": 1,
+    "cooldown_ticks": 10
+  },
+  "escalation": {
+    "min_interval_secs": 0,
+    "allow_auto_mitigation": false,
+    "max_deep_scan_targets": 1
+  },
+  "notifications": {
+    "enabled": false,
+    "desktop": false,
+    "notify_cmd": null,
+    "notify_arg": []
+  }
+}"#,
+    );
+
+    let mut child = start_daemon_foreground(config_dir.path(), data_dir.path());
+    let state_path = daemon_state_path(data_dir.path());
+    wait_for(Duration::from_secs(10), || state_path.exists());
+
+    for _ in 0..250 {
+        send_signal(&child, libc::SIGUSR1);
+    }
+    std::thread::sleep(Duration::from_millis(300));
+
+    assert!(
+        child.try_wait().expect("query child status").is_none(),
+        "daemon should remain alive after SIGUSR1 storm"
+    );
+
+    send_signal(&child, libc::SIGHUP);
+    wait_for(Duration::from_secs(10), || {
+        let content = fs::read_to_string(&state_path).expect("read state.json");
+        let json: Value = serde_json::from_str(&content).expect("valid state json");
+        let events = json
+            .get("daemon")
+            .and_then(|d| d.get("recent_events"))
+            .and_then(|e| e.as_array())
+            .cloned()
+            .unwrap_or_default();
+        events.iter().any(|ev| {
+            ev.get("event_type")
+                .and_then(|t| t.as_str())
+                .map(|t| t == "config_reloaded")
+                .unwrap_or(false)
+        })
+    });
+
+    send_sigterm(&child);
+    wait_for(Duration::from_secs(10), || {
+        child.try_wait().expect("query child status").is_some()
+    });
+
+    let status = child.wait().expect("wait for daemon exit status");
+    assert!(status.success(), "daemon should exit cleanly after SIGTERM");
 }
 
 #[test]

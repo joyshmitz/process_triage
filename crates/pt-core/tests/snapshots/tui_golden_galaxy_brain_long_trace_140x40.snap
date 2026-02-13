@@ -1,0 +1,40 @@
+┌ Search ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│Search processes...                                                                                                                       │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌ Processes [1] [view: score] [Space: toggle, a: rec, A: all, u: clear, x: invert, ┐┌ Detail ──────────────────────────────────────────────┐
+│[ ]│PID     │Score ▼│Class   │Runtime  │Memory  │Command                          ││PID: 4242  Class: KILL                                │
+│☐  │4242    │91     │KILL    │3h 12m   │1.2 GB  │node dev server                  ││Command: node dev server                              │
+│                                                                                  ││Selected: no                                          │
+│                                                                                  ││                                                      │
+│                                                                                  ││Score: 91  Runtime: 3h 12m                            │
+│                                                                                  ││Memory: 1.2 GB                                        │
+│                                                                                  ││                                                      │
+│                                                                                  ││                                                      │
+│                                                                                  ││Galaxy Brain                                          │
+│                                                                                  ││line 0                                                │
+│                                                                                  ││line 1                                                │
+│                                                                                  ││line 2                                                │
+│                                                                                  ││line 3                                                │
+│                                                                                  ││line 4                                                │
+│                                                                                  ││line 5                                                │
+│                                                                                  ││line 6                                                │
+│                                                                                  ││line 7                                                │
+│                                                                                  ││line 8                                                │
+│                                                                                  ││line 9                                                │
+│                                                                                  ││line 10                                               │
+│                                                                                  ││line 11                                               │
+│                                                                                  ││line 12                                               │
+│                                                                                  ││line 13                                               │
+│                                                                                  ││line 14                                               │
+│                                                                                  ││line 15                                               │
+│                                                                                  ││line 16                                               │
+│                                                                                  ││line 17                                               │
+│                                                                                  ││line 18                                               │
+│                                                                                  ││line 19                                               │
+│                                                                                  ││line 20                                               │
+│                                                                                  ││line 21                                               │
+│                                                                                  ││Notes                                                 │
+│                                                                                  ││• press g to toggle                                   │
+│                                                                                  ││                                                      │
+└──────────────────────────────────────────────────────────────────────────────────┘└──────────────────────────────────────────────────────┘
+Ready │ [Normal] │ ?: help  e: execute  r: refresh  q: quit                                                                                 

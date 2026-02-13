@@ -128,9 +128,10 @@ impl<'a> AuxPanel<'a> {
         // ── Classification breakdown ────────────────────────────────
         let (kill, review, spare) = self.classification_counts();
         if total > 0 {
-            lines.push(FtuiLine::from_spans([
-                FtuiSpan::styled("Breakdown", self.label_style()),
-            ]));
+            lines.push(FtuiLine::from_spans([FtuiSpan::styled(
+                "Breakdown",
+                self.label_style(),
+            )]));
             lines.push(FtuiLine::from_spans([
                 FtuiSpan::styled("  KILL:   ", self.classification_style("KILL")),
                 FtuiSpan::styled(kill.to_string(), self.value_style()),
@@ -161,19 +162,22 @@ impl<'a> AuxPanel<'a> {
             }
 
             if !row.plan_preview.is_empty() {
-                lines.push(FtuiLine::from_spans([
-                    FtuiSpan::styled("  Plan:", self.label_style()),
-                ]));
+                lines.push(FtuiLine::from_spans([FtuiSpan::styled(
+                    "  Plan:",
+                    self.label_style(),
+                )]));
                 for step in &row.plan_preview {
-                    lines.push(FtuiLine::from_spans([
-                        FtuiSpan::styled(format!("    {}", step), self.value_style()),
-                    ]));
+                    lines.push(FtuiLine::from_spans([FtuiSpan::styled(
+                        format!("    {}", step),
+                        self.value_style(),
+                    )]));
                 }
             }
         } else {
-            lines.push(FtuiLine::from_spans([
-                FtuiSpan::styled("No process focused", self.label_style()),
-            ]));
+            lines.push(FtuiLine::from_spans([FtuiSpan::styled(
+                "No process focused",
+                self.label_style(),
+            )]));
         }
 
         let text: FtuiText = lines.into_iter().collect();
