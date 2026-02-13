@@ -450,18 +450,8 @@ mod tests {
         let post = confident_posterior();
 
         let candidates = vec![
-            EsnCandidate::new(
-                "z",
-                post,
-                feasibility.clone(),
-                vec![ProbeType::QuickScan],
-            ),
-            EsnCandidate::new(
-                "a",
-                post,
-                feasibility.clone(),
-                vec![ProbeType::QuickScan],
-            ),
+            EsnCandidate::new("z", post, feasibility.clone(), vec![ProbeType::QuickScan]),
+            EsnCandidate::new("a", post, feasibility.clone(), vec![ProbeType::QuickScan]),
         ];
 
         let r1 = prioritize_by_esn(&candidates, &policy, &cost_model).unwrap();

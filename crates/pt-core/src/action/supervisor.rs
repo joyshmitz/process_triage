@@ -25,9 +25,9 @@
 //! - forever (forever stop)
 
 use crate::action::prechecks::{SupervisorAction, SupervisorInfo};
-use crate::supervision::{AppSupervisionResult, AppSupervisorType};
 #[cfg(target_os = "linux")]
 use crate::supervision::ContainerSupervisionResult;
+use crate::supervision::{AppSupervisionResult, AppSupervisorType};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::process::{Command, Output};

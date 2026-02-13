@@ -497,9 +497,7 @@ mod sketch_tests {
 
     #[test]
     fn tdigest_quantile_accuracy() {
-        let config = TDigestConfig {
-            compression: 100.0,
-        };
+        let config = TDigestConfig { compression: 100.0 };
         let mut digest = TDigest::new(config).expect("config should be valid");
 
         // Add 1000 sorted values

@@ -20,8 +20,7 @@
 
 use pt_common::{IdentityQuality, ProcessId, ProcessIdentity, StartId};
 use pt_core::action::executor::{
-    ActionExecutor, ActionStatus, ExecutionResult, NoopActionRunner,
-    StaticIdentityProvider,
+    ActionExecutor, ActionStatus, ExecutionResult, NoopActionRunner, StaticIdentityProvider,
 };
 use pt_core::action::prechecks::{
     LivePreCheckConfig, LivePreCheckProvider, NoopPreCheckProvider, PreCheckProvider,
@@ -30,8 +29,8 @@ use pt_core::action::prechecks::{
 use pt_core::action::{ReniceActionRunner, ReniceConfig, SignalActionRunner, SignalConfig};
 use pt_core::decision::Action;
 use pt_core::plan::{
-    ActionConfidence, ActionRationale, ActionRouting, ActionTimeouts, GatesSummary, Plan, PlanAction,
-    PreCheck,
+    ActionConfidence, ActionRationale, ActionRouting, ActionTimeouts, GatesSummary, Plan,
+    PlanAction, PreCheck,
 };
 use pt_core::test_utils::ProcessHarness;
 use serde_json::json;

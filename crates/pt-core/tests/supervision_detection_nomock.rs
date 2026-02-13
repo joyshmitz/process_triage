@@ -75,10 +75,10 @@ fn fixtures_dir() -> PathBuf {
 fn load_cases() -> FixtureFile {
     let path = fixtures_dir().join("cases.json");
     let contents = fs::read_to_string(&path).expect("read supervision cases fixture");
-    let cases: FixtureFile = serde_json::from_str(&contents).expect("parse supervision cases fixture");
+    let cases: FixtureFile =
+        serde_json::from_str(&contents).expect("parse supervision cases fixture");
     assert_eq!(
-        cases.schema_version,
-        "1.0.0",
+        cases.schema_version, "1.0.0",
         "unexpected supervision fixture schema version"
     );
     cases

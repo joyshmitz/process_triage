@@ -566,8 +566,7 @@ mod tests {
         let resp = std::net::TcpStream::connect(server.addr());
         if let Ok(mut stream) = resp {
             use std::io::{Read, Write};
-            let _ = stream
-                .write_all(b"GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n");
+            let _ = stream.write_all(b"GET /metrics HTTP/1.0\r\nHost: localhost\r\n\r\n");
             let mut buf = String::new();
             let _ = stream.read_to_string(&mut buf);
 

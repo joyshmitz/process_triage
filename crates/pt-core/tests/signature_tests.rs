@@ -1613,12 +1613,10 @@ mod performance_tests {
         {
             let mut lib = PatternLibrary::new(dir.path());
             for i in 0..500 {
-                let sig = SupervisorSignature::new(
-                    format!("perf-test-{}", i),
-                    SupervisorCategory::Other,
-                )
-                .with_process_patterns(vec![&format!(r"^perf-{}$", i)])
-                .with_confidence(0.80);
+                let sig =
+                    SupervisorSignature::new(format!("perf-test-{}", i), SupervisorCategory::Other)
+                        .with_process_patterns(vec![&format!(r"^perf-{}$", i)])
+                        .with_confidence(0.80);
                 lib.add_custom(sig).unwrap();
             }
             lib.save().unwrap();

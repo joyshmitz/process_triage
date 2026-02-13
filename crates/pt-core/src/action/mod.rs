@@ -46,13 +46,13 @@ pub use renice::{
 pub use signal::LiveIdentityProvider;
 #[cfg(unix)]
 pub use signal::{SignalActionRunner, SignalConfig};
+#[cfg(target_os = "linux")]
+pub use supervisor::plan_action_from_container_supervision;
 pub use supervisor::{
     plan_action_from_app_supervision, plan_action_from_supervisor_info, SupervisorActionConfig,
     SupervisorActionError, SupervisorActionResult, SupervisorActionRunner, SupervisorCommand,
     SupervisorParameters, SupervisorPlanAction, SupervisorType,
 };
-#[cfg(target_os = "linux")]
-pub use supervisor::plan_action_from_container_supervision;
 
 #[cfg(target_os = "linux")]
 pub use prechecks::LivePreCheckProvider;

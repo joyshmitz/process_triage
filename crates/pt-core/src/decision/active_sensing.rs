@@ -287,7 +287,10 @@ mod tests {
         let plan = allocate_probes(&candidates, &policy, &cost_model, &selection_policy, budget)
             .expect("allocation should succeed");
 
-        assert!(!plan.selections.is_empty(), "expected at least one selection");
+        assert!(
+            !plan.selections.is_empty(),
+            "expected at least one selection"
+        );
         let first = &plan.selections[0];
         assert_eq!(first.candidate_id, "a");
     }
