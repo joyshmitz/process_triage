@@ -3297,9 +3297,9 @@ proptest! {
 
     // ── Escalation properties ───────────────────────────────────────
 
-    /// submit_trigger accepts first and rejects duplicate dedupe_key.
+    /// submit_trigger merges duplicate dedupe_keys: pending count stays 1.
     #[test]
-    fn escalation_dedupe_rejects_second(
+    fn escalation_dedupe_merges(
         severity in prop_oneof![Just(Severity::Warning), Just(Severity::Critical)],
         ts in 0.0f64..1e6,
     ) {
@@ -3315,10 +3315,11 @@ proptest! {
             detected_at: ts,
             session_id: None,
         };
-        let first = mgr.submit_trigger(trigger.clone());
-        let second = mgr.submit_trigger(trigger);
-        prop_assert!(first);
-        prop_assert!(!second, "dedupe should reject second submission");
+        mgr.submit_trigger(trigger.clone());
+        mgr.submit_trigger(trigger);
+        // Two submissions with same dedupe_key produce only 1 pending
+        prop_assert_eq!(mgr.pending_count(), 1,
+            "duplicate dedupe_key should merge into single pending");
     }
 
     /// After forget_key, the same dedupe_key is accepted again.
