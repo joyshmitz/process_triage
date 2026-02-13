@@ -2,7 +2,10 @@
 
 use proptest::prelude::*;
 use pt_core::config::policy::Policy;
-use pt_core::decision::{compute_voi, decide_action, ActionFeasibility, ProbeCostModel};
+use pt_core::decision::expected_loss::ActionFeasibility;
+use pt_core::decision::myopic_policy::{compute_loss_table, decide_from_belief};
+use pt_core::decision::{compute_voi, decide_action, Action, ProbeCostModel};
+use pt_core::inference::belief_state::BeliefState;
 use pt_core::inference::ClassScores;
 
 fn posterior_strategy() -> impl Strategy<Value = ClassScores> {
@@ -152,5 +155,113 @@ proptest! {
                 );
             }
         }
+    }
+}
+
+// ── Myopic policy property tests ──────────────────────────────────
+
+fn belief_strategy() -> impl Strategy<Value = BeliefState> {
+    (0.01f64..=1.0, 0.01f64..=1.0, 0.01f64..=1.0, 0.01f64..=1.0).prop_map(|(u, ub, a, z)| {
+        let sum = u + ub + a + z;
+        BeliefState::from_probs([u / sum, ub / sum, a / sum, z / sum])
+            .expect("normalised probs should form valid belief")
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(5_000))]
+
+    /// decide_from_belief should always succeed for valid belief states.
+    #[test]
+    fn myopic_decide_from_belief_never_panics(belief in belief_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let decision = decide_from_belief(&belief, &policy, &feasibility);
+        prop_assert!(decision.is_ok(), "decide_from_belief failed: {:?}", decision.err());
+    }
+
+    /// The optimal action from decide_from_belief should be consistent with
+    /// compute_loss_table: it should pick the action with minimal expected loss.
+    #[test]
+    fn myopic_optimal_action_matches_loss_table(belief in belief_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+
+        let decision = decide_from_belief(&belief, &policy, &feasibility)
+            .expect("decide_from_belief failed");
+        let table = compute_loss_table(&belief, &policy.loss_matrix, &feasibility);
+
+        // Find the minimum loss among feasible actions in the table.
+        let table_min = table.iter()
+            .filter(|b| b.feasible)
+            .min_by(|a, b| a.expected_loss.partial_cmp(&b.expected_loss).unwrap())
+            .expect("loss table should have feasible entries");
+
+        prop_assert!(
+            (decision.optimal_loss - table_min.expected_loss).abs() < 1e-9,
+            "decision loss {} != table min loss {}",
+            decision.optimal_loss,
+            table_min.expected_loss
+        );
+    }
+
+    /// The loss table should be sorted by expected loss (ascending).
+    #[test]
+    fn myopic_loss_table_is_sorted(belief in belief_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+        let table = compute_loss_table(&belief, &policy.loss_matrix, &feasibility);
+
+        for window in table.windows(2) {
+            prop_assert!(
+                window[0].expected_loss <= window[1].expected_loss + 1e-12,
+                "loss table not sorted: {} > {}",
+                window[0].expected_loss,
+                window[1].expected_loss
+            );
+        }
+    }
+
+    /// decide_action and decide_from_belief should agree on the optimal action.
+    #[test]
+    fn decide_action_and_belief_agree(belief in belief_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::allow_all();
+
+        let posterior = ClassScores {
+            useful: belief.prob(pt_core::inference::belief_state::ProcessState::Useful),
+            useful_bad: belief.prob(pt_core::inference::belief_state::ProcessState::UsefulBad),
+            abandoned: belief.prob(pt_core::inference::belief_state::ProcessState::Abandoned),
+            zombie: belief.prob(pt_core::inference::belief_state::ProcessState::Zombie),
+        };
+
+        let action_outcome = decide_action(&posterior, &policy, &feasibility)
+            .expect("decide_action failed");
+        let belief_decision = decide_from_belief(&belief, &policy, &feasibility)
+            .expect("decide_from_belief failed");
+
+        prop_assert_eq!(
+            action_outcome.optimal_action,
+            belief_decision.optimal_action,
+            "decide_action chose {:?} but decide_from_belief chose {:?}",
+            action_outcome.optimal_action,
+            belief_decision.optimal_action
+        );
+    }
+
+    /// With zombie feasibility constraints, Kill should never be the optimal action.
+    #[test]
+    fn zombie_feasibility_blocks_kill(belief in belief_strategy()) {
+        let policy = Policy::default();
+        let feasibility = ActionFeasibility::from_process_state(true, false, None);
+
+        let decision = decide_from_belief(&belief, &policy, &feasibility)
+            .expect("decide_from_belief failed");
+
+        prop_assert_ne!(
+            decision.optimal_action,
+            Action::Kill,
+            "Kill should be blocked for zombie processes"
+        );
     }
 }
