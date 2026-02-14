@@ -133,6 +133,11 @@ impl EvidenceLedger {
             top_evidence.push(desc);
         }
 
+        let evidence_glyphs: HashMap<String, String> = bayes_factors
+            .iter()
+            .map(|bf| (bf.feature.clone(), get_glyph(&bf.feature).to_string()))
+            .collect();
+
         Self {
             posterior: result.clone(),
             classification,
@@ -140,7 +145,7 @@ impl EvidenceLedger {
             bayes_factors,
             top_evidence,
             why_summary: summary,
-            evidence_glyphs: HashMap::new(),
+            evidence_glyphs,
         }
     }
 }
@@ -195,12 +200,30 @@ pub struct FeatureGlyph {
     pub glyph: char,
 }
 
-pub fn get_glyph(_feature: &str) -> char {
-    '?'
+pub fn get_glyph(feature: &str) -> char {
+    match feature {
+        "prior" => '\u{1F3B2}',           // dice - prior probability
+        "cpu" => '\u{1F4BB}',             // laptop - CPU activity
+        "runtime" => '\u{23F1}',          // stopwatch - process age
+        "orphan" => '\u{1F47B}',          // ghost - orphaned process
+        "tty" => '\u{1F5A5}',            // desktop computer - terminal
+        "net" => '\u{1F310}',             // globe - network activity
+        "io_active" => '\u{1F4BE}',       // floppy - I/O activity
+        "state_flag" => '\u{1F6A9}',      // flag - process state
+        "command_category" => '\u{1F3F7}', // label - command type
+        "signature_match" => '\u{1F50D}',  // magnifying glass
+        "fast_path" => '\u{26A1}',         // lightning bolt
+        _ => '?',
+    }
 }
 
 pub fn default_glyph_map() -> std::collections::HashMap<String, char> {
-    std::collections::HashMap::new()
+    let features = [
+        "prior", "cpu", "runtime", "orphan", "tty",
+        "net", "io_active", "state_flag", "command_category",
+        "signature_match", "fast_path",
+    ];
+    features.iter().map(|f| (f.to_string(), get_glyph(f))).collect()
 }
 
 pub fn build_process_explanation(proc: &ProcessRecord, priors: &Priors) -> serde_json::Value {
@@ -524,16 +547,24 @@ mod tests {
     // ── get_glyph / default_glyph_map ───────────────────────────────
 
     #[test]
-    fn get_glyph_always_question_mark() {
-        assert_eq!(get_glyph("cpu"), '?');
-        assert_eq!(get_glyph("runtime"), '?');
+    fn get_glyph_returns_known_glyphs() {
+        assert_eq!(get_glyph("cpu"), '\u{1F4BB}');
+        assert_eq!(get_glyph("runtime"), '\u{23F1}');
+        assert_eq!(get_glyph("orphan"), '\u{1F47B}');
+        assert_eq!(get_glyph("prior"), '\u{1F3B2}');
+        // Unknown features still return '?'
         assert_eq!(get_glyph(""), '?');
+        assert_eq!(get_glyph("unknown_feature"), '?');
     }
 
     #[test]
-    fn default_glyph_map_empty() {
+    fn default_glyph_map_contains_known_features() {
         let map = default_glyph_map();
-        assert!(map.is_empty());
+        assert!(!map.is_empty());
+        assert_eq!(map.get("cpu"), Some(&'\u{1F4BB}'));
+        assert_eq!(map.get("runtime"), Some(&'\u{23F1}'));
+        assert_eq!(map.get("orphan"), Some(&'\u{1F47B}'));
+        assert!(map.get("unknown").is_none());
     }
 
     // ── EvidenceLedger::from_posterior_result ─────────────────────────
