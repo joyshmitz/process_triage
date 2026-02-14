@@ -95,16 +95,12 @@ fn bench_wonham_predict(c: &mut Criterion) {
         ("confident", confident_belief()),
         ("zombie", zombie_belief()),
     ] {
-        group.bench_with_input(
-            BenchmarkId::new("euler", name),
-            &belief,
-            |b, belief| {
-                b.iter(|| {
-                    let p = filter.predict(black_box(belief), black_box(30.0));
-                    black_box(p.unwrap());
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("euler", name), &belief, |b, belief| {
+            b.iter(|| {
+                let p = filter.predict(black_box(belief), black_box(30.0));
+                black_box(p.unwrap());
+            })
+        });
 
         group.bench_with_input(
             BenchmarkId::new("matrix_exp", name),
@@ -195,45 +191,37 @@ fn bench_gittins_index(c: &mut Criterion) {
         ("zombie", zombie_belief()),
     ] {
         // Default horizon (10)
-        group.bench_with_input(
-            BenchmarkId::new("h10", name),
-            &belief,
-            |b, belief| {
-                b.iter(|| {
-                    let config = WonhamConfig::default();
-                    let r = compute_gittins_index(
-                        black_box(belief),
-                        black_box(&feasibility),
-                        black_box(&transition),
-                        black_box(&policy.loss_matrix),
-                        black_box(&config),
-                    );
-                    black_box(r.unwrap());
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("h10", name), &belief, |b, belief| {
+            b.iter(|| {
+                let config = WonhamConfig::default();
+                let r = compute_gittins_index(
+                    black_box(belief),
+                    black_box(&feasibility),
+                    black_box(&transition),
+                    black_box(&policy.loss_matrix),
+                    black_box(&config),
+                );
+                black_box(r.unwrap());
+            })
+        });
 
         // Short horizon (3)
-        group.bench_with_input(
-            BenchmarkId::new("h3", name),
-            &belief,
-            |b, belief| {
-                b.iter(|| {
-                    let config = WonhamConfig {
-                        horizon: 3,
-                        ..WonhamConfig::default()
-                    };
-                    let r = compute_gittins_index(
-                        black_box(belief),
-                        black_box(&feasibility),
-                        black_box(&transition),
-                        black_box(&policy.loss_matrix),
-                        black_box(&config),
-                    );
-                    black_box(r.unwrap());
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("h3", name), &belief, |b, belief| {
+            b.iter(|| {
+                let config = WonhamConfig {
+                    horizon: 3,
+                    ..WonhamConfig::default()
+                };
+                let r = compute_gittins_index(
+                    black_box(belief),
+                    black_box(&feasibility),
+                    black_box(&transition),
+                    black_box(&policy.loss_matrix),
+                    black_box(&config),
+                );
+                black_box(r.unwrap());
+            })
+        });
     }
 
     group.finish();
@@ -268,21 +256,17 @@ fn bench_gittins_schedule(c: &mut Criterion) {
         let candidates = make_candidates(n);
         let config = WonhamConfig::default();
 
-        group.bench_with_input(
-            BenchmarkId::new("h10", n),
-            &candidates,
-            |b, candidates| {
-                b.iter(|| {
-                    let sched = compute_gittins_schedule(
-                        black_box(candidates),
-                        black_box(&config),
-                        black_box(&transition),
-                        black_box(&policy.loss_matrix),
-                    );
-                    black_box(sched.unwrap().allocations.len());
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("h10", n), &candidates, |b, candidates| {
+            b.iter(|| {
+                let sched = compute_gittins_schedule(
+                    black_box(candidates),
+                    black_box(&config),
+                    black_box(&transition),
+                    black_box(&policy.loss_matrix),
+                );
+                black_box(sched.unwrap().allocations.len());
+            })
+        });
     }
 
     // Short horizon for large candidate set
@@ -291,21 +275,17 @@ fn bench_gittins_schedule(c: &mut Criterion) {
         horizon: 3,
         ..WonhamConfig::default()
     };
-    group.bench_with_input(
-        BenchmarkId::new("h3", 50),
-        &candidates,
-        |b, candidates| {
-            b.iter(|| {
-                let sched = compute_gittins_schedule(
-                    black_box(candidates),
-                    black_box(&short_config),
-                    black_box(&transition),
-                    black_box(&policy.loss_matrix),
-                );
-                black_box(sched.unwrap().allocations.len());
-            })
-        },
-    );
+    group.bench_with_input(BenchmarkId::new("h3", 50), &candidates, |b, candidates| {
+        b.iter(|| {
+            let sched = compute_gittins_schedule(
+                black_box(candidates),
+                black_box(&short_config),
+                black_box(&transition),
+                black_box(&policy.loss_matrix),
+            );
+            black_box(sched.unwrap().allocations.len());
+        })
+    });
 
     group.finish();
 }
