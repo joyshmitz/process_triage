@@ -40,3 +40,20 @@ a.out
 # Dependency upgrade progress (in-progress work)
 UPGRADE_LOG.md
 claude-upgrade-progress.json
+
+# Profiling and benchmark data
+perf.data
+perf.data.*
+perf_*.data
+perf_*.data.*
+flamegraph*.svg
+
+# Local scratch DBs
+storage.sqlite3
+storage.sqlite3-*
+
+# Agent coordination config
+.agent-mail.yaml
+
+# Beads history snapshots
+.beads/.br_history/
