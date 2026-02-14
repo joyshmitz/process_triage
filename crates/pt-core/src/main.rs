@@ -33,6 +33,12 @@ use pt_core::fleet::ssh_scan::{scan_result_to_host_input, ssh_scan_fleet, SshSca
 use pt_core::inference::galaxy_brain::{
     render as render_galaxy_brain, GalaxyBrainConfig, MathMode, Verbosity,
 };
+use pt_core::learn::{
+    clear_progress as clear_learn_progress, find_tutorial, load_progress as load_learn_progress,
+    mark_completed as mark_tutorial_completed, next_tutorial as next_learn_tutorial,
+    save_progress as save_learn_progress, tutorials as learn_tutorials,
+    verify_tutorial as verify_learn_tutorial,
+};
 
 use pt_core::output::predictions::{
     apply_field_selection, CpuPrediction, MemoryPrediction, PredictionDiagnostics, PredictionField,
@@ -79,6 +85,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 #[cfg(feature = "ui")]
 use std::sync::Mutex;
+use std::time::Duration;
 
 /// Process Triage Core - Intelligent process classification and cleanup
 #[derive(Parser)]
@@ -316,6 +323,9 @@ enum Commands {
     /// Validate configuration and environment
     Check(CheckArgs),
 
+    /// Interactive tutorials and onboarding guidance
+    Learn(LearnArgs),
+
     /// Agent/robot subcommands for automated operation
     #[command(visible_alias = "robot")]
     Agent(AgentArgs),
@@ -344,6 +354,9 @@ enum Commands {
 
     /// MCP server for AI agent integration
     Mcp(McpArgs),
+
+    /// Generate shell completion scripts
+    Completions(CompletionsArgs),
 
     /// Print version information
     Version,
@@ -599,6 +612,49 @@ struct CheckArgs {
     /// Check all configuration
     #[arg(long)]
     all: bool,
+}
+
+#[derive(Args, Debug)]
+struct LearnArgs {
+    #[command(subcommand)]
+    command: Option<LearnCommands>,
+
+    /// Per-check verification budget in milliseconds
+    #[arg(long, default_value_t = 750)]
+    verify_budget_ms: u64,
+
+    /// Total verification budget in milliseconds
+    #[arg(long, default_value_t = 5000)]
+    total_budget_ms: u64,
+}
+
+#[derive(Subcommand, Debug)]
+enum LearnCommands {
+    /// List all tutorials with completion status
+    List,
+    /// Show one tutorial by id or slug (e.g., 01, first-run)
+    Show {
+        /// Tutorial identifier
+        topic: String,
+    },
+    /// Verify tutorial commands under strict runtime budgets
+    Verify {
+        /// Tutorial identifier (defaults to next incomplete tutorial)
+        topic: Option<String>,
+        /// Verify all tutorials
+        #[arg(long)]
+        all: bool,
+        /// Mark successfully verified tutorials as completed
+        #[arg(long)]
+        mark_complete: bool,
+    },
+    /// Mark a tutorial as completed manually
+    Complete {
+        /// Tutorial identifier
+        topic: String,
+    },
+    /// Reset all tutorial progress
+    Reset,
 }
 
 #[derive(Args, Debug)]
@@ -1681,6 +1737,13 @@ enum UpdateCommands {
     },
 }
 
+#[derive(Args, Debug)]
+struct CompletionsArgs {
+    /// Shell to generate completions for
+    #[arg(value_enum)]
+    shell: clap_complete::Shell,
+}
+
 use pt_core::log_event;
 use pt_core::logging::{
     event_names, init_logging, LogConfig, LogContext, LogFormat, LogLevel, Stage,
@@ -1756,6 +1819,7 @@ fn main() {
         Some(Commands::Bundle(args)) => run_bundle(&cli.global, &args),
         Some(Commands::Report(args)) => run_report(&cli.global, &args),
         Some(Commands::Check(args)) => run_check(&cli.global, &args),
+        Some(Commands::Learn(args)) => run_learn(&cli.global, &args),
         Some(Commands::Agent(args)) => run_agent(&cli.global, &args),
         Some(Commands::Config(args)) => run_config(&cli.global, &args),
         #[cfg(feature = "daemon")]
@@ -1768,6 +1832,15 @@ fn main() {
         Some(Commands::Schema(args)) => run_schema(&cli.global, &args),
         Some(Commands::Mcp(args)) => run_mcp(&args),
         Some(Commands::Update(args)) => run_update(&cli.global, &args),
+        Some(Commands::Completions(args)) => {
+            clap_complete::generate(
+                args.shell,
+                &mut Cli::command(),
+                "pt-core",
+                &mut std::io::stdout(),
+            );
+            ExitCode::Clean
+        }
         Some(Commands::Version) => {
             print_version(&cli.global);
             ExitCode::Clean
@@ -4076,6 +4149,430 @@ fn run_check(global: &GlobalOpts, args: &CheckArgs) -> ExitCode {
     } else {
         ExitCode::ArgsError
     }
+}
+
+fn run_learn(global: &GlobalOpts, args: &LearnArgs) -> ExitCode {
+    let config_dir = resolve_config_dir(global);
+    let catalog = learn_tutorials();
+
+    let mut progress_warning = None;
+    let mut progress = match load_learn_progress(&config_dir) {
+        Ok(progress) => progress,
+        Err(err) => {
+            progress_warning = Some(format!(
+                "Progress file corrupted or unreadable. Starting fresh. ({})",
+                err
+            ));
+            pt_core::learn::LearnProgress::default()
+        }
+    };
+
+    let save_if_needed =
+        |progress: &pt_core::learn::LearnProgress, reason: &str| -> Result<PathBuf, String> {
+            save_learn_progress(&config_dir, progress)
+                .map_err(|e| format!("failed to save learn progress after {}: {}", reason, e))
+        };
+
+    let (response, exit_code) = match &args.command {
+        None => {
+            let next = next_learn_tutorial(&progress, catalog);
+            let tutorials = catalog
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "id": t.id,
+                        "slug": t.slug,
+                        "title": t.title,
+                        "completed": progress.is_completed(t),
+                        "doc_path": t.doc_path,
+                    })
+                })
+                .collect::<Vec<_>>();
+            (
+                serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "learn_schema_version": pt_core::learn::LEARN_SCHEMA_VERSION,
+                    "status": "ok",
+                    "mode": "status",
+                    "config_dir": config_dir.display().to_string(),
+                    "progress": {
+                        "completed": progress.completed_count(),
+                        "total": catalog.len(),
+                        "ratio": progress.completion_ratio(catalog.len()),
+                    },
+                    "next_tutorial": next.map(|t| serde_json::json!({
+                        "id": t.id,
+                        "slug": t.slug,
+                        "title": t.title,
+                        "goal": t.goal,
+                        "doc_path": t.doc_path,
+                        "commands": t.commands,
+                    })),
+                    "tutorials": tutorials,
+                    "warning": progress_warning,
+                }),
+                ExitCode::Clean,
+            )
+        }
+        Some(LearnCommands::List) => {
+            let rows = catalog
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "id": t.id,
+                        "slug": t.slug,
+                        "title": t.title,
+                        "goal": t.goal,
+                        "doc_path": t.doc_path,
+                        "completed": progress.is_completed(t),
+                        "completed_at": progress.completed.get(t.id),
+                    })
+                })
+                .collect::<Vec<_>>();
+            (
+                serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "learn_schema_version": pt_core::learn::LEARN_SCHEMA_VERSION,
+                    "status": "ok",
+                    "mode": "list",
+                    "progress": {
+                        "completed": progress.completed_count(),
+                        "total": catalog.len(),
+                        "ratio": progress.completion_ratio(catalog.len()),
+                    },
+                    "tutorials": rows,
+                    "warning": progress_warning,
+                }),
+                ExitCode::Clean,
+            )
+        }
+        Some(LearnCommands::Show { topic }) => {
+            let tutorial = match find_tutorial(topic) {
+                Some(tutorial) => tutorial,
+                None => {
+                    return output_learn_error(
+                        global,
+                        "show",
+                        &format!("unknown tutorial '{}'", topic),
+                    );
+                }
+            };
+            tracing::info!(
+                target: "learn.exercise_start",
+                exercise_id = tutorial.id,
+                exercise_name = tutorial.title,
+                "Tutorial opened"
+            );
+            if !tutorial.hints.is_empty() {
+                tracing::debug!(
+                    target: "learn.hint_shown",
+                    exercise_id = tutorial.id,
+                    hint_number = 1,
+                    "Tutorial hint surfaced"
+                );
+            }
+            (
+                serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "learn_schema_version": pt_core::learn::LEARN_SCHEMA_VERSION,
+                    "status": "ok",
+                    "mode": "show",
+                    "tutorial": {
+                        "id": tutorial.id,
+                        "slug": tutorial.slug,
+                        "title": tutorial.title,
+                        "goal": tutorial.goal,
+                        "doc_path": tutorial.doc_path,
+                        "commands": tutorial.commands,
+                        "hints": tutorial.hints,
+                        "completed": progress.is_completed(tutorial),
+                        "completed_at": progress.completed.get(tutorial.id),
+                    },
+                    "warning": progress_warning,
+                }),
+                ExitCode::Clean,
+            )
+        }
+        Some(LearnCommands::Complete { topic }) => {
+            let tutorial = match find_tutorial(topic) {
+                Some(tutorial) => tutorial,
+                None => {
+                    return output_learn_error(
+                        global,
+                        "complete",
+                        &format!("unknown tutorial '{}'", topic),
+                    );
+                }
+            };
+            mark_tutorial_completed(&mut progress, tutorial);
+            let saved = match save_if_needed(&progress, "complete") {
+                Ok(path) => path,
+                Err(err) => {
+                    return output_learn_error(global, "complete", &err);
+                }
+            };
+            tracing::info!(
+                target: "learn.exercise_complete",
+                exercise_id = tutorial.id,
+                exercise_name = tutorial.title,
+                attempts = 1_u32,
+                duration_ms = 0_u32,
+                "Tutorial marked complete"
+            );
+            (
+                serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "learn_schema_version": pt_core::learn::LEARN_SCHEMA_VERSION,
+                    "status": "ok",
+                    "mode": "complete",
+                    "tutorial_id": tutorial.id,
+                    "tutorial_slug": tutorial.slug,
+                    "saved_path": saved.display().to_string(),
+                    "progress": {
+                        "completed": progress.completed_count(),
+                        "total": catalog.len(),
+                        "ratio": progress.completion_ratio(catalog.len()),
+                    },
+                }),
+                ExitCode::Clean,
+            )
+        }
+        Some(LearnCommands::Reset) => {
+            clear_learn_progress(&mut progress);
+            let saved = match save_if_needed(&progress, "reset") {
+                Ok(path) => path,
+                Err(err) => {
+                    return output_learn_error(global, "reset", &err);
+                }
+            };
+            (
+                serde_json::json!({
+                    "schema_version": SCHEMA_VERSION,
+                    "learn_schema_version": pt_core::learn::LEARN_SCHEMA_VERSION,
+                    "status": "ok",
+                    "mode": "reset",
+                    "saved_path": saved.display().to_string(),
+                    "progress": {
+                        "completed": 0,
+                        "total": catalog.len(),
+                        "ratio": 0.0,
+                    },
+                }),
+                ExitCode::Clean,
+            )
+        }
+        Some(LearnCommands::Verify {
+            topic,
+            all,
+            mark_complete,
+        }) => {
+            let targets = if *all {
+                catalog.iter().collect::<Vec<_>>()
+            } else if let Some(topic) = topic {
+                let Some(tutorial) = find_tutorial(topic) else {
+                    return output_learn_error(
+                        global,
+                        "verify",
+                        &format!("unknown tutorial '{}'", topic),
+                    );
+                };
+                vec![tutorial]
+            } else {
+                next_learn_tutorial(&progress, catalog)
+                    .map(|t| vec![t])
+                    .unwrap_or_default()
+            };
+
+            if targets.is_empty() {
+                (
+                    serde_json::json!({
+                        "schema_version": SCHEMA_VERSION,
+                        "learn_schema_version": pt_core::learn::LEARN_SCHEMA_VERSION,
+                        "status": "ok",
+                        "mode": "verify",
+                        "message": "all tutorials already completed",
+                    }),
+                    ExitCode::Clean,
+                )
+            } else {
+                let exe = match std::env::current_exe() {
+                    Ok(path) => path,
+                    Err(e) => {
+                        return output_learn_error(
+                            global,
+                            "verify",
+                            &format!("failed to locate current executable: {}", e),
+                        );
+                    }
+                };
+                let per_check_budget = Duration::from_millis(args.verify_budget_ms.max(1));
+                let total_budget = Duration::from_millis(args.total_budget_ms.max(1));
+                let per_tutorial_total = if *all {
+                    total_budget
+                        .checked_div(targets.len() as u32)
+                        .unwrap_or(total_budget)
+                } else {
+                    total_budget
+                };
+
+                let mut results = Vec::new();
+                let mut degraded = false;
+                let mut fallback_active = false;
+                let mut completed_now = Vec::new();
+
+                for tutorial in targets {
+                    tracing::info!(
+                        target: "learn.exercise_start",
+                        exercise_id = tutorial.id,
+                        exercise_name = tutorial.title,
+                        "Tutorial verification started"
+                    );
+                    let result =
+                        verify_learn_tutorial(&exe, tutorial, per_check_budget, per_tutorial_total);
+                    degraded |= result.status != "ok";
+                    fallback_active |= result.fallback_active;
+                    if result.status == "ok" && *mark_complete {
+                        mark_tutorial_completed(&mut progress, tutorial);
+                        completed_now.push(tutorial.id.to_string());
+                        tracing::info!(
+                            target: "learn.exercise_complete",
+                            exercise_id = tutorial.id,
+                            exercise_name = tutorial.title,
+                            attempts = 1_u32,
+                            duration_ms = result.total_duration_ms,
+                            "Tutorial verification completed"
+                        );
+                    }
+                    results.push(result);
+                }
+
+                let saved_path = if !completed_now.is_empty() {
+                    match save_if_needed(&progress, "verify") {
+                        Ok(path) => Some(path.display().to_string()),
+                        Err(err) => return output_learn_error(global, "verify", &err),
+                    }
+                } else {
+                    None
+                };
+
+                (
+                    serde_json::json!({
+                        "schema_version": SCHEMA_VERSION,
+                        "learn_schema_version": pt_core::learn::LEARN_SCHEMA_VERSION,
+                        "status": if degraded { "degraded" } else { "ok" },
+                        "mode": "verify",
+                        "fallback_active": fallback_active,
+                        "results": results,
+                        "completed_now": completed_now,
+                        "saved_path": saved_path,
+                        "progress": {
+                            "completed": progress.completed_count(),
+                            "total": catalog.len(),
+                            "ratio": progress.completion_ratio(catalog.len()),
+                        },
+                        "warning": progress_warning,
+                    }),
+                    if degraded {
+                        ExitCode::PartialFail
+                    } else {
+                        ExitCode::Clean
+                    },
+                )
+            }
+        }
+    };
+
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, response));
+        }
+        OutputFormat::Summary => {
+            let status = response
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let mode = response
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("status");
+            let completed = response
+                .get("progress")
+                .and_then(|v| v.get("completed"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let total = response
+                .get("progress")
+                .and_then(|v| v.get("total"))
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            println!(
+                "[learn:{}] {} ({}/{})",
+                mode,
+                status.to_uppercase(),
+                completed,
+                total
+            );
+        }
+        _ => {
+            let mode = response
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("status");
+            let status = response
+                .get("status")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            println!("# pt learn ({})", mode);
+            println!("Status: {}", status);
+            if let Some(progress) = response.get("progress") {
+                let completed = progress
+                    .get("completed")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0);
+                let total = progress.get("total").and_then(|v| v.as_u64()).unwrap_or(0);
+                println!("Progress: {}/{}", completed, total);
+            }
+            if let Some(next) = response.get("next_tutorial") {
+                if let Some(title) = next.get("title").and_then(|v| v.as_str()) {
+                    println!("Next: {}", title);
+                }
+                if let Some(doc_path) = next.get("doc_path").and_then(|v| v.as_str()) {
+                    println!("Doc: {}", doc_path);
+                }
+            }
+            if let Some(error) = response.get("error").and_then(|v| v.as_str()) {
+                println!("Error: {}", error);
+            }
+            if let Some(warning) = response.get("warning").and_then(|v| v.as_str()) {
+                println!("Warning: {}", warning);
+            }
+        }
+    }
+
+    exit_code
+}
+
+fn output_learn_error(global: &GlobalOpts, mode: &str, message: &str) -> ExitCode {
+    let payload = serde_json::json!({
+        "schema_version": SCHEMA_VERSION,
+        "status": "error",
+        "mode": mode,
+        "error": message,
+    });
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon => {
+            println!("{}", format_structured_output(global, payload));
+        }
+        OutputFormat::Summary => {
+            println!("[learn:{}] ERROR", mode);
+        }
+        _ => {
+            println!("# pt learn ({})", mode);
+            println!("Status: error");
+            println!("Error: {}", message);
+        }
+    }
+    ExitCode::ArgsError
 }
 
 fn run_agent(global: &GlobalOpts, args: &AgentArgs) -> ExitCode {
