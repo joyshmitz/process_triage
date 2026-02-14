@@ -515,6 +515,7 @@ fn beta_params_strategy() -> impl Strategy<Value = (f64, f64)> {
 }
 
 /// Strategy for Bernoulli observation sequences.
+#[allow(dead_code)]
 fn bernoulli_obs_strategy(len: usize) -> impl Strategy<Value = Vec<bool>> {
     prop::collection::vec(prop::bool::ANY, len..=len)
 }
@@ -652,7 +653,7 @@ proptest! {
         if let Ok(result) = glr_bernoulli(successes, n, p0, &config) {
             if let Some(mle) = result.mle_h1 {
                 prop_assert!(
-                    mle >= -1e-12 && mle <= 1.0 + 1e-12,
+                    (-1e-12..=1.0 + 1e-12).contains(&mle),
                     "GLR MLE should be in [0,1], got {}",
                     mle
                 );
@@ -2058,7 +2059,7 @@ proptest! {
     ) {
         let config = CriticalFileInflation::default();
         let base_file = make_test_critical_file(category, strength);
-        let one = config.compute_inflation(&[base_file.clone()]);
+        let one = config.compute_inflation(std::slice::from_ref(&base_file));
         let many: Vec<_> = (0..=extra).map(|_| base_file.clone()).collect();
         let more = config.compute_inflation(&many);
         prop_assert!(
@@ -2090,7 +2091,7 @@ proptest! {
     ) {
         let beta = BetaParams::new(alpha, beta_val);
         let p = expected_recovery(&beta);
-        prop_assert!(p >= -1e-12 && p <= 1.0 + 1e-12,
+        prop_assert!((-1e-12..=1.0 + 1e-12).contains(&p),
             "expected_recovery {} out of [0,1] for α={}, β={}", p, alpha, beta_val);
         prop_assert!(p.is_finite(), "expected_recovery not finite");
     }
@@ -2804,7 +2805,7 @@ proptest! {
     #[test]
     fn mem_pressure_utilization_bounded(signals in memory_signals_strategy()) {
         let util = signals.utilization();
-        prop_assert!(util >= 0.0 && util <= 1.0,
+        prop_assert!((0.0..=1.0).contains(&util),
             "utilization {} outside [0,1]", util);
     }
 
@@ -2812,7 +2813,7 @@ proptest! {
     #[test]
     fn mem_pressure_swap_utilization_bounded(signals in memory_signals_strategy()) {
         let swap = signals.swap_utilization();
-        prop_assert!(swap >= 0.0 && swap <= 1.0,
+        prop_assert!((0.0..=1.0).contains(&swap),
             "swap utilization {} outside [0,1]", swap);
         if signals.swap_total_bytes == 0 {
             prop_assert_eq!(swap, 0.0);

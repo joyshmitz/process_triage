@@ -130,8 +130,9 @@ pub use ppc::{
     PpcEvidence, PpcResult, StatisticCheck, TestStatistic,
 };
 pub use prior_override::{
-    compute_posterior_with_overrides, resolve_priors, AppliedOverrides, OverriddenPrior,
-    PriorContext, PriorSource, PriorSourceInfo, ResolvedPriors, UserPriorOverrides,
+    compute_posterior_with_overrides, resolve_priors, AppliedOverrides, CategoryPriorDefaults,
+    OverriddenPrior, PriorContext, PriorSource, PriorSourceInfo, ResolvedPriors,
+    UserPriorOverrides,
 };
 pub use robust::{
     best_case_expected_loss, minimax_expected_loss_gate, select_eta_prequential,

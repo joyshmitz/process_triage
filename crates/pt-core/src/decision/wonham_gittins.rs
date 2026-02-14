@@ -1037,8 +1037,8 @@ mod tests {
     fn mat_mul_identity() {
         let id = {
             let mut m = [[0.0; NUM_STATES]; NUM_STATES];
-            for i in 0..NUM_STATES {
-                m[i][i] = 1.0;
+            for (i, row) in m.iter_mut().enumerate() {
+                row[i] = 1.0;
             }
             m
         };

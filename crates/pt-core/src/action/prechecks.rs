@@ -998,8 +998,7 @@ mod tests {
         let (check, reason) = match blocked {
             PreCheckResult::Blocked { check, reason } => (check, reason),
             _ => {
-                assert!(false, "expected Blocked");
-                return;
+                panic!("expected Blocked");
             }
         };
         assert!(matches!(check, PreCheck::CheckDataLossGate));
@@ -1596,8 +1595,18 @@ mod tests {
         fn live_provider_check_process_state_self() {
             let provider = LivePreCheckProvider::with_defaults();
             let pid = std::process::id();
-            // Our own process should pass state checks
-            assert!(provider.check_process_state(pid).is_passed());
+            // Our own process should pass state checks. Retry a few times because
+            // the process can transiently enter D-state (uninterruptible sleep)
+            // while performing the /proc read itself under heavy I/O load.
+            let mut passed = false;
+            for _ in 0..5 {
+                if provider.check_process_state(pid).is_passed() {
+                    passed = true;
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            assert!(passed, "process state check did not pass after retries");
         }
 
         #[test]

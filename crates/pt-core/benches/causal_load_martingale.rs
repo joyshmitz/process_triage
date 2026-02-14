@@ -434,7 +434,7 @@ fn bench_apply_martingale_gates(c: &mut Criterion) {
         let candidates: Vec<MartingaleGateCandidate> = (0..n)
             .map(|i| MartingaleGateCandidate {
                 target: TargetIdentity {
-                    pid: i as i32,
+                    pid: i,
                     start_id: format!("{i}-start-boot0"),
                     uid: 1000,
                 },

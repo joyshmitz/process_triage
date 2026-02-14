@@ -10827,6 +10827,7 @@ fn run_agent_plan(global: &GlobalOpts, args: &AgentPlanArgs) -> ExitCode {
         let prior_context = PriorContext {
             global_priors: &priors,
             signature_match: signature_match.as_ref(),
+            category_defaults: None,
             user_overrides: None,
         };
 

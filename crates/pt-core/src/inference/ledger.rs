@@ -256,8 +256,45 @@ pub fn build_process_explanation(proc: &ProcessRecord, priors: &Priors) -> serde
         Confidence::Low
     };
 
-    // 4. Calculate Bayes Factors (simplified for now)
-    let bfs: Vec<BayesFactorEntry> = vec![]; // TODO: Implement per-feature BF calculation
+    // 4. Calculate per-feature Bayes Factors (Abandoned vs Useful)
+    let mut bfs: Vec<BayesFactorEntry> = Vec::new();
+    for term in &result.evidence_terms {
+        let log_bf = term.log_likelihood.abandoned - term.log_likelihood.useful;
+        if log_bf.abs() < 0.01 {
+            continue;
+        }
+        let bf = log_bf.exp();
+        let delta_bits = log_bf / std::f64::consts::LN_2;
+        let direction = if log_bf > 0.0 {
+            "supports abandoned".to_string()
+        } else {
+            "supports useful".to_string()
+        };
+        let abs_bits = delta_bits.abs();
+        let strength = if abs_bits > 3.3 {
+            "decisive".to_string()
+        } else if abs_bits > 2.0 {
+            "strong".to_string()
+        } else if abs_bits > 1.0 {
+            "substantial".to_string()
+        } else {
+            "weak".to_string()
+        };
+        bfs.push(BayesFactorEntry {
+            feature: term.feature.clone(),
+            bf,
+            log_bf,
+            delta_bits,
+            direction,
+            strength,
+        });
+    }
+    bfs.sort_by(|a, b| {
+        b.delta_bits
+            .abs()
+            .partial_cmp(&a.delta_bits.abs())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // 5. Generate summary
     let summary = format!(

@@ -1372,6 +1372,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::field_reassign_with_default)]
     fn test_transition_uses_full_posterior_mass() {
         let mut config = HsmmConfig::default();
         config.initial_probs = [0.51, 0.0, 0.49, 0.0];

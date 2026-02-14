@@ -9,9 +9,12 @@
 //! 3. **Category** - Supervisor category-level defaults (future)
 //! 4. **Global** - Default priors from config
 
+use std::collections::HashMap;
+
 use crate::config::priors::BetaParams;
 use crate::config::priors::Priors;
 use crate::supervision::signature::{MatchLevel, SignatureMatch, SignaturePriors};
+use crate::supervision::SupervisorCategory;
 use serde::Serialize;
 
 /// Source of a prior value in the override hierarchy.
@@ -150,12 +153,49 @@ impl OverriddenPrior {
     }
 }
 
+/// Per-category default prior overrides.
+///
+/// Maps supervisor categories to their default prior probabilities.
+/// Applied when a signature matches (providing category information)
+/// but the specific signature does not define its own priors.
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct CategoryPriorDefaults {
+    /// Map from supervisor category to default priors for that category.
+    pub defaults: HashMap<SupervisorCategory, SignaturePriors>,
+}
+
+impl CategoryPriorDefaults {
+    /// Create an empty set of category defaults.
+    pub fn new() -> Self {
+        Self {
+            defaults: HashMap::new(),
+        }
+    }
+
+    /// Set default priors for a category.
+    pub fn set(&mut self, category: SupervisorCategory, priors: SignaturePriors) {
+        self.defaults.insert(category, priors);
+    }
+
+    /// Get default priors for a category, if any.
+    pub fn get(&self, category: &SupervisorCategory) -> Option<&SignaturePriors> {
+        self.defaults.get(category)
+    }
+
+    /// Returns true if any category defaults are configured.
+    pub fn is_empty(&self) -> bool {
+        self.defaults.is_empty()
+    }
+}
+
 /// Context for resolving priors with override hierarchy.
 pub struct PriorContext<'a> {
     /// Global priors from configuration.
     pub global_priors: &'a Priors,
     /// Optional signature match for this process.
     pub signature_match: Option<&'a SignatureMatch<'a>>,
+    /// Optional category-level default priors.
+    pub category_defaults: Option<&'a CategoryPriorDefaults>,
     /// Optional user-defined overrides.
     pub user_overrides: Option<&'a UserPriorOverrides>,
 }
@@ -271,12 +311,38 @@ fn match_level_to_string(level: &MatchLevel) -> String {
 /// Priority order (highest to lowest):
 /// 1. User overrides
 /// 2. Signature-specific priors
-/// 3. Category defaults (TODO: not yet implemented)
+/// 3. Category defaults
 /// 4. Global priors
 pub fn resolve_priors(context: &PriorContext<'_>) -> ResolvedPriors {
     // Start with a clone of global priors
     let mut priors = context.global_priors.clone();
     let mut source_info = PriorSourceInfo::default();
+
+    // Apply category defaults if a signature match provides category info
+    // but the signature itself doesn't have specific priors.
+    if let Some(sig_match) = context.signature_match {
+        if let Some(cat_defaults) = context.category_defaults {
+            let sig_priors = &sig_match.signature.priors;
+            // Only apply category defaults when the signature lacks its own priors
+            if sig_priors.is_empty() {
+                if let Some(cat_priors) = cat_defaults.get(&sig_match.signature.category) {
+                    if !cat_priors.is_empty() {
+                        let overrides = apply_signature_priors(&mut priors, cat_priors);
+                        if overrides.has_any() {
+                            source_info = PriorSourceInfo {
+                                source: PriorSource::Category,
+                                signature_name: None,
+                                match_level: Some(match_level_to_string(&sig_match.level)),
+                                match_score: Some(sig_match.score),
+                                category: Some(format!("{:?}", sig_match.signature.category)),
+                                applied_overrides: Some(overrides),
+                            };
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // Apply signature priors if available (check if priors are not empty)
     if let Some(sig_match) = context.signature_match {
@@ -369,6 +435,7 @@ mod tests {
         let context = PriorContext {
             global_priors: &global,
             signature_match: None,
+            category_defaults: None,
             user_overrides: None,
         };
 
@@ -401,6 +468,7 @@ mod tests {
         let context = PriorContext {
             global_priors: &global,
             signature_match: Some(&sig_match),
+            category_defaults: None,
             user_overrides: None,
         };
 
@@ -456,6 +524,7 @@ mod tests {
         let context = PriorContext {
             global_priors: &global,
             signature_match: Some(&sig_match),
+            category_defaults: None,
             user_overrides: Some(&user_overrides),
         };
 
@@ -514,11 +583,118 @@ mod tests {
         let context = PriorContext {
             global_priors: &global,
             signature_match: Some(&sig_match),
+            category_defaults: None,
             user_overrides: None,
         };
 
         let resolved = resolve_priors(&context);
         // Should still be Global since no priors were overridden
+        assert_eq!(resolved.source_info.source, PriorSource::Global);
+    }
+
+    #[test]
+    fn test_category_defaults_applied_when_signature_has_no_priors() {
+        let global = default_priors();
+
+        // Signature with NO priors but with Agent category
+        let signature = make_test_signature(
+            "no-priors-agent",
+            SupervisorCategory::Agent,
+            SignaturePriors::default(),
+        );
+
+        let details = MatchDetails::default();
+        let sig_match = SignatureMatch::new(&signature, MatchLevel::CommandOnly, details);
+
+        // Set category defaults for Agent category
+        let mut cat_defaults = CategoryPriorDefaults::new();
+        cat_defaults.set(
+            SupervisorCategory::Agent,
+            SignaturePriors {
+                abandoned: Some(BetaParams::new(6.0, 4.0)), // mean 0.6
+                useful: None,
+                useful_bad: None,
+                zombie: None,
+            },
+        );
+
+        let context = PriorContext {
+            global_priors: &global,
+            signature_match: Some(&sig_match),
+            category_defaults: Some(&cat_defaults),
+            user_overrides: None,
+        };
+
+        let resolved = resolve_priors(&context);
+        assert_eq!(resolved.source_info.source, PriorSource::Category);
+        assert_eq!(resolved.source_info.category, Some("Agent".to_string()));
+
+        let overrides = resolved.source_info.applied_overrides.unwrap();
+        assert!(overrides.abandoned.is_some());
+        assert!(overrides.useful.is_none());
+    }
+
+    #[test]
+    fn test_signature_priors_override_category_defaults() {
+        let global = default_priors();
+
+        // Signature WITH its own priors
+        let signature = make_test_signature(
+            "sig-with-priors",
+            SupervisorCategory::Agent,
+            SignaturePriors {
+                useful: Some(BetaParams::new(9.0, 1.0)),
+                ..Default::default()
+            },
+        );
+
+        let details = MatchDetails::default();
+        let sig_match = SignatureMatch::new(&signature, MatchLevel::CommandOnly, details);
+
+        // Category defaults exist but should NOT be used
+        let mut cat_defaults = CategoryPriorDefaults::new();
+        cat_defaults.set(
+            SupervisorCategory::Agent,
+            SignaturePriors {
+                abandoned: Some(BetaParams::new(6.0, 4.0)),
+                ..Default::default()
+            },
+        );
+
+        let context = PriorContext {
+            global_priors: &global,
+            signature_match: Some(&sig_match),
+            category_defaults: Some(&cat_defaults),
+            user_overrides: None,
+        };
+
+        let resolved = resolve_priors(&context);
+        // Signature priors take precedence over category defaults
+        assert_eq!(resolved.source_info.source, PriorSource::Signature);
+    }
+
+    #[test]
+    fn test_category_defaults_not_applied_without_signature_match() {
+        let global = default_priors();
+
+        let mut cat_defaults = CategoryPriorDefaults::new();
+        cat_defaults.set(
+            SupervisorCategory::Agent,
+            SignaturePriors {
+                abandoned: Some(BetaParams::new(6.0, 4.0)),
+                ..Default::default()
+            },
+        );
+
+        let context = PriorContext {
+            global_priors: &global,
+            signature_match: None,
+            category_defaults: Some(&cat_defaults),
+            user_overrides: None,
+        };
+
+        let resolved = resolve_priors(&context);
+        // Without a signature match, category defaults can't be applied
         assert_eq!(resolved.source_info.source, PriorSource::Global);
     }
 }

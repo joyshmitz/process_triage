@@ -929,6 +929,62 @@ impl LiveRequirementChecker {
         let rest = content.get(after_comm..)?.trim_start();
         rest.chars().next()
     }
+
+    /// Check if a process is supervised by systemd by inspecting its cgroup.
+    fn check_systemd_supervised(&self, pid: u32) -> bool {
+        let cgroup_path = format!("/proc/{}/cgroup", pid);
+        let content = match std::fs::read_to_string(&cgroup_path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        // Look for .service or .scope units (not .slice which isn't real supervision)
+        content
+            .lines()
+            .any(|line| line.contains(".service") || line.contains(".scope"))
+    }
+
+    /// Check if a process is supervised by Docker by inspecting its cgroup.
+    fn check_docker_supervised(&self, pid: u32) -> bool {
+        let cgroup_path = format!("/proc/{}/cgroup", pid);
+        let content = match std::fs::read_to_string(&cgroup_path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        content.lines().any(|line| line.contains("/docker/"))
+    }
+
+    /// Check if a process is supervised by pm2 by inspecting its parent comm.
+    fn check_pm2_supervised(&self, pid: u32) -> bool {
+        let stat_path = format!("/proc/{}/stat", pid);
+        let content = match std::fs::read_to_string(&stat_path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        // Get PPID (field 4 after comm)
+        let comm_end = match content.rfind(')') {
+            Some(i) => i,
+            None => return false,
+        };
+        let after_comm = match content.get(comm_end + 2..) {
+            Some(s) => s,
+            None => return false,
+        };
+        let ppid: u32 = match after_comm.split_whitespace().nth(1) {
+            Some(s) => match s.parse() {
+                Ok(v) => v,
+                Err(_) => return false,
+            },
+            None => return false,
+        };
+        // Read parent's comm and check for pm2
+        let parent_comm_path = format!("/proc/{}/comm", ppid);
+        std::fs::read_to_string(&parent_comm_path)
+            .map(|c| {
+                let trimmed = c.trim();
+                trimmed == "pm2" || trimmed.starts_with("PM2")
+            })
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -937,9 +993,9 @@ impl RequirementChecker for LiveRequirementChecker {
         RequirementContext {
             sudo_available: self.check_sudo_available(),
             process_exists: self.check_process_exists(pid),
-            systemd_supervised: false, // TODO: integrate with supervision detection
-            docker_supervised: false,  // TODO: integrate with supervision detection
-            pm2_supervised: false,     // TODO: integrate with supervision detection
+            systemd_supervised: self.check_systemd_supervised(pid),
+            docker_supervised: self.check_docker_supervised(pid),
+            pm2_supervised: self.check_pm2_supervised(pid),
             in_d_state: self.check_in_d_state(pid),
             retry_budget: 3, // Default budget
             user_confirmation_available: false,

@@ -18,7 +18,7 @@ proptest! {
     #[test]
     fn database_default_non_empty(_dummy in 0u8..1) {
         let db = SignatureDatabase::with_defaults();
-        prop_assert!(db.len() > 0, "default database should have built-in signatures");
+        prop_assert!(!db.is_empty(), "default database should have built-in signatures");
     }
 
     /// match_process never panics for arbitrary comm strings.
@@ -139,7 +139,7 @@ proptest! {
             stats.record_match(false);
         }
         if let Some(rate) = stats.acceptance_rate() {
-            prop_assert!(rate >= 0.0 && rate <= 1.0,
+            prop_assert!((0.0..=1.0).contains(&rate),
                 "acceptance rate {} out of [0,1]", rate);
         }
     }
