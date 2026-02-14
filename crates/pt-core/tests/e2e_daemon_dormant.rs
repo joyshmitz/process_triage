@@ -101,6 +101,27 @@ fn start_daemon_foreground(config_dir: &Path, data_dir: &Path) -> Child {
     cmd.spawn().expect("spawn daemon")
 }
 
+fn run_daemon_cli(
+    config_dir: &Path,
+    data_dir: &Path,
+    daemon_args: &[&str],
+) -> std::process::Output {
+    let exe = assert_cmd::cargo::cargo_bin!("pt-core");
+    let mut cmd = Command::new(exe);
+    cmd.arg("--format")
+        .arg("json")
+        .arg("--config")
+        .arg(config_dir)
+        .env("PROCESS_TRIAGE_DATA", data_dir)
+        .env("PROCESS_TRIAGE_CONFIG", config_dir)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    cmd.args(daemon_args);
+    cmd.output().expect("run pt-core daemon command")
+}
+
 fn send_signal(child: &Child, signal: i32) {
     let pid = child.id() as i32;
     let rc = unsafe { libc::kill(pid, signal) };
@@ -208,6 +229,56 @@ fn daemon_start_fails_when_pid_lock_is_held() {
     assert!(
         !daemon_pid_path(data_dir.path()).exists(),
         "daemon pid file should not be written when pid lock acquisition fails"
+    );
+}
+
+#[test]
+fn daemon_background_start_reports_lock_error_when_pid_lock_is_held() {
+    let data_dir = TempDir::new().expect("temp data dir");
+    let config_dir = TempDir::new().expect("temp config dir");
+
+    write_daemon_json_config(
+        config_dir.path(),
+        r#"{
+  "tick_interval_secs": 30,
+  "max_cpu_percent": 1000.0,
+  "max_rss_mb": 4096,
+  "triggers": {
+    "ewma_alpha": 0.3,
+    "load_threshold": 9999.0,
+    "memory_threshold": 9999.0,
+    "orphan_threshold": 9999999,
+    "sustained_ticks": 1,
+    "cooldown_ticks": 10
+  },
+  "escalation": {
+    "min_interval_secs": 0,
+    "allow_auto_mitigation": false,
+    "max_deep_scan_targets": 1
+  },
+  "notifications": {
+    "enabled": false,
+    "desktop": false,
+    "notify_cmd": null,
+    "notify_arg": []
+  }
+}"#,
+    );
+
+    let _pid_lock = acquire_daemon_pid_lock(data_dir.path());
+    let output = run_daemon_cli(config_dir.path(), data_dir.path(), &["daemon", "start"]);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // ExitCode::LockError == 14.
+    assert_eq!(
+        output.status.code(),
+        Some(14),
+        "background daemon start should surface lock contention (stdout={stdout:?}, stderr={stderr:?})"
+    );
+    assert!(
+        !daemon_pid_path(data_dir.path()).exists(),
+        "background start should not leave daemon pid file when pid lock is held"
     );
 }
 
