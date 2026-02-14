@@ -339,11 +339,18 @@ pub fn build_process_explanation(proc: &ProcessRecord, priors: &Priors) -> serde
 }
 
 fn evidence_to_json(evidence: &crate::inference::Evidence) -> serde_json::Value {
+    let cpu = match &evidence.cpu {
+        Some(crate::inference::CpuEvidence::Fraction { occupancy }) => {
+            serde_json::json!({ "type": "fraction", "occupancy": occupancy })
+        }
+        Some(crate::inference::CpuEvidence::Binomial { k, n, eta }) => {
+            serde_json::json!({ "type": "binomial", "k": k, "n": n, "eta": eta })
+        }
+        None => serde_json::Value::Null,
+    };
+
     serde_json::json!({
-        "cpu_occupancy": match evidence.cpu {
-            Some(crate::inference::CpuEvidence::Fraction { occupancy }) => Some(occupancy),
-            _ => None
-        },
+        "cpu": cpu,
         "runtime_seconds": evidence.runtime_seconds,
         "orphan": evidence.orphan,
         "tty": evidence.tty,
