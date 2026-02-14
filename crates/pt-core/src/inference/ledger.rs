@@ -202,14 +202,14 @@ pub struct FeatureGlyph {
 
 pub fn get_glyph(feature: &str) -> char {
     match feature {
-        "prior" => '\u{1F3B2}',           // dice - prior probability
-        "cpu" => '\u{1F4BB}',             // laptop - CPU activity
-        "runtime" => '\u{23F1}',          // stopwatch - process age
-        "orphan" => '\u{1F47B}',          // ghost - orphaned process
-        "tty" => '\u{1F5A5}',            // desktop computer - terminal
-        "net" => '\u{1F310}',             // globe - network activity
-        "io_active" => '\u{1F4BE}',       // floppy - I/O activity
-        "state_flag" => '\u{1F6A9}',      // flag - process state
+        "prior" => '\u{1F3B2}',            // dice - prior probability
+        "cpu" => '\u{1F4BB}',              // laptop - CPU activity
+        "runtime" => '\u{23F1}',           // stopwatch - process age
+        "orphan" => '\u{1F47B}',           // ghost - orphaned process
+        "tty" => '\u{1F5A5}',              // desktop computer - terminal
+        "net" => '\u{1F310}',              // globe - network activity
+        "io_active" => '\u{1F4BE}',        // floppy - I/O activity
+        "state_flag" => '\u{1F6A9}',       // flag - process state
         "command_category" => '\u{1F3F7}', // label - command type
         "signature_match" => '\u{1F50D}',  // magnifying glass
         "fast_path" => '\u{26A1}',         // lightning bolt
@@ -219,11 +219,22 @@ pub fn get_glyph(feature: &str) -> char {
 
 pub fn default_glyph_map() -> std::collections::HashMap<String, char> {
     let features = [
-        "prior", "cpu", "runtime", "orphan", "tty",
-        "net", "io_active", "state_flag", "command_category",
-        "signature_match", "fast_path",
+        "prior",
+        "cpu",
+        "runtime",
+        "orphan",
+        "tty",
+        "net",
+        "io_active",
+        "state_flag",
+        "command_category",
+        "signature_match",
+        "fast_path",
     ];
-    features.iter().map(|f| (f.to_string(), get_glyph(f))).collect()
+    features
+        .iter()
+        .map(|f| (f.to_string(), get_glyph(f)))
+        .collect()
 }
 
 pub fn build_process_explanation(proc: &ProcessRecord, priors: &Priors) -> serde_json::Value {
