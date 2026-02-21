@@ -3,7 +3,7 @@
 # install.sh - Process Triage (pt) Installer
 #
 # One-liner installation:
-#   curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/main/install.sh | bash
 #
 # Environment variables:
 #   DEST        - Custom install directory (default: ~/.local/bin)
@@ -20,7 +20,7 @@
 set -euo pipefail
 
 readonly GITHUB_REPO="Dicklesworthstone/process_triage"
-readonly RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/master"
+readonly RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPO}/main"
 readonly RELEASES_URL="https://github.com/${GITHUB_REPO}/releases"
 # Populated in release artifacts to pin the expected release-signing key.
 readonly DEFAULT_RELEASE_PUBLIC_KEY_FINGERPRINT=""
@@ -839,7 +839,7 @@ main() {
     local downloaded_wrapper=false
     local release_url="${RELEASES_URL}/download/v${version}/pt"
     local tag_url="https://raw.githubusercontent.com/${GITHUB_REPO}/v${version}/pt"
-    local master_url="${RAW_URL}/pt"
+    local main_url="${RAW_URL}/pt"
 
     download_url=$(append_cache_buster "$release_url")
     if download "$download_url" "$temp_dir/pt"; then
@@ -854,12 +854,12 @@ main() {
     if [[ "$downloaded_wrapper" != "true" ]]; then
         if [[ "${VERIFY:-}" == "1" ]]; then
             log_error "Failed to download pt wrapper from release or tag with VERIFY=1."
-            log_error "Refusing insecure fallback to master while verification is enabled."
+            log_error "Refusing insecure fallback to main while verification is enabled."
             exit 1
         else
-            log_warn "Falling back to master pt wrapper (unverified)."
+            log_warn "Falling back to main pt wrapper (unverified)."
         fi
-        download_url=$(append_cache_buster "$master_url")
+        download_url=$(append_cache_buster "$main_url")
         download "$download_url" "$temp_dir/pt" || {
             log_error "Failed to download pt wrapper"
             exit 1

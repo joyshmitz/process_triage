@@ -25,7 +25,7 @@
 ## Quick Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/main/install.sh | bash
 ```
 
 This installs:
@@ -60,18 +60,18 @@ git clone https://github.com/Dicklesworthstone/process_triage.git
 ln -s "$(pwd)/process_triage/pt" ~/.local/bin/pt
 
 # Or install to system-wide location
-PT_SYSTEM=1 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+PT_SYSTEM=1 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/main/install.sh | bash
 
 # Verify signatures + checksums (fail-closed on missing/invalid metadata)
-VERIFY=1 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+VERIFY=1 curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/main/install.sh | bash
 
 # Optional: pin expected release-key fingerprint (from release-signing-public.pem.sha256)
 PT_RELEASE_PUBLIC_KEY_FINGERPRINT=<64-hex-sha256> VERIFY=1 \
-  curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/main/install.sh | bash
 
 # Optional: pin a local trusted release key file instead of downloading it
 PT_RELEASE_PUBLIC_KEY_FILE=/path/to/release-signing-public.pem VERIFY=1 \
-  curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/main/install.sh | bash
 ```
 
 **Platforms supported:**
@@ -542,7 +542,7 @@ The Rust binary may not have installed correctly:
 
 ```bash
 # Re-run installer
-curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Dicklesworthstone/process_triage/main/install.sh | bash
 
 # Check installation
 ls -la ~/.local/bin/pt-core

@@ -146,7 +146,7 @@ set -euo pipefail
 url="${@: -1}"
 printf '%s\n' "$url" >> "$PT_CURL_LOG"
 
-if [[ "$url" == *"/master/VERSION" ]]; then
+if [[ "$url" == *"/main/VERSION" ]]; then
   echo "9.9.9"
   exit 0
 fi
@@ -176,7 +176,7 @@ EOF
         "$PT_SCRIPT" update
 
     [ "$status" -eq 0 ]
-    grep -q '/master/VERSION' "$curl_log"
+    grep -q '/main/VERSION' "$curl_log"
     grep -q '/v9.9.9/install.sh' "$curl_log"
 }
 
@@ -191,7 +191,7 @@ set -euo pipefail
 url="${@: -1}"
 printf '%s\n' "$url" >> "$PT_CURL_LOG"
 
-if [[ "$url" == *"/master/VERSION" ]]; then
+if [[ "$url" == *"/main/VERSION" ]]; then
   echo "9.9.9;injected"
   exit 0
 fi
@@ -223,7 +223,9 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" == *"Warning: could not resolve latest VERSION; falling back to v2.0.3 installer."* ]]
     [[ "$output" == *"Updating Process Triage to v2.0.3..."* ]]
-    grep -q '/master/VERSION' "$curl_log"
+    grep -q '/main/VERSION' "$curl_log"
     grep -q '/v2.0.3/install.sh' "$curl_log"
-    ! grep -q '/v9.9.9;injected/install.sh' "$curl_log"
+    if grep -q '/v9.9.9;injected/install.sh' "$curl_log"; then
+        fail "unexpected injected installer URL should never be requested"
+    fi
 }

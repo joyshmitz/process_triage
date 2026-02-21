@@ -15,7 +15,7 @@ readonly VERSION="2.0.3"
 
 readonly PT_CORE_BIN="pt-core"
 readonly INSTALL_BASE_URL="https://raw.githubusercontent.com/Dicklesworthstone/process_triage"
-readonly INSTALL_URL="${INSTALL_BASE_URL}/master/install.sh"
+readonly INSTALL_URL="${INSTALL_BASE_URL}/main/install.sh"
 # Populated in release artifacts to pin expected installer signing key.
 readonly DEFAULT_RELEASE_PUBLIC_KEY_FINGERPRINT=""
 
@@ -59,7 +59,7 @@ find_pt_core() {
 }
 
 fetch_latest_release_version() {
-    local version_url="${INSTALL_BASE_URL}/master/VERSION"
+    local version_url="${INSTALL_BASE_URL}/main/VERSION"
     local version=""
 
     if command -v curl &>/dev/null; then
