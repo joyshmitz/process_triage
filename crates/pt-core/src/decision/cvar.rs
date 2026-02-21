@@ -170,10 +170,8 @@ fn compute_discrete_cvar(sorted: &[(f64, f64)], tail_prob: f64) -> (f64, f64) {
         let remaining = tail_prob - accumulated_prob;
         let contrib_prob = prob.min(remaining);
 
-        // Update VaR: the first loss value that enters the tail
-        if accumulated_prob == 0.0 {
-            var = *loss;
-        }
+        // Update VaR: the lowest loss value that is part of the worst 1-α tail
+        var = *loss;
 
         weighted_sum += loss * contrib_prob;
         accumulated_prob += prob;

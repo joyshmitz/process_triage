@@ -188,7 +188,7 @@ impl AlphaInvestingStore {
                 .truncate(true)
                 .open(&tmp_path)?;
             file.write_all(&json)?;
-            file.flush()?;
+            file.sync_all()?;
         }
         fs::rename(tmp_path, &self.state_path)?;
         Ok(())
