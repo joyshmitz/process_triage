@@ -1,7 +1,7 @@
 //! E2E tests for `agent diff` and `query` subcommands.
 //!
 //! `agent diff` compares candidates between two sessions (plan.json).
-//! `query` is currently a stub (returns success with a stub message).
+//! `query sessions` lists persisted sessions; other query subcommands are stubs.
 
 use assert_cmd::cargo::cargo_bin_cmd;
 use assert_cmd::Command;
@@ -445,21 +445,49 @@ fn diff_empty_candidates() {
 }
 
 // ============================================================================
-// query tests (stub implementation)
+// query tests (sessions implemented; actions/telemetry remain stubs)
 // ============================================================================
 
 #[test]
 fn query_returns_success() {
-    // query is a stub but should return Clean exit code
+    // Root query command still returns a guidance stub and should stay successful.
     pt_core_fast().args(["query"]).assert().success();
 }
 
 #[test]
 fn query_sessions_subcommand() {
-    pt_core_fast()
-        .args(["query", "sessions"])
-        .assert()
-        .success();
+    with_temp_data_dir(|dir| {
+        let created = create_session_with_candidates(
+            dir,
+            &[make_candidate(9001, "abandoned", "terminate", 0.92)],
+            "2026-01-01T00:00:00Z",
+        );
+
+        let output = pt_core_fast()
+            .env("PROCESS_TRIAGE_DATA", dir.path())
+            .args(["--format", "json", "query", "sessions", "--limit", "10"])
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+
+        let json: Value = serde_json::from_slice(&output).expect("valid JSON");
+        assert_eq!(json["status"].as_str(), Some("ok"));
+        assert_eq!(json["query"].as_str(), Some("sessions"));
+        assert!(
+            json["sessions"].as_array().is_some(),
+            "sessions field should be an array"
+        );
+
+        let found = json["sessions"].as_array().unwrap().iter().any(|session| {
+            session["session_id"]
+                .as_str()
+                .map(|id| id == created.0.as_str())
+                .unwrap_or(false)
+        });
+        assert!(found, "expected created session to appear in query output");
+    });
 }
 
 #[test]

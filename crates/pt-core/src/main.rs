@@ -3383,8 +3383,141 @@ fn run_deep_scan(global: &GlobalOpts, _args: &DeepScanArgs) -> ExitCode {
     ExitCode::Clean
 }
 
-fn run_query(global: &GlobalOpts, _args: &QueryArgs) -> ExitCode {
-    output_stub(global, "query", "Query mode not yet implemented");
+fn run_query(global: &GlobalOpts, args: &QueryArgs) -> ExitCode {
+    match &args.command {
+        Some(QueryCommands::Sessions { limit }) => run_query_sessions(global, *limit),
+        Some(QueryCommands::Actions { .. }) => {
+            output_stub(
+                global,
+                "query actions",
+                "Query actions mode not yet implemented",
+            );
+            ExitCode::Clean
+        }
+        Some(QueryCommands::Telemetry { .. }) => {
+            output_stub(
+                global,
+                "query telemetry",
+                "Query telemetry mode not yet implemented",
+            );
+            ExitCode::Clean
+        }
+        None => {
+            if let Some(expr) = &args.query {
+                output_stub(
+                    global,
+                    "query",
+                    &format!("Query expression '{}' is not yet implemented", expr),
+                );
+            } else {
+                output_stub(
+                    global,
+                    "query",
+                    "Use subcommands like `query sessions --limit 10`",
+                );
+            }
+            ExitCode::Clean
+        }
+    }
+}
+
+fn run_query_sessions(global: &GlobalOpts, limit: u32) -> ExitCode {
+    let store = match SessionStore::from_env() {
+        Ok(store) => store,
+        Err(e) => {
+            eprintln!("query sessions: session store error: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    let host_id = pt_core::logging::get_host_id();
+    let options = ListSessionsOptions {
+        limit: Some(limit),
+        state: None,
+        older_than: None,
+    };
+
+    let sessions = match store.list_sessions(&options) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("query sessions: failed to list sessions: {}", e);
+            return ExitCode::InternalError;
+        }
+    };
+
+    match global.format {
+        OutputFormat::Json | OutputFormat::Toon => {
+            let output = serde_json::json!({
+                "schema_version": SCHEMA_VERSION,
+                "generated_at": chrono::Utc::now().to_rfc3339(),
+                "host_id": host_id,
+                "query": "sessions",
+                "limit": limit,
+                "sessions": sessions.iter().map(|s| serde_json::json!({
+                    "session_id": s.session_id,
+                    "host": s.host_id,
+                    "state": s.state,
+                    "mode": s.mode,
+                    "created_at": s.created_at,
+                    "label": s.label,
+                    "candidates": s.candidates_count,
+                    "actions_taken": s.actions_count,
+                })).collect::<Vec<_>>(),
+                "total_count": sessions.len(),
+                "status": "ok",
+                "command": format!("pt query sessions --limit {}", limit),
+            });
+            println!("{}", format_structured_output(global, output));
+        }
+        OutputFormat::Summary => {
+            if sessions.is_empty() {
+                println!("No sessions found");
+            } else {
+                println!("{} session(s)", sessions.len());
+                for s in &sessions {
+                    let state_char = match s.state {
+                        SessionState::Created => "○",
+                        SessionState::Scanning => "◎",
+                        SessionState::Planned => "◉",
+                        SessionState::Executing => "▶",
+                        SessionState::Completed => "✓",
+                        SessionState::Cancelled => "✗",
+                        SessionState::Failed => "✗",
+                        SessionState::Archived => "▣",
+                    };
+                    println!("  {} {} {:?}", state_char, s.session_id, s.state);
+                }
+            }
+        }
+        OutputFormat::Exitcode => {}
+        _ => {
+            println!("# Query Sessions");
+            println!();
+            if sessions.is_empty() {
+                println!("No sessions found.");
+            } else {
+                println!(
+                    "{:<26} {:<12} {:<10} {:<8} {:<8}",
+                    "SESSION", "STATE", "MODE", "CANDS", "ACTIONS"
+                );
+                for s in &sessions {
+                    println!(
+                        "{:<26} {:<12?} {:<10?} {:<8} {:<8}",
+                        s.session_id,
+                        s.state,
+                        s.mode,
+                        s.candidates_count
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "-".to_string()),
+                        s.actions_count
+                            .map(|c| c.to_string())
+                            .unwrap_or_else(|| "-".to_string()),
+                    );
+                }
+            }
+        }
+    }
+
     ExitCode::Clean
 }
 
