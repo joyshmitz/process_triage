@@ -483,7 +483,7 @@ impl BocpdDetector {
                 .map(|(r, &p)| r as f64 * p)
                 .sum();
 
-            return BocpdUpdateResult {
+            let res = BocpdUpdateResult {
                 step: self.step,
                 change_point_probability,
                 map_run_length,
@@ -491,6 +491,8 @@ impl BocpdDetector {
                 log_evidence: self.cum_log_evidence,
                 run_length_posterior: posterior,
             };
+            self.step += 1;
+            return res;
         }
 
         let h = self.config.hazard_rate;
@@ -570,7 +572,7 @@ impl BocpdDetector {
                 .map(|(r, &p)| r as f64 * p)
                 .sum();
 
-            return BocpdUpdateResult {
+            let res = BocpdUpdateResult {
                 step: self.step,
                 change_point_probability,
                 map_run_length,
@@ -578,6 +580,8 @@ impl BocpdDetector {
                 log_evidence: self.cum_log_evidence,
                 run_length_posterior: posterior,
             };
+            self.step += 1;
+            return res;
         }
 
         for x in &mut new_log_dist {

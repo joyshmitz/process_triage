@@ -181,13 +181,13 @@ pub enum SystemdDataSource {
 /// # Returns
 /// * `Option<SystemdUnit>` - Unit info or None if not managed by systemd
 pub fn collect_systemd_unit(pid: u32, cgroup_unit: Option<&str>) -> Option<SystemdUnit> {
-    // Try systemctl show first
-    if let Some(unit) = query_systemctl(pid) {
-        return Some(unit);
-    }
-
-    // Fall back to cgroup path info
     if let Some(unit_name) = cgroup_unit {
+        // Try systemctl show first
+        if let Some(unit) = query_systemctl(unit_name, pid) {
+            return Some(unit);
+        }
+
+        // Fall back to cgroup path info
         return Some(unit_from_cgroup_path(unit_name, pid));
     }
 
@@ -195,7 +195,7 @@ pub fn collect_systemd_unit(pid: u32, cgroup_unit: Option<&str>) -> Option<Syste
 }
 
 /// Query systemctl for unit information.
-fn query_systemctl(pid: u32) -> Option<SystemdUnit> {
+fn query_systemctl(unit_name: &str, pid: u32) -> Option<SystemdUnit> {
     // Properties to query
     let properties = [
         "Id",
@@ -209,23 +209,15 @@ fn query_systemctl(pid: u32) -> Option<SystemdUnit> {
 
     let property_arg = properties.join(",");
     let output = Command::new("systemctl")
-        .args(["show", "--property", &property_arg, &format!("--pid={pid}")])
+        .args(["show", "--property", &property_arg, unit_name])
         .output()
         .ok()?;
 
-    let stdout = if output.status.success() {
-        String::from_utf8_lossy(&output.stdout).to_string()
-    } else {
-        let fallback = Command::new("systemctl")
-            .args(["show", "--property", &property_arg, &pid.to_string()])
-            .output()
-            .ok()?;
-        if !fallback.status.success() {
-            return None;
-        }
-        String::from_utf8_lossy(&fallback.stdout).to_string()
-    };
+    if !output.status.success() {
+        return None;
+    }
 
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     parse_systemctl_output(&stdout, pid)
 }
 
@@ -552,7 +544,10 @@ ActiveState=inactive
         let my_pid = std::process::id();
         crate::test_log!(INFO, "systemd unit collection for self", pid = my_pid);
 
-        let unit = collect_systemd_unit(my_pid, None);
+        let cgroup = crate::collect::cgroup::collect_cgroup_details(my_pid);
+        let cgroup_unit = cgroup.as_ref().and_then(|c| c.systemd_unit.as_deref());
+
+        let unit = collect_systemd_unit(my_pid, cgroup_unit);
 
         crate::test_log!(
             INFO,
@@ -602,7 +597,10 @@ ActiveState=inactive
             pid = proc.pid()
         );
 
-        let unit = collect_systemd_unit(proc.pid(), None);
+        let cgroup = crate::collect::cgroup::collect_cgroup_details(proc.pid());
+        let cgroup_unit = cgroup.as_ref().and_then(|c| c.systemd_unit.as_deref());
+
+        let unit = collect_systemd_unit(proc.pid(), cgroup_unit);
 
         crate::test_log!(
             INFO,

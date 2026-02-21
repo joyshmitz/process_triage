@@ -603,13 +603,22 @@ impl Policy {
                     }
                 }
                 PatternKind::Regex => {
-                    // Basic regex check (full implementation would use regex crate)
-                    // For now, just check if pattern appears in command
-                    command.contains(&p.pattern.replace("\\b", ""))
+                    // Basic regex check fallback (full implementation uses regex crate in pt-core)
+                    let p = p.pattern.replace("\\b", "").replace("^", "").replace("$", "");
+                    if p.case_insensitive {
+                        command.to_lowercase().contains(&p.to_lowercase())
+                    } else {
+                        command.contains(&p)
+                    }
                 }
                 PatternKind::Glob => {
-                    // Simplified glob matching
-                    command.contains(&p.pattern.replace("*", ""))
+                    // Simplified glob matching fallback
+                    let p = p.pattern.replace("*", "");
+                    if p.case_insensitive {
+                        command.to_lowercase().contains(&p.to_lowercase())
+                    } else {
+                        command.contains(&p)
+                    }
                 }
             }
         })

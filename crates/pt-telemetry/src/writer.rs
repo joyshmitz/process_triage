@@ -244,9 +244,17 @@ impl BatchedWriter {
 
 impl Drop for BatchedWriter {
     fn drop(&mut self) {
-        // Best-effort flush on drop
+        // Best-effort flush, close, and rename on drop
         if !self.buffer.is_empty() {
             let _ = self.flush();
+        }
+        
+        if let Some(writer) = self.writer.take() {
+            let _ = writer.close();
+        }
+        
+        if let (Some(temp_path), Some(output_path)) = (self.temp_path.take(), self.output_path.take()) {
+            let _ = atomic_rename(&temp_path, &output_path);
         }
     }
 }

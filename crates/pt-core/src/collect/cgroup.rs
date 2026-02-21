@@ -206,6 +206,9 @@ pub fn collect_cgroup_from_content(
             // Cgroup v1
             has_v1 = true;
             for controller in controllers.split(',') {
+                if controller == "name=systemd" {
+                    extract_systemd_info(&mut details, path);
+                }
                 details
                     .v1_paths
                     .insert(controller.to_string(), path.to_string());

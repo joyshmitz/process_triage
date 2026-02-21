@@ -823,8 +823,8 @@ impl SupervisorActionRunner {
             .unwrap_or(&action.unit_identifier);
 
         // launchctl list <label> returns info about a specific service
-        // Output: <pid>\t<last_exit_status>\t<label>
-        // If PID is "-", the service is not running
+        // Output is a property list dictionary.
+        // If the service is running, it will contain a "PID" key.
         let output = Command::new("launchctl").args(["list", label]).output();
 
         if let Ok(output) = output {
@@ -833,16 +833,11 @@ impl SupervisorActionRunner {
                 return false;
             }
             let stdout = String::from_utf8_lossy(&output.stdout);
-            // Parse the output - first column is PID
-            // Example: "12345\t0\tcom.example.myservice"
-            // Or: "-\t0\tcom.example.myservice" (not running)
-            if let Some(first_line) = stdout.lines().next() {
-                let parts: Vec<&str> = first_line.split('\t').collect();
-                if let Some(pid_str) = parts.first() {
-                    // If PID is not "-" and parses as a number, service is running
-                    if *pid_str != "-" && pid_str.parse::<u32>().is_ok() {
-                        return true;
-                    }
+            // Search for "PID" = <number>;
+            for line in stdout.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("\"PID\" =") {
+                    return true;
                 }
             }
             false

@@ -171,13 +171,12 @@ impl Canonicalizer {
         // Replace temp session directories first (more specific)
         // Match patterns like /tmp/pytest-123, /tmp/session-abc, etc.
         if let Some(caps) = RE_TMP_SESSION.find(&result) {
-            // Keep anything after the session directory
+            let before_session = &result[..caps.start()];
             let after_session = &result[caps.end()..];
-            result = format!("[TMP]{}", after_session);
-        } else if result.starts_with("/tmp/") {
-            result = format!("[TMP]{}", &result[4..]);
-        } else if result.starts_with("/var/tmp/") {
-            result = format!("[TMP]{}", &result[8..]);
+            result = format!("{}[TMP]{}", before_session, after_session);
+        } else {
+            result = result.replace("/tmp/", "[TMP]/");
+            result = result.replace("/var/tmp/", "[TMP]/");
         }
 
         result

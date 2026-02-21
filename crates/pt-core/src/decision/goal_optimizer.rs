@@ -768,14 +768,14 @@ pub fn local_search_improve(
 ) {
     let eligible: Vec<&OptCandidate> = candidates.iter().filter(|c| !c.blocked).collect();
 
-    let selected_ids: HashSet<String> = result.selected.iter().map(|s| s.id.clone()).collect();
-    let not_selected: Vec<&OptCandidate> = eligible
-        .iter()
-        .filter(|c| !selected_ids.contains(&c.id))
-        .copied()
-        .collect();
-
     for _ in 0..max_iterations {
+        let selected_ids: HashSet<String> = result.selected.iter().map(|s| s.id.clone()).collect();
+        let not_selected: Vec<&OptCandidate> = eligible
+            .iter()
+            .filter(|c| !selected_ids.contains(&c.id))
+            .copied()
+            .collect();
+
         let mut improved = false;
 
         for i in 0..result.selected.len() {

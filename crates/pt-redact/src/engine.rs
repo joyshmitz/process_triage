@@ -273,7 +273,7 @@ impl RedactionEngine {
 
 /// Truncate a value, keeping prefix and suffix.
 fn truncate_value(value: &str, keep_chars: usize) -> String {
-    if value.len() <= keep_chars * 2 {
+    if value.chars().count() <= keep_chars * 2 {
         return value.to_string();
     }
 

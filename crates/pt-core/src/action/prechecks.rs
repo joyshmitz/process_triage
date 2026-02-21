@@ -503,16 +503,17 @@ impl LivePreCheckProvider {
             if line.starts_with("Uid:") {
                 if let Some(uid_str) = line.split_whitespace().nth(1) {
                     if let Ok(uid) = uid_str.parse::<u32>() {
-                        // Try to resolve UID to username
+                        // Try to resolve UID to username safely without thread-unsafe libc calls
                         #[cfg(unix)]
                         {
-                            use std::ffi::CStr;
-                            unsafe {
-                                let pwd = libc::getpwuid(uid);
-                                if !pwd.is_null() {
-                                    let name = CStr::from_ptr((*pwd).pw_name);
-                                    if let Ok(s) = name.to_str() {
-                                        return Some(s.to_string());
+                            if let Ok(passwd) = std::fs::read_to_string("/etc/passwd") {
+                                let uid_str_target = uid.to_string();
+                                for pwd_line in passwd.lines() {
+                                    let mut fields = pwd_line.split(':');
+                                    if let (Some(name), _, Some(id)) = (fields.next(), fields.next(), fields.next()) {
+                                        if id == uid_str_target {
+                                            return Some(name.to_string());
+                                        }
                                     }
                                 }
                             }

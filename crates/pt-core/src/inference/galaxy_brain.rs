@@ -294,12 +294,21 @@ fn sym<'a>(mode: MathMode, unicode: &'a str, ascii: &'a str) -> &'a str {
     }
 }
 
-/// Estimate the prior from the posterior by removing evidence contribution.
+/// Estimate the prior from the posterior by extracting the prior term.
 ///
-/// This is an approximation: we use uniform [0.25, 0.25, 0.25, 0.25] if
-/// no prior info is available (the actual prior is baked into the posterior
-/// computation and not separately stored in `PosteriorResult`).
-fn prior_from_posterior(_posterior: &PosteriorResult) -> ClassScores {
+/// The actual prior is stored as the first evidence term (log-likelihood).
+fn prior_from_posterior(posterior: &PosteriorResult) -> ClassScores {
+    for term in &posterior.evidence_terms {
+        if term.feature == "prior" {
+            return ClassScores {
+                useful: term.log_likelihood.useful.exp(),
+                useful_bad: term.log_likelihood.useful_bad.exp(),
+                abandoned: term.log_likelihood.abandoned.exp(),
+                zombie: term.log_likelihood.zombie.exp(),
+            };
+        }
+    }
+
     ClassScores {
         useful: 0.25,
         useful_bad: 0.25,
@@ -333,6 +342,15 @@ mod tests {
             },
             log_odds_abandoned_useful: 2.86,
             evidence_terms: vec![
+                EvidenceTerm {
+                    feature: "prior".to_string(),
+                    log_likelihood: ClassScores {
+                        useful: -1.386,
+                        useful_bad: -1.386,
+                        abandoned: -1.386,
+                        zombie: -1.386,
+                    },
+                },
                 EvidenceTerm {
                     feature: "cpu_occupancy".to_string(),
                     log_likelihood: ClassScores {

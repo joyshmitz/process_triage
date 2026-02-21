@@ -367,6 +367,7 @@ impl From<&ImpactResult> for ImpactEvidence {
 pub struct ImpactScorer {
     config: ImpactConfig,
     child_count_cache: HashMap<u32, usize>,
+    cache_populated: bool,
     #[cfg(target_os = "linux")]
     network_snapshot: Option<NetworkSnapshot>,
 }
@@ -382,6 +383,7 @@ impl ImpactScorer {
         Self {
             config,
             child_count_cache: HashMap::new(),
+            cache_populated: false,
             #[cfg(target_os = "linux")]
             network_snapshot: None,
         }
@@ -408,12 +410,14 @@ impl ImpactScorer {
                 }
             }
         }
+        self.cache_populated = true;
 
         Ok(())
     }
 
     #[cfg(not(target_os = "linux"))]
     pub fn populate_caches(&mut self) -> Result<(), ImpactError> {
+        self.cache_populated = true;
         Ok(())
     }
 
@@ -439,9 +443,9 @@ impl ImpactScorer {
 
     /// Get child count for a process.
     fn get_child_count(&self, pid: u32) -> Option<usize> {
-        // First check cache
-        if let Some(&count) = self.child_count_cache.get(&pid) {
-            return Some(count);
+        // First check if cache is populated
+        if self.cache_populated {
+            return Some(self.child_count_cache.get(&pid).copied().unwrap_or(0));
         }
 
         // If cache not populated, scan /proc

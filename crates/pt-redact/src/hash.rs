@@ -151,6 +151,14 @@ impl KeyManager {
         {
             use std::io::Write;
             use std::os::unix::fs::OpenOptionsExt;
+            use std::path::PathBuf;
+
+            let path_ref = path.as_ref();
+            let tmp_path = {
+                let mut p = path_ref.as_os_str().to_os_string();
+                p.push(".tmp");
+                PathBuf::from(p)
+            };
 
             // Create file with restricted permissions atomically
             let mut file = std::fs::OpenOptions::new()
@@ -158,9 +166,10 @@ impl KeyManager {
                 .create(true)
                 .truncate(true)
                 .mode(0o600)
-                .open(&path)?;
+                .open(&tmp_path)?;
             file.write_all(content.as_bytes())?;
             file.sync_all()?;
+            std::fs::rename(&tmp_path, path_ref)?;
         }
 
         #[cfg(not(unix))]
