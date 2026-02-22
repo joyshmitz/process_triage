@@ -369,10 +369,9 @@ fn parse_ps_line(
     let fields: Vec<&str> = line.split_whitespace().collect();
 
     let comm_idx = 17;
-    if fields.len() <= comm_idx {
+    if fields.len() < 22 {
         return Err(format!(
-            "Insufficient fields: expected {}+, got {}",
-            comm_idx + 1,
+            "Insufficient fields: expected at least 22, got {}",
             fields.len()
         ));
     }
@@ -393,11 +392,11 @@ fn parse_ps_line(
 
     // RSS is in KB, convert to bytes
     let rss_kb: u64 = fields[8].parse().unwrap_or(0);
-    let rss_bytes = rss_kb * 1024;
+    let rss_bytes = rss_kb.saturating_mul(1024);
 
     // VSZ is in KB, convert to bytes
     let vsz_kb: u64 = fields[9].parse().unwrap_or(0);
-    let vsz_bytes = vsz_kb * 1024;
+    let vsz_bytes = vsz_kb.saturating_mul(1024);
 
     // TTY (? or - means no TTY)
     let tty_raw = fields[10];
@@ -457,10 +456,9 @@ fn parse_ps_line_synthetic(
     let fields: Vec<&str> = line.split_whitespace().collect();
 
     let comm_idx = 17;
-    if fields.len() <= comm_idx {
+    if fields.len() < 22 {
         return Err(format!(
-            "Insufficient fields: expected {}+, got {}",
-            comm_idx + 1,
+            "Insufficient fields: expected at least 22, got {}",
             fields.len()
         ));
     }
@@ -478,10 +476,10 @@ fn parse_ps_line_synthetic(
     let cpu_percent: f64 = fields[7].parse().unwrap_or(0.0);
 
     let rss_kb: u64 = fields[8].parse().unwrap_or(0);
-    let rss_bytes = rss_kb * 1024;
+    let rss_bytes = rss_kb.saturating_mul(1024);
 
     let vsz_kb: u64 = fields[9].parse().unwrap_or(0);
-    let vsz_bytes = vsz_kb * 1024;
+    let vsz_bytes = vsz_kb.saturating_mul(1024);
 
     let tty_raw = fields[10];
     let tty = if tty_raw == "?" || tty_raw == "-" {

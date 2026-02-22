@@ -220,20 +220,6 @@ impl DependencyFactors {
             || self.shared_memory_segments > 0
     }
 
-    /// Create factors from impact components (inference layer).
-    ///
-    /// This enables reuse of data already collected by the impact scorer.
-    #[cfg(target_os = "linux")]
-    #[allow(dead_code)]
-    pub fn from_impact_components(components: &crate::inference::impact::ImpactComponents) -> Self {
-        Self {
-            child_count: components.child_count,
-            established_connections: components.established_conns_count,
-            listen_ports: components.listen_ports_count,
-            open_write_handles: components.open_write_fds_count,
-            shared_memory_segments: 0, // Not currently tracked in impact
-        }
-    }
 }
 
 /// Result of dependency scaling computation.

@@ -169,7 +169,7 @@ impl IpsEstimator {
         let mean_wr = estimated_value;
         let var_wr: f64 = weighted_rewards
             .iter()
-            .map(|wr| (wr / n as f64 - mean_wr / n as f64).powi(2))
+            .map(|wr| (wr - mean_wr).powi(2))
             .sum::<f64>()
             / (n as f64 - 1.0).max(1.0);
         let se = (var_wr / n as f64).sqrt();

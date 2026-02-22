@@ -186,6 +186,17 @@ pub enum AppActionType {
     Logs,
 }
 
+/// Escape a string for safe use in shell commands.
+fn shell_escape(s: &str) -> String {
+    if s.is_empty() {
+        return "''".to_string();
+    }
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/') {
+        return s.to_string();
+    }
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
 /// Analyzer for app-level supervision.
 pub struct AppSupervisionAnalyzer {
     /// Whether to include action recommendations.
@@ -573,25 +584,26 @@ impl AppSupervisionAnalyzer {
             _ => "all".to_string(),
         };
 
+        let escaped = shell_escape(&target);
         AppSupervisorAction {
             action_type: AppActionType::Stop,
-            command: format!("pm2 stop {}", target),
+            command: format!("pm2 stop {}", escaped),
             alternatives: vec![
                 AlternativeAction {
                     description: "Restart process".to_string(),
-                    command: format!("pm2 restart {}", target),
+                    command: format!("pm2 restart {}", escaped),
                 },
                 AlternativeAction {
                     description: "Delete from PM2".to_string(),
-                    command: format!("pm2 delete {}", target),
+                    command: format!("pm2 delete {}", escaped),
                 },
                 AlternativeAction {
                     description: "Show status".to_string(),
-                    command: format!("pm2 show {}", target),
+                    command: format!("pm2 show {}", escaped),
                 },
                 AlternativeAction {
                     description: "View logs".to_string(),
-                    command: format!("pm2 logs {}", target),
+                    command: format!("pm2 logs {}", escaped),
                 },
             ],
             is_safe: false,
@@ -614,21 +626,22 @@ impl AppSupervisionAnalyzer {
             _ => "all".to_string(),
         };
 
+        let escaped = shell_escape(&target);
         AppSupervisorAction {
             action_type: AppActionType::Stop,
-            command: format!("supervisorctl stop {}", target),
+            command: format!("supervisorctl stop {}", escaped),
             alternatives: vec![
                 AlternativeAction {
                     description: "Restart process".to_string(),
-                    command: format!("supervisorctl restart {}", target),
+                    command: format!("supervisorctl restart {}", escaped),
                 },
                 AlternativeAction {
                     description: "Show status".to_string(),
-                    command: format!("supervisorctl status {}", target),
+                    command: format!("supervisorctl status {}", escaped),
                 },
                 AlternativeAction {
                     description: "View recent log".to_string(),
-                    command: format!("supervisorctl tail {}", target),
+                    command: format!("supervisorctl tail {}", escaped),
                 },
             ],
             is_safe: false,
@@ -663,13 +676,14 @@ impl AppSupervisionAnalyzer {
     fn generate_forever_action(&self, uid: &Option<String>) -> AppSupervisorAction {
         let target = uid.clone().unwrap_or_else(|| "0".to_string());
 
+        let escaped = shell_escape(&target);
         AppSupervisorAction {
             action_type: AppActionType::Stop,
-            command: format!("forever stop {}", target),
+            command: format!("forever stop {}", escaped),
             alternatives: vec![
                 AlternativeAction {
                     description: "Restart process".to_string(),
-                    command: format!("forever restart {}", target),
+                    command: format!("forever restart {}", escaped),
                 },
                 AlternativeAction {
                     description: "List all processes".to_string(),

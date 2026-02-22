@@ -386,28 +386,11 @@ impl CtwNode {
         self.children[symbol].as_mut().unwrap()
     }
 
-    /// Check if child exists (for future tree statistics).
-    #[allow(dead_code)]
-    fn has_child(&self, symbol: usize) -> bool {
-        self.children
-            .get(symbol)
-            .map(|c| c.is_some())
-            .unwrap_or(false)
-    }
-
     /// Get child reference.
     fn child(&self, symbol: usize) -> Option<&CtwNode> {
         self.children
             .get(symbol)
             .and_then(|c| c.as_ref().map(|b| b.as_ref()))
-    }
-
-    /// Get mutable child reference (for future tree pruning).
-    #[allow(dead_code)]
-    fn child_mut(&mut self, symbol: usize) -> Option<&mut CtwNode> {
-        self.children
-            .get_mut(symbol)
-            .and_then(|c| c.as_mut().map(|b| b.as_mut()))
     }
 }
 

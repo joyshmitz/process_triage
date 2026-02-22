@@ -211,12 +211,41 @@ pub fn load_manifest(plugin_dir: &Path) -> Result<ResolvedPlugin, ManifestError>
         });
     }
 
+    // Validate command path doesn't escape plugin directory
+    if manifest.command.contains("..") {
+        return Err(ManifestError::CommandNotFound {
+            path: PathBuf::from(&manifest.command),
+        });
+    }
+
     // Resolve command path
     let command_path = if Path::new(&manifest.command).is_absolute() {
         PathBuf::from(&manifest.command)
     } else {
-        plugin_dir.join(&manifest.command)
+        let resolved = plugin_dir.join(&manifest.command);
+        // Verify the resolved path is still under plugin_dir
+        if let (Ok(canonical_dir), Ok(canonical_cmd)) =
+            (plugin_dir.canonicalize(), resolved.canonicalize())
+        {
+            if !canonical_cmd.starts_with(&canonical_dir) {
+                return Err(ManifestError::CommandNotFound {
+                    path: resolved,
+                });
+            }
+        }
+        resolved
     };
+
+    if !command_path.exists() {
+        return Err(ManifestError::CommandNotFound {
+            path: command_path,
+        });
+    }
+    if !command_path.is_file() {
+        return Err(ManifestError::CommandNotFound {
+            path: command_path,
+        });
+    }
 
     // Validate weight is in [0, 1]
     let weight = manifest.weight.clamp(0.0, 1.0);

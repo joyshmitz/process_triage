@@ -58,13 +58,20 @@ impl SignalActionRunner {
         (target, use_group)
     }
 
-    /// Send a signal to a process.
+    /// Send a signal to a process (or process group when `use_group` is true).
+    ///
+    /// `target_id` is the resolved target: either the PID itself or the PGID,
+    /// as returned by [`resolve_group_target`].
     #[cfg(unix)]
-    fn send_signal(&self, pid: u32, signal: i32, use_group: bool) -> Result<(), ActionError> {
+    fn send_signal(&self, target_id: u32, signal: i32, use_group: bool) -> Result<(), ActionError> {
+        if target_id > i32::MAX as u32 {
+            return Err(ActionError::Failed(format!("PID {} exceeds i32 range", target_id)));
+        }
+
         let target_pid = if use_group {
-            -(pid as i32) // Negative PID targets process group
+            -(target_id as i32) // Negative PID targets process group
         } else {
-            pid as i32
+            target_id as i32
         };
 
         let result = unsafe { libc::kill(target_pid, signal) };
@@ -107,6 +114,18 @@ impl SignalActionRunner {
     #[cfg(not(target_os = "linux"))]
     fn get_process_state(&self, _pid: u32) -> Option<char> {
         None
+    }
+
+    /// Read the starttime field from /proc/[pid]/stat for PID-reuse detection.
+    #[cfg(target_os = "linux")]
+    fn read_starttime(&self, pid: u32) -> Option<u64> {
+        let stat_path = format!("/proc/{pid}/stat");
+        let content = std::fs::read_to_string(stat_path).ok()?;
+        let comm_end = content.rfind(')')?;
+        let after_comm = content.get(comm_end + 2..)?;
+        let fields: Vec<&str> = after_comm.split_whitespace().collect();
+        // Field 19 (0-indexed from after comm) is starttime
+        fields.get(19)?.parse::<u64>().ok()
     }
 
     /// Wait for a process to reach a target state or exit.
@@ -179,6 +198,23 @@ impl SignalActionRunner {
         }
 
         // Stage 2: SIGKILL (only if process still exists)
+        // TOCTOU window: the process may have exited and its PID may have been
+        // reused between the grace-period timeout and the SIGKILL below.
+        // Re-validate the starttime to guard against killing a replacement process.
+        #[cfg(target_os = "linux")]
+        if self.process_exists(pid) {
+            if let Some(current_starttime) = self.read_starttime(pid) {
+                let start_id = &action.target.start_id.0;
+                if !ids_match_starttime(start_id, current_starttime) {
+                    return Err(ActionError::Failed(
+                        "PID reuse detected before SIGKILL; aborting".to_string(),
+                    ));
+                }
+            }
+            // If we can't read starttime, the process is likely gone — SIGKILL
+            // will harmlessly fail with ESRCH.
+        }
+
         if self.process_exists(pid) {
             self.send_signal(target, libc::SIGKILL, use_group)?;
         }
@@ -392,6 +428,8 @@ impl super::executor::IdentityProvider for LiveIdentityProvider {
             if current_uid != target.uid {
                 return Ok(false); // UID mismatch
             }
+        } else {
+            return Ok(false); // Can't read UID; identity cannot be confirmed
         }
 
         Ok(true)
@@ -431,6 +469,29 @@ fn ids_match(expected: &str, current: &str) -> bool {
             e == c
         }
         _ => false,
+    }
+}
+
+/// Check whether a start_id string matches a raw starttime value (u64).
+///
+/// Used for lightweight revalidation where we have the numeric starttime
+/// from /proc but the original identity stores a composite start_id string.
+#[cfg(target_os = "linux")]
+fn ids_match_starttime(start_id: &str, current_starttime: u64) -> bool {
+    fn extract_starttime(id: &str) -> Option<u64> {
+        let parts: Vec<&str> = id.split(':').collect();
+        let st = match parts.len() {
+            1 => parts[0],
+            3 => parts[1],
+            _ => return None,
+        };
+        st.parse::<u64>().ok()
+    }
+
+    if let Some(expected) = extract_starttime(start_id) {
+        expected.abs_diff(current_starttime) <= 150
+    } else {
+        false
     }
 }
 

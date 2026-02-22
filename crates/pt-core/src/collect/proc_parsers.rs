@@ -327,8 +327,9 @@ pub fn parse_proc_stat_content(content: &str) -> Option<ProcessStat> {
     // Extract comm (between parentheses)
     let comm = content[open_paren + 1..close_paren].to_string();
 
-    // Parse remaining fields after the ')'
-    let rest = &content[close_paren + 1..];
+    // Parse remaining fields after the ')' — use safe indexing to avoid
+    // panicking on truncated /proc/PID/stat content.
+    let rest = content.get(close_paren + 1..)?;
     let fields: Vec<&str> = rest.split_whitespace().collect();
 
     // Need at least 22 fields after comm for the fields we want (we access up to index 21)
@@ -522,7 +523,11 @@ pub fn parse_fd_dir(dir: &Path, fdinfo_dir: Option<&Path>) -> Option<FdInfo> {
 
         info.count += 1;
 
-        // Skip expensive inspection if we've hit the limit
+        // Skip expensive inspection if we've hit the limit.
+        // NOTE: When truncated=true, `info.count` reflects the *total* number of FDs
+        // (including those beyond MAX_INSPECT), while `inspected_count` and the
+        // categorized tallies (sockets, pipes, files, etc.) only cover the first
+        // MAX_INSPECT file descriptors that were actually inspected.
         if inspected_count >= MAX_INSPECT {
             info.truncated = true;
             continue;

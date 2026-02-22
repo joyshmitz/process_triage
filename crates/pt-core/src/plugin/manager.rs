@@ -242,7 +242,12 @@ impl PluginManager {
         }
 
         // Get plugin info (need to borrow immutably first, then mutably)
-        let state = self.plugins.get(plugin_name).unwrap();
+        let state = self.plugins.get(plugin_name).ok_or_else(|| {
+            EvidencePluginError::ExecutionFailed {
+                plugin: plugin_name.to_string(),
+                message: "plugin state not found".to_string(),
+            }
+        })?;
         let command_path = state.plugin.command_path.clone();
         let args = state.plugin.manifest.args.clone();
         let timeout_ms = state.plugin.manifest.timeouts.invoke_ms;
@@ -266,19 +271,37 @@ impl PluginManager {
             Ok((stdout, duration)) => {
                 match crate::plugin::evidence::parse_evidence_output(plugin_name, &stdout) {
                     Ok(output) => {
-                        let state = self.plugins.get_mut(plugin_name).unwrap();
+                        let state =
+                            self.plugins.get_mut(plugin_name).ok_or_else(|| {
+                                EvidencePluginError::ExecutionFailed {
+                                    plugin: plugin_name.to_string(),
+                                    message: "plugin state not found".to_string(),
+                                }
+                            })?;
                         state.record_success(duration);
                         Ok(Some(output))
                     }
                     Err(e) => {
-                        let state = self.plugins.get_mut(plugin_name).unwrap();
+                        let state =
+                            self.plugins.get_mut(plugin_name).ok_or_else(|| {
+                                EvidencePluginError::ExecutionFailed {
+                                    plugin: plugin_name.to_string(),
+                                    message: "plugin state not found".to_string(),
+                                }
+                            })?;
                         state.record_failure();
                         Err(e)
                     }
                 }
             }
             Err(msg) => {
-                let state = self.plugins.get_mut(plugin_name).unwrap();
+                let state =
+                    self.plugins.get_mut(plugin_name).ok_or_else(|| {
+                        EvidencePluginError::ExecutionFailed {
+                            plugin: plugin_name.to_string(),
+                            message: "plugin state not found".to_string(),
+                        }
+                    })?;
                 state.record_failure();
                 if msg.contains("timed out") {
                     Err(EvidencePluginError::Timeout {
@@ -320,7 +343,12 @@ impl PluginManager {
             }
         }
 
-        let state = self.plugins.get(plugin_name).unwrap();
+        let state = self.plugins.get(plugin_name).ok_or_else(|| {
+            ActionPluginError::ExecutionFailed {
+                plugin: plugin_name.to_string(),
+                message: "plugin state not found".to_string(),
+            }
+        })?;
         let command_path = state.plugin.command_path.clone();
         let args = state.plugin.manifest.args.clone();
         let timeout_ms = state.plugin.manifest.timeouts.invoke_ms;
@@ -344,19 +372,37 @@ impl PluginManager {
             Ok((stdout, duration)) => {
                 match crate::plugin::action::parse_action_output(plugin_name, &stdout) {
                     Ok(output) => {
-                        let state = self.plugins.get_mut(plugin_name).unwrap();
+                        let state =
+                            self.plugins.get_mut(plugin_name).ok_or_else(|| {
+                                ActionPluginError::ExecutionFailed {
+                                    plugin: plugin_name.to_string(),
+                                    message: "plugin state not found".to_string(),
+                                }
+                            })?;
                         state.record_success(duration);
                         Ok(Some(output))
                     }
                     Err(e) => {
-                        let state = self.plugins.get_mut(plugin_name).unwrap();
+                        let state =
+                            self.plugins.get_mut(plugin_name).ok_or_else(|| {
+                                ActionPluginError::ExecutionFailed {
+                                    plugin: plugin_name.to_string(),
+                                    message: "plugin state not found".to_string(),
+                                }
+                            })?;
                         state.record_failure();
                         Err(e)
                     }
                 }
             }
             Err(msg) => {
-                let state = self.plugins.get_mut(plugin_name).unwrap();
+                let state =
+                    self.plugins.get_mut(plugin_name).ok_or_else(|| {
+                        ActionPluginError::ExecutionFailed {
+                            plugin: plugin_name.to_string(),
+                            message: "plugin state not found".to_string(),
+                        }
+                    })?;
                 state.record_failure();
                 if msg.contains("timed out") {
                     Err(ActionPluginError::Timeout {
@@ -473,36 +519,51 @@ fn invoke_subprocess(
         // stdin is dropped here, closing the pipe
     }
 
-    // Wait with timeout
+    // Poll for completion with timeout
     let timeout = Duration::from_millis(timeout_ms);
-    let output = match child.wait_with_output() {
-        Ok(output) => {
-            let elapsed = start.elapsed();
-            if elapsed > timeout {
-                return Err(format!("timed out after {}ms", elapsed.as_millis()));
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                if start.elapsed() > timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("timed out after {}ms", timeout_ms));
+                }
+                std::thread::sleep(Duration::from_millis(50));
             }
-            output
+            Err(e) => return Err(format!("wait failed: {e}")),
         }
-        Err(e) => return Err(format!("wait failed: {e}")),
     };
 
     let duration = start.elapsed();
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let code = output.status.code().unwrap_or(-1);
+    if !status.success() {
+        let mut stderr_buf = Vec::new();
+        if let Some(mut stderr) = child.stderr.take() {
+            use std::io::Read;
+            let _ = stderr.read_to_end(&mut stderr_buf);
+        }
+        let stderr = String::from_utf8_lossy(&stderr_buf);
+        let code = status.code().unwrap_or(-1);
         return Err(format!(
             "exited with code {code}: {}",
             stderr.chars().take(500).collect::<String>()
         ));
     }
 
-    let mut stdout = output.stdout;
-    if stdout.len() > max_output {
+    let mut stdout = Vec::new();
+    if let Some(mut stdout_pipe) = child.stdout.take() {
+        use std::io::Read;
+        let _ = stdout_pipe.read_to_end(&mut stdout);
+    }
+
+    let original_len = stdout.len();
+    if original_len > max_output {
         stdout.truncate(max_output);
         warn!(
             "plugin output truncated from {} to {} bytes",
-            stdout.len(),
+            original_len,
             max_output
         );
     }

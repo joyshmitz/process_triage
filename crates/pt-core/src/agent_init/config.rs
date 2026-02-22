@@ -32,6 +32,9 @@ pub enum ConfigError {
 
     #[error("dry run - no changes made")]
     DryRun,
+
+    #[error("internal config state error: {0}")]
+    InternalState(String),
 }
 
 /// Result of configuring an agent.
@@ -219,7 +222,7 @@ fn configure_claude_code(
             config
                 .get_mut("mcpServers")
                 .and_then(|v| v.as_object_mut())
-                .expect("mcpServers object should be initialized")
+                .ok_or_else(|| ConfigError::InternalState("mcpServers not an object after init".into()))?
         }
     };
 
@@ -288,7 +291,7 @@ fn configure_codex(config_dir: &Path, options: &InitOptions) -> Result<ConfigRes
             config
                 .get_mut("tools")
                 .and_then(|v| v.as_array_mut())
-                .expect("tools array should be initialized")
+                .ok_or_else(|| ConfigError::InternalState("tools not an array after init".into()))?
         }
     };
 
@@ -424,7 +427,7 @@ fn configure_cursor(config_dir: &Path, options: &InitOptions) -> Result<ConfigRe
             config
                 .get_mut("extensions")
                 .and_then(|v| v.as_object_mut())
-                .expect("extensions object should be initialized")
+                .ok_or_else(|| ConfigError::InternalState("extensions not an object after init".into()))?
         }
     };
 

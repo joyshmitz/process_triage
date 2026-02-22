@@ -3031,7 +3031,6 @@ fn bytes_to_human(bytes: u64) -> String {
     }
 }
 
-#[allow(dead_code)]
 struct GoalPlanOutput {
     goals: Vec<ResourceGoal>,
     result: OptimizationResult,
@@ -3119,7 +3118,6 @@ fn build_resource_goals(
     Ok((goals, warnings))
 }
 
-#[allow(dead_code)]
 fn parse_kill_loss(candidate: &serde_json::Value) -> f64 {
     candidate
         .get("expected_loss")
@@ -3137,7 +3135,6 @@ fn parse_kill_loss(candidate: &serde_json::Value) -> f64 {
         .unwrap_or(0.0)
 }
 
-#[allow(dead_code)]
 fn build_opt_candidates_for_goals(
     candidates: &[serde_json::Value],
     goals: &[ResourceGoal],
@@ -3182,31 +3179,6 @@ fn build_opt_candidates_for_goals(
         .collect()
 }
 
-#[allow(dead_code)]
-fn goal_progress_json(result: &OptimizationResult) -> serde_json::Value {
-    let entries: Vec<serde_json::Value> = result
-        .goal_achievement
-        .iter()
-        .map(|g| {
-            let fraction = if g.target > 0.0 {
-                (g.achieved / g.target).min(1.0)
-            } else {
-                1.0
-            };
-            serde_json::json!({
-                "resource": g.resource,
-                "achieved": g.achieved,
-                "target": g.target,
-                "shortfall": g.shortfall,
-                "met": g.met,
-                "fraction": fraction,
-            })
-        })
-        .collect();
-    serde_json::json!({ "entries": entries })
-}
-
-#[allow(dead_code)]
 fn build_goal_plan_from_candidates(
     _goal_str: &str,
     goal: &Goal,
@@ -3294,7 +3266,6 @@ fn build_goal_plan_from_candidates(
     })
 }
 
-#[allow(dead_code)]
 fn goal_summary_json(goal_str: &str, goal: &Goal, output: &GoalPlanOutput) -> serde_json::Value {
     let targets: Vec<serde_json::Value> = output
         .goals

@@ -350,17 +350,28 @@ pub fn compute_tick_delta(
         return None;
     }
 
+    // Guard against tick counter going backwards (e.g. PID reuse, counter wrap).
+    if after.total_ticks < before.total_ticks {
+        return None;
+    }
+
     // Compute k_ticks
     let k_ticks = after.total_ticks.saturating_sub(before.total_ticks);
 
     // Get CPU capacity
     let cgroup = collect_cgroup_details(after.pid);
     let cpu_capacity = compute_cpu_capacity(after.pid, cgroup.as_ref());
-    let n_eff_cores = cpu_capacity.n_eff_cores;
+    let mut n_eff_cores = cpu_capacity.n_eff_cores;
+
+    // Guard against NaN / non-finite / non-positive n_eff_cores which would
+    // propagate through all downstream arithmetic and produce garbage results.
+    let threads = after.num_threads as f64;
+    if !n_eff_cores.is_finite() || n_eff_cores <= 0.0 {
+        n_eff_cores = threads;
+    }
 
     // Compute n_ticks
     let tck = clk_tck();
-    let threads = after.num_threads as f64;
     let (effective_parallelism, budget_constraint) = if threads < n_eff_cores {
         (threads, BudgetConstraint::Threads)
     } else if n_eff_cores < threads {
